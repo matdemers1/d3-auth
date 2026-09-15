@@ -76,3 +76,20 @@ jobs:
           PGPASSWORD=d3auth psql -h 127.0.0.1 -U d3auth -d d3auth -c 'CREATE DATABASE shadow;'
           pnpm exec prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
       - run: pnpm --filter d3auth-server test:integration
+
+  conformance:
+    needs: integration
+    runs-on: ubuntu-latest
+    # R-12 tripwire: a suite run past 30 minutes is a failure, not a wait.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: OpenID Conformance Suite — Basic and Config OP plans (REQ-126)
+        run: ./conformance/run.sh
+      - name: Upload suite results and stack logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: conformance-results
+          path: conformance/logs/
+          if-no-files-found: warn

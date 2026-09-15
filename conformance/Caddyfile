@@ -1,0 +1,11 @@
+{
+	local_certs
+	skip_install_trust
+	auto_https disable_redirects
+	admin off
+}
+
+https://op.d3auth.test {
+	tls internal
+	reverse_proxy d3auth-server:3000
+}

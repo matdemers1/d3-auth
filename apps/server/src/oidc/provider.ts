@@ -39,12 +39,15 @@ export interface ProviderOptions {
   hasher: SecretHasher;
   cookieKeys: string[];
   interactionPath: (uid: string) => string;
+  /** Conformance-suite clients exempt from PKCE; config refuses this outside *.test issuers. */
+  pkceExemptClientIds?: readonly string[];
 }
 
 const escapeHtml = (value: unknown): string =>
   String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function createProvider(options: ProviderOptions): Provider {
+  const pkceExempt = new Set(options.pkceExemptClientIds ?? []);
   const configuration: Configuration = {
     adapter: createAdapterFactory(options.db),
     clients: options.clients,
@@ -77,7 +80,7 @@ export function createProvider(options: ProviderOptions): Provider {
     },
 
     // PKCE S256 on every client, confidential ones included (REQ-003). v9 has no `plain`.
-    pkce: { required: () => true },
+    pkce: { required: (_ctx, client) => !pkceExempt.has(client.clientId) },
     allowOmittingSingleRegisteredRedirectUri: false,
     clockTolerance: 60,
 

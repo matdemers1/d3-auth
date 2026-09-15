@@ -1,0 +1,264 @@
+{
+  "alias": "d3auth",
+  "description": "D3 Auth — static clients, discovery, dev login (Phase 0)",
+  "server": {
+    "discoveryUrl": "https://op.d3auth.test/.well-known/openid-configuration"
+  },
+  "client": {
+    "client_id": "conformance-1",
+    "client_secret": "conformance-client-1-secret-ephemeral-stack-only"
+  },
+  "client2": {
+    "client_id": "conformance-2",
+    "client_secret": "conformance-client-2-secret-ephemeral-stack-only"
+  },
+  "browser": [
+    {
+      "match": "https://op.d3auth.test/oidc/auth*",
+      "tasks": [
+        {
+          "task": "Login",
+          "optional": true,
+          "match": "https://op.d3auth.test/interaction/*",
+          "commands": [
+            [
+              "text",
+              "name",
+              "email",
+              "conformance@d3auth.test"
+            ],
+            [
+              "text",
+              "name",
+              "password",
+              "conformance-suite-password-only"
+            ],
+            [
+              "click",
+              "css",
+              "button[type=submit]"
+            ]
+          ]
+        },
+        {
+          "task": "Verify Complete",
+          "match": "*/test/*/callback*",
+          "commands": [
+            [
+              "wait",
+              "id",
+              "submission_complete",
+              10
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "override": {
+    "oidcc-prompt-login": {
+      "browser": [
+        {
+          "comment": "screenshot the second sign-in page",
+          "match": "https://op.d3auth.test/oidc/auth*",
+          "tasks": [
+            {
+              "task": "Login",
+              "optional": true,
+              "match": "https://op.d3auth.test/interaction/*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Sign in",
+                  "update-image-placeholder-optional"
+                ],
+                [
+                  "text",
+                  "name",
+                  "email",
+                  "conformance@d3auth.test"
+                ],
+                [
+                  "text",
+                  "name",
+                  "password",
+                  "conformance-suite-password-only"
+                ],
+                [
+                  "click",
+                  "css",
+                  "button[type=submit]"
+                ]
+              ]
+            },
+            {
+              "task": "Verify Complete",
+              "match": "*/test/*/callback*",
+              "commands": [
+                [
+                  "wait",
+                  "id",
+                  "submission_complete",
+                  10
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-max-age-1": {
+      "browser": [
+        {
+          "comment": "screenshot the second sign-in page",
+          "match": "https://op.d3auth.test/oidc/auth*",
+          "tasks": [
+            {
+              "task": "Login",
+              "optional": true,
+              "match": "https://op.d3auth.test/interaction/*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Sign in",
+                  "update-image-placeholder-optional"
+                ],
+                [
+                  "text",
+                  "name",
+                  "email",
+                  "conformance@d3auth.test"
+                ],
+                [
+                  "text",
+                  "name",
+                  "password",
+                  "conformance-suite-password-only"
+                ],
+                [
+                  "click",
+                  "css",
+                  "button[type=submit]"
+                ]
+              ]
+            },
+            {
+              "task": "Verify Complete",
+              "match": "*/test/*/callback*",
+              "commands": [
+                [
+                  "wait",
+                  "id",
+                  "submission_complete",
+                  10
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-ensure-registered-redirect-uri": {
+      "browser": [
+        {
+          "comment": "expect an immediate error page, never a redirect",
+          "match": "https://op.d3auth.test/oidc/auth*",
+          "tasks": [
+            {
+              "task": "Expect redirect uri mismatch error page",
+              "match": "https://op.d3auth.test/oidc/auth*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Something went wrong",
+                  "update-image-placeholder"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-ensure-redirect-uri-in-authorization-request": {
+      "browser": [
+        {
+          "comment": "expect an immediate error page, never a redirect",
+          "match": "https://op.d3auth.test/oidc/auth*",
+          "tasks": [
+            {
+              "task": "Expect redirect uri mismatch error page",
+              "match": "https://op.d3auth.test/oidc/auth*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Something went wrong",
+                  "update-image-placeholder"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-redirect-uri-query-added": {
+      "browser": [
+        {
+          "comment": "expect an immediate error page, never a redirect",
+          "match": "https://op.d3auth.test/oidc/auth*",
+          "tasks": [
+            {
+              "task": "Expect redirect uri mismatch error page",
+              "match": "https://op.d3auth.test/oidc/auth*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Something went wrong",
+                  "update-image-placeholder"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-redirect-uri-query-mismatch": {
+      "browser": [
+        {
+          "comment": "expect an immediate error page, never a redirect",
+          "match": "https://op.d3auth.test/oidc/auth*",
+          "tasks": [
+            {
+              "task": "Expect redirect uri mismatch error page",
+              "match": "https://op.d3auth.test/oidc/auth*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Something went wrong",
+                  "update-image-placeholder"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

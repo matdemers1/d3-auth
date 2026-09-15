@@ -8,6 +8,7 @@ All planning is in the Obsidian vault: `../D3 Cloud Vault/D3 Auth/`.
 - **Requirements Register.md** — REQ-001…REQ-140, the traceability spine.
 - **Architecture.md**, **Data Model.md**, **API Contract.md**, **UX Flows & Screen Inventory.md**, **Glossary.md**.
 - **ADR-001** — why `oidc-provider` on Node 22, not Python/Authlib.
+- **ADR-002** — conformance profile: test-only PKCE exemption; `SameSite=Lax` kept over POST authorization; expected-results register.
 - **Risk Register.md**, **Test Strategy.md**, **Phase Plans/** — open the phase plan before starting a phase.
 Start a session with `/start-development d3-auth`.
 
@@ -35,12 +36,12 @@ pnpm dev:down
 # docker-compose.yml has no host ports; Zima adds docker-compose.tunnel.yml, never the dev overlay
 pnpm lint && pnpm typecheck && pnpm test   # lint → unit (what CI runs)
 DATABASE_URL=postgresql://d3auth:d3auth@127.0.0.1:5432/d3auth_test pnpm --filter d3auth-server test:integration   # *_test DBs only
-./conformance/run.sh oidcc-basic-certification-test-plan
+./conformance/run.sh                  # Basic + Config OP plans; KEEP_STACK=1 to inspect https://localhost.emobix.co.uk:8443
 pnpm e2e
 ```
 
 ## Non-negotiables
-- **Never bypass the provider's validation.** No custom redirect matching, no PKCE exceptions, no `alg` other than ES256/RS256, no `alg=none`.
+- **Never bypass the provider's validation.** No custom redirect matching, no PKCE exceptions for any real client (the only exemption is ADR-002's conformance-suite clients, refused by config on anything but a `.test` issuer), no `alg` other than ES256/RS256, no `alg=none`.
 - **Login is a state machine.** Only the `complete` state calls `interactionFinished`. No boolean "MFA pending" flags.
 - **Deny by default.** No grant → `access_denied` before any interstitial, audited. This is the never-regress invariant.
 - **Link identities by `(iss, sub)`** in every SDK and example. Never by email.

@@ -1,0 +1,28 @@
+{
+  "users": [
+    {
+      "email": "conformance@d3auth.test",
+      "username": "conformance",
+      "displayName": "Conformance Tester",
+      "password": "conformance-suite-password-only"
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "conformance-1",
+      "name": "OpenID conformance suite client 1",
+      "type": "confidential_web",
+      "secret": "conformance-client-1-secret-ephemeral-stack-only",
+      "redirectUris": ["https://localhost.emobix.co.uk:8443/test/a/d3auth/callback"],
+      "postLogoutRedirectUris": ["https://localhost.emobix.co.uk:8443/test/a/d3auth/post_logout_redirect"]
+    },
+    {
+      "clientId": "conformance-2",
+      "name": "OpenID conformance suite client 2",
+      "type": "confidential_web",
+      "secret": "conformance-client-2-secret-ephemeral-stack-only",
+      "redirectUris": ["https://localhost.emobix.co.uk:8443/test/a/d3auth/callback"],
+      "postLogoutRedirectUris": ["https://localhost.emobix.co.uk:8443/test/a/d3auth/post_logout_redirect"]
+    }
+  ]
+}

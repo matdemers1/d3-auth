@@ -1,0 +1,74 @@
+[
+  {
+    "test-name": "oidcc-ensure-post-request-succeeds",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "",
+    "condition": "WebRunner",
+    "expected-result": "failure",
+    "comment": "ADR-002: the session cookie stays SameSite=Lax; oidc-provider only enables POST at the authorization endpoint with SameSite=None. No D3 consumer uses POST authorization requests."
+  },
+  {
+    "test-name": "oidcc-ensure-post-request-succeeds",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "",
+    "condition": "oidcc-ensure-post-request-succeeds",
+    "expected-result": "failure",
+    "comment": "ADR-002: the session cookie stays SameSite=Lax; oidc-provider only enables POST at the authorization endpoint with SameSite=None. No D3 consumer uses POST authorization requests."
+  },
+  {
+    "test-name": "oidcc-server-client-secret-post",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "",
+    "condition": "GetStaticClientConfiguration",
+    "expected-result": "failure",
+    "comment": "REQ-015: confidential clients authenticate with client_secret_basic only; client_secret_post is deliberately unsupported."
+  },
+  {
+    "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "",
+    "condition": "WebRunner",
+    "expected-result": "failure",
+    "comment": "Request objects are disabled and redirect_uri is always required as a query parameter (allowOmittingSingleRegisteredRedirectUri=false), so a redirect_uri only inside a request object is refused with an error page."
+  },
+  {
+    "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "",
+    "condition": "oidcc-ensure-request-object-with-redirect-uri",
+    "expected-result": "failure",
+    "comment": "Request objects are disabled and redirect_uri is always required as a query parameter (allowOmittingSingleRegisteredRedirectUri=false), so a redirect_uri only inside a request object is refused with an error page."
+  },
+  {
+    "test-name": "oidcc-scope-profile",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "",
+    "condition": "VerifyScopesReturnedInUserInfoClaims",
+    "expected-result": "warning",
+    "comment": "The profile scope returns name and preferred_username only (API Contract); given_name, family_name and the rest are not collected."
+  },
+  {
+    "test-name": "oidcc-ensure-request-with-acr-values-succeeds",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "Verify authorization endpoint response",
+    "condition": "ValidateIdTokenACRClaimAgainstAcrValuesRequest",
+    "expected-result": "warning",
+    "comment": "acr is not issued yet; per-app acr is REQ-043 (Later)."
+  },
+  {
+    "test-name": "oidcc-claims-essential",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "",
+    "condition": "EnsureUserInfoContainsName",
+    "expected-result": "warning",
+    "comment": "The claims request parameter is disabled; name is only released with the profile scope."
+  }
+]

@@ -21,6 +21,7 @@ export interface Service {
 }
 
 type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' | 'COOKIE_KEYS' | 'DEV_LOGIN_ENABLED'> &
+  Partial<Pick<Config, 'CONFORMANCE_PKCE_EXEMPT_CLIENTS'>> &
   Partial<Pick<Config, 'CONSOLE_DIST'>>;
 
 const PROVIDER_ERROR_EVENTS = [
@@ -51,7 +52,11 @@ export async function createService(config: ServiceConfig, logger: Logger): Prom
     hasher,
     cookieKeys: config.COOKIE_KEYS,
     interactionPath: (uid) => `${INTERACTION_PREFIX}/${uid}`,
+    pkceExemptClientIds: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS ?? [],
   });
+  if (config.CONFORMANCE_PKCE_EXEMPT_CLIENTS?.length) {
+    logger.warn({ clients: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS }, 'PKCE exemption active for conformance clients — test issuers only');
+  }
 
   provider.on('server_error', (ctx, err) => {
     logger.error({ err, route: ctx.oidc.route, client_id: ctx.oidc.client?.clientId }, 'provider server error');

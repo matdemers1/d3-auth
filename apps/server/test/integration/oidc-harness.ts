@@ -28,7 +28,7 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function startHarness(): Promise<Harness> {
+export async function startHarness(options: { pkceExemptClientIds?: string[] } = {}): Promise<Harness> {
   const databaseUrl = process.env.DATABASE_URL ?? '';
   const pepper = randomBytes(32);
   const seedDb = createDb(databaseUrl);
@@ -53,6 +53,7 @@ export async function startHarness(): Promise<Harness> {
     PEPPER: pepper,
     COOKIE_KEYS: [randomBytes(32).toString('base64')],
     DEV_LOGIN_ENABLED: true,
+    CONFORMANCE_PKCE_EXEMPT_CLIENTS: options.pkceExemptClientIds ?? [],
   }, logger);
   const server: Server = service.app.listen(0, '127.0.0.1');
   await once(server, 'listening');

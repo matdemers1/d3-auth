@@ -63,6 +63,19 @@ describe('config', () => {
     expect(problems({ ...validEnv(), ISSUER: 'https://op.d3auth.test', DEV_LOGIN_ENABLED: 'true' })).toEqual([]);
   });
 
+  it('allows the conformance PKCE exemption only on a .test issuer (ADR-002)', () => {
+    const exempt = { CONFORMANCE_PKCE_EXEMPT_CLIENTS: 'conformance-1, conformance-2' };
+    expect(problems({ ...validEnv(), ...exempt }).join()).toMatch(/only allowed for \*\.test issuers/);
+    expect(problems({ ...validEnv(), ISSUER: 'http://localhost:3000', INSECURE_HTTP_ISSUER: 'true', ...exempt }).join()).toMatch(
+      /only allowed for \*\.test issuers/,
+    );
+    expect(loadConfig({ ...validEnv(), ISSUER: 'https://op.d3auth.test', ...exempt }).CONFORMANCE_PKCE_EXEMPT_CLIENTS).toEqual([
+      'conformance-1',
+      'conformance-2',
+    ]);
+    expect(loadConfig(validEnv()).CONFORMANCE_PKCE_EXEMPT_CLIENTS).toEqual([]);
+  });
+
   it('boot exits non-zero with a clear message when KEK is missing', () => {
     const env = validEnv();
     delete env.KEK;

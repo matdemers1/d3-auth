@@ -63,6 +63,11 @@ const schema = z
     CONSOLE_DIST: z.string().optional(),
     /** Throwaway Phase 0 login (T-0.8). Deleted in Phase 1. */
     DEV_LOGIN_ENABLED: flag,
+    /** Conformance-suite clients only: the OpenID Basic plan does not send PKCE. Refused on real issuers. */
+    CONFORMANCE_PKCE_EXEMPT_CLIENTS: z
+      .string()
+      .optional()
+      .transform((v) => (v ?? '').split(',').map((c) => c.trim()).filter(Boolean)),
     MAIL_RELAY_URL: z.url().optional().or(z.literal('')),
     S3_ENDPOINT: z.url().optional().or(z.literal('')),
     S3_REGION: z.string().optional(),
@@ -77,6 +82,9 @@ const schema = z
     }
     if (env.DEV_LOGIN_ENABLED && !localIssuerHost(issuer.hostname)) {
       ctx.addIssue({ code: 'custom', path: ['DEV_LOGIN_ENABLED'], message: 'DEV_LOGIN_ENABLED is only allowed for localhost or *.test issuers' });
+    }
+    if (env.CONFORMANCE_PKCE_EXEMPT_CLIENTS.length > 0 && !issuer.hostname.endsWith('.test')) {
+      ctx.addIssue({ code: 'custom', path: ['CONFORMANCE_PKCE_EXEMPT_CLIENTS'], message: 'CONFORMANCE_PKCE_EXEMPT_CLIENTS is only allowed for *.test issuers' });
     }
     if (env.PEPPER.equals(env.KEK)) {
       ctx.addIssue({ code: 'custom', path: ['PEPPER'], message: 'PEPPER must not reuse the KEK' });
