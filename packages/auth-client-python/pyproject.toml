@@ -1,0 +1,6 @@
+[project]
+name = "d3auth-client"
+version = "0.0.0"
+description = "D3 Auth relying-party helper for FastAPI/Starlette (Authlib wrapper) — placeholder, see the vault SOW Phase 3"
+requires-python = ">=3.11"
+dependencies = []

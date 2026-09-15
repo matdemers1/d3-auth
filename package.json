@@ -1,0 +1,15 @@
+{
+  "name": "d3-auth",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Self-hosted OpenID Connect provider with per-app roles — D3 Cloud",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22.0.0", "pnpm": ">=9" },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "e2e": "pnpm --filter e2e test"
+  }
+}

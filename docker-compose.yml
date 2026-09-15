@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: d3auth
+      POSTGRES_PASSWORD: d3auth
+      POSTGRES_DB: d3auth
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U d3auth"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    image: ghcr.io/d3cloud/d3auth:local
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backups:/backups
+      - ./d3auth.seed.json:/app/d3auth.seed.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    # No host ports. Ingress is the Cloudflare Tunnel (cloudflared joins this network).
+    networks: [default, tunnel]
+
+networks:
+  tunnel:
+    external: true
+
+volumes:
+  pgdata:
+  backups:
