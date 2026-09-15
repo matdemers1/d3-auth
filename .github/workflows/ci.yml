@@ -1,7 +1,7 @@
 name: CI
 
-# Gated pipeline: lint → unit. Later phases append integration → conformance → e2e → images,
-# each needing the job before it.
+# Gated pipeline, cheapest first: lint → unit → integration → conformance → e2e → images (REQ-134).
+# Each job needs the one before it. Only the last will publish.
 
 on:
   push:
@@ -41,3 +41,36 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+
+  integration:
+    needs: unit
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: d3auth
+          POSTGRES_PASSWORD: d3auth
+          POSTGRES_DB: d3auth
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U d3auth -d d3auth"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://d3auth:d3auth@127.0.0.1:5432/d3auth_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Migration drift check (schema.prisma and migrations/ must agree)
+        working-directory: apps/server
+        env:
+          SHADOW_DATABASE_URL: postgresql://d3auth:d3auth@127.0.0.1:5432/shadow
+        run: |
+          PGPASSWORD=d3auth psql -h 127.0.0.1 -U d3auth -d d3auth -c 'CREATE DATABASE shadow;'
+          pnpm exec prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+      - run: pnpm --filter d3auth-server test:integration

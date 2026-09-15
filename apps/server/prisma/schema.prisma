@@ -1,0 +1,361 @@
+// D3 Auth schema. Source of truth for the shape: D3 Cloud Vault/D3 Auth/Data Model.md.
+// Two families: our tables, and oidc_payload (the oidc-provider adapter store).
+// No table assumes a single operator, so an organisation can be added later without renames (REQ-058).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserKind {
+  owner
+  admin
+  guest
+}
+
+enum UserStatus {
+  invited
+  active
+  suspended
+}
+
+enum ClientType {
+  confidential_web
+  public_native
+}
+
+enum WebauthnDeviceType {
+  single_device
+  multi_device
+}
+
+enum SigningKeyStatus {
+  next
+  current
+  retiring
+  retired
+}
+
+// ─── People and credentials ────────────────────────────────────────────────
+
+model User {
+  /// UUIDv7; this is `sub`, identical across every client (REQ-023).
+  id            String     @id @default(uuid(7)) @db.Uuid
+  email         String     @unique @db.Citext
+  emailVerified Boolean    @default(false) @map("email_verified")
+  /// preferred_username; stable and never derived from email (REQ-022).
+  username      String     @unique @db.Citext
+  displayName   String     @map("display_name")
+  kind          UserKind   @default(guest)
+  status        UserStatus @default(invited)
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  lastLoginAt   DateTime?  @map("last_login_at") @db.Timestamptz
+
+  passwordCredentials PasswordCredential[]
+  totpCredentials     TotpCredential[]
+  webauthnCredentials WebauthnCredential[]
+  sessions            Session[]
+  trustedDevices      TrustedDevice[]
+  grants              Grant[]              @relation("GrantUser")
+  grantsGiven         Grant[]              @relation("GrantGrantedBy")
+  groupMemberships    GroupMember[]
+  invitesSent         Invite[]
+
+  @@map("user")
+}
+
+model PasswordCredential {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  /// Argon2id with a pepper held outside the database.
+  argon2idHash String   @map("argon2id_hash")
+  setAt        DateTime @default(now()) @map("set_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_credential")
+}
+
+model TotpCredential {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  /// AES-256-GCM under the KEK.
+  secretEncrypted Bytes     @map("secret_encrypted")
+  /// Single-use: a code whose step is <= this value is rejected.
+  lastUsedStep    BigInt?   @map("last_used_step")
+  label           String
+  confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("totp_credential")
+}
+
+model WebauthnCredential {
+  credentialId   Bytes              @id @map("credential_id")
+  userId         String             @map("user_id") @db.Uuid
+  /// Opaque random handle per user, never the user id.
+  webauthnUserId Bytes              @map("webauthn_user_id")
+  publicKey      Bytes              @map("public_key")
+  counter        BigInt             @default(0)
+  transports     String[]
+  deviceType     WebauthnDeviceType @map("device_type")
+  backedUp       Boolean            @map("backed_up")
+  label          String
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  lastUsedAt     DateTime?          @map("last_used_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("webauthn_credential")
+}
+
+model Session {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  /// Links to the provider's Session payload.
+  oidcSessionUid String?   @unique @map("oidc_session_uid")
+  ip             String?   @db.Inet
+  userAgent      String?   @map("user_agent")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastSeenAt     DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("session")
+}
+
+model TrustedDevice {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  /// SHA-256 of the device cookie value.
+  tokenHash String    @unique @map("token_hash")
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("trusted_device")
+}
+
+model Invite {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  email         String    @db.Citext
+  invitedById   String?   @map("invited_by") @db.Uuid
+  /// SHA-256 of the invite token; the raw value is mailed or shown once.
+  tokenHash     String    @unique @map("token_hash")
+  initialGrants Json      @default("[]") @map("initial_grants")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz
+  acceptedAt    DateTime? @map("accepted_at") @db.Timestamptz
+
+  invitedBy User? @relation(fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@map("invite")
+}
+
+// ─── Apps, roles and access ────────────────────────────────────────────────
+
+model App {
+  id                     String     @id @default(uuid(7)) @db.Uuid
+  clientId               String     @unique @map("client_id")
+  name                   String
+  description            String     @default("")
+  clientType             ClientType @map("client_type")
+  /// Argon2id of the client secret; null for public clients. Shown once at creation.
+  clientSecretHash       String?    @map("client_secret_hash")
+  /// Null means the app has no back-channel logout endpoint (*slow revoke*).
+  backchannelLogoutUri   String?    @map("backchannel_logout_uri")
+  postLogoutRedirectUris String[]   @map("post_logout_redirect_uris")
+  rolesClaimName         String     @default("roles") @map("roles_claim_name")
+  enabled                Boolean    @default(true)
+  createdAt              DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  redirectUris RedirectUri[]
+  roles        Role[]
+  grants       Grant[]
+  groupGrants  GroupGrant[]
+
+  @@map("app")
+}
+
+model RedirectUri {
+  id    String @id @default(uuid(7)) @db.Uuid
+  appId String @map("app_id") @db.Uuid
+  /// Exact match only; no wildcards (REQ-005).
+  uri   String
+
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([appId, uri])
+  @@map("redirect_uri")
+}
+
+model Role {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  appId       String  @map("app_id") @db.Uuid
+  /// Stable key from the app's manifest, e.g. `admin`.
+  key         String
+  displayName String  @map("display_name")
+  description String  @default("")
+  /// Manifest order, highest first.
+  sortOrder   Int     @map("sort_order")
+  isDefault   Boolean @default(false) @map("is_default")
+
+  app             App              @relation(fields: [appId], references: [id], onDelete: Cascade)
+  grantRoles      GrantRole[]
+  groupGrantRoles GroupGrantRole[]
+
+  @@unique([appId, key])
+  @@map("role")
+}
+
+model Grant {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  appId       String   @map("app_id") @db.Uuid
+  grantedById String?  @map("granted_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user      User        @relation("GrantUser", fields: [userId], references: [id], onDelete: Cascade)
+  app       App         @relation(fields: [appId], references: [id], onDelete: Cascade)
+  grantedBy User?       @relation("GrantGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  roles     GrantRole[]
+
+  @@unique([userId, appId])
+  @@index([appId])
+  @@map("grant")
+}
+
+model GrantRole {
+  grantId String @map("grant_id") @db.Uuid
+  roleId  String @map("role_id") @db.Uuid
+
+  grant Grant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  role  Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([grantId, roleId])
+  @@index([roleId])
+  @@map("grant_role")
+}
+
+model Group {
+  id          String @id @default(uuid(7)) @db.Uuid
+  name        String @unique
+  description String @default("")
+
+  members GroupMember[]
+  grants  GroupGrant[]
+
+  @@map("group")
+}
+
+model GroupMember {
+  groupId String @map("group_id") @db.Uuid
+  userId  String @map("user_id") @db.Uuid
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([userId])
+  @@map("group_member")
+}
+
+model GroupGrant {
+  id      String @id @default(uuid(7)) @db.Uuid
+  groupId String @map("group_id") @db.Uuid
+  appId   String @map("app_id") @db.Uuid
+
+  group Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  app   App              @relation(fields: [appId], references: [id], onDelete: Cascade)
+  roles GroupGrantRole[]
+
+  @@unique([groupId, appId])
+  @@index([appId])
+  @@map("group_grant")
+}
+
+model GroupGrantRole {
+  groupGrantId String @map("group_grant_id") @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+
+  groupGrant GroupGrant @relation(fields: [groupGrantId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([groupGrantId, roleId])
+  @@index([roleId])
+  @@map("group_grant_role")
+}
+
+// ─── Keys and audit ────────────────────────────────────────────────────────
+
+model SigningKey {
+  kid                 String           @id
+  alg                 String
+  /// Private JWK, AES-256-GCM under the KEK.
+  privateJwkEncrypted Bytes            @map("private_jwk_encrypted")
+  publicJwk           Json             @map("public_jwk")
+  status              SigningKeyStatus
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  retireAfter         DateTime?        @map("retire_after") @db.Timestamptz
+
+  @@index([status])
+  @@map("signing_key")
+}
+
+/// Append-only: a trigger in migration 0001 rejects UPDATE, DELETE and TRUNCATE (REQ-111).
+/// No foreign keys, so deleting a user keeps its UUID in history.
+model AuditEvent {
+  id          BigInt   @id @default(autoincrement())
+  at          DateTime @default(now()) @db.Timestamptz
+  event       String
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  targetType  String?  @map("target_type")
+  targetId    String?  @map("target_id")
+  ip          String?  @db.Inet
+  userAgent   String?  @map("user_agent")
+  detail      Json     @default("{}")
+
+  @@index([at])
+  @@index([event, at])
+  @@index([actorUserId, at])
+  @@map("audit_event")
+}
+
+// ─── oidc-provider store ───────────────────────────────────────────────────
+
+/// Codes, tokens, grants, sessions and interactions, keyed by (kind, id) as the adapter sees them.
+model OidcPayload {
+  id         String
+  kind       String
+  payload    Json
+  grantId    String?   @map("grant_id")
+  userCode   String?   @map("user_code")
+  uid        String?
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+
+  @@id([kind, id])
+  @@index([grantId])
+  @@index([kind, uid])
+  @@index([kind, userCode])
+  @@index([expiresAt])
+  @@map("oidc_payload")
+}

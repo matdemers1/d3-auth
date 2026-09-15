@@ -12,6 +12,7 @@ export default defineConfig(
       '**/node_modules/**',
       '**/.wrangler/**',
       '**/prisma/migrations/**',
+      '**/src/generated/**',
       'packages/auth-client-python/**',
     ],
   },

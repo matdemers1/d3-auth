@@ -19,3 +19,4 @@ __pycache__/
 *.egg-info/
 playwright-report/
 test-results/
+apps/server/src/generated/
