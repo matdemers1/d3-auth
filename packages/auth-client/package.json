@@ -2,6 +2,12 @@
   "name": "@d3cloud/auth-client",
   "private": false,
   "version": "0.0.0",
+  "description": "D3 Auth relying-party SDK for TypeScript, with a React sign-in button",
+  "license": "UNLICENSED",
   "type": "module",
-  "description": "Placeholder — see D3 Cloud Vault/D3 Auth/Scope of Work.md Phase 0"
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  }
 }

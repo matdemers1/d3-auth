@@ -30,7 +30,7 @@ docs/runbooks          deploy, key-rotation, backup-restore, break-glass, upgrad
 ```bash
 pnpm install
 docker compose up -d                 # postgres + server
-pnpm -r lint && pnpm -r test         # lint → unit
+pnpm lint && pnpm typecheck && pnpm test   # lint → unit (what CI runs)
 pnpm --filter server test:integration
 ./conformance/run.sh oidcc-basic-certification-test-plan
 pnpm e2e

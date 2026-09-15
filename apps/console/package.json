@@ -2,6 +2,12 @@
   "name": "d3auth-console",
   "private": true,
   "version": "0.0.0",
+  "description": "Console SPA: /login, /account, /admin",
+  "license": "UNLICENSED",
   "type": "module",
-  "description": "Placeholder — see D3 Cloud Vault/D3 Auth/Scope of Work.md Phase 0"
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  }
 }
