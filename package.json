@@ -12,7 +12,9 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
-    "e2e": "pnpm --filter e2e test"
+    "e2e": "pnpm --filter e2e test",
+    "dev:up": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --wait",
+    "dev:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml down"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

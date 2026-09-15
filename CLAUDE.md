@@ -29,7 +29,9 @@ docs/runbooks          deploy, key-rotation, backup-restore, break-glass, upgrad
 ## Commands (once scaffolded per Phase 0)
 ```bash
 pnpm install
-docker compose up -d                 # postgres + server
+pnpm dev:up                          # postgres + server, loopback ports 5432/3000 (docker-compose.dev.yml)
+pnpm dev:down
+# docker-compose.yml has no host ports; Zima adds docker-compose.tunnel.yml, never the dev overlay
 pnpm lint && pnpm typecheck && pnpm test   # lint → unit (what CI runs)
 pnpm --filter server test:integration
 ./conformance/run.sh oidcc-basic-certification-test-plan

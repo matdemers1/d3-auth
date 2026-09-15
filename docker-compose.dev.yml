@@ -1,0 +1,9 @@
+# Dev-only overlay. The only place host ports are published, and only on loopback.
+# Never use on Zima: ingress there is the Cloudflare Tunnel (docker-compose.tunnel.yml).
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+  server:
+    ports:
+      - "127.0.0.1:3000:3000"

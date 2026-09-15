@@ -1,41 +1,46 @@
+# Base stack: postgres + server, no host ports, no ingress.
+#   Local dev:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   Zima:       docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
 services:
   postgres:
     image: postgres:16
     environment:
       POSTGRES_USER: d3auth
-      POSTGRES_PASSWORD: d3auth
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-d3auth}
       POSTGRES_DB: d3auth
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U d3auth"]
+      test: ["CMD-SHELL", "pg_isready -U d3auth -d d3auth"]
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
   server:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
     image: ghcr.io/d3cloud/d3auth:local
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://d3auth:${POSTGRES_PASSWORD:-d3auth}@postgres:5432/d3auth
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - backups:/backups
-      - ./d3auth.seed.json:/app/d3auth.seed.json:ro
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/readyz"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-    # No host ports. Ingress is the Cloudflare Tunnel (cloudflared joins this network).
-    networks: [default, tunnel]
-
-networks:
-  tunnel:
-    external: true
+      # Seed file mount returns with T-4.6; a missing bind source would be created as a directory.
+    # Healthcheck (/readyz) is defined in the image.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
 
 volumes:
   pgdata:

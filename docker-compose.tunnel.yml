@@ -1,0 +1,9 @@
+# Zima overlay: cloudflared joins the external `tunnel` network and reaches the server there.
+# No host ports. Deploy runbook lands in T-1.11.
+services:
+  server:
+    networks: [default, tunnel]
+
+networks:
+  tunnel:
+    external: true
