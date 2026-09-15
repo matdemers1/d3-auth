@@ -1,6 +1,14 @@
-# Base stack: postgres + server, no host ports, no ingress.
-#   Local dev:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Base stack: postgres + migrate + server, no host ports, no ingress.
+#   Local dev:  pnpm dev:up   (docker-compose.dev.yml)
 #   Zima:       docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+x-server-hardening: &hardening
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
 services:
   postgres:
     image: postgres:16
@@ -17,6 +25,21 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # Interim until T-1.10 moves migrations into boot behind a pre-migration dump.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    image: ghcr.io/d3cloud/d3auth:local
+    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: postgresql://d3auth:${POSTGRES_PASSWORD:-d3auth}@postgres:5432/d3auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+    <<: *hardening
+    restart: "no"
+
   server:
     build:
       context: .
@@ -28,18 +51,13 @@ services:
     environment:
       DATABASE_URL: postgresql://d3auth:${POSTGRES_PASSWORD:-d3auth}@postgres:5432/d3auth
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - backups:/backups
       # Seed file mount returns with T-4.6; a missing bind source would be created as a directory.
     # Healthcheck (/readyz) is defined in the image.
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
+    <<: *hardening
     restart: unless-stopped
 
 volumes:

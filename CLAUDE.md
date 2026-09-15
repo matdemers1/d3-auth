@@ -29,11 +29,12 @@ docs/runbooks          deploy, key-rotation, backup-restore, break-glass, upgrad
 ## Commands (once scaffolded per Phase 0)
 ```bash
 pnpm install
-pnpm dev:up                          # postgres + server, loopback ports 5432/3000 (docker-compose.dev.yml)
+pnpm dev:up                          # writes .env if missing, builds, migrates, seeds dev user + client; loopback 5432/3000
+pnpm example:flow                    # code + PKCE flow against the dev stack, prints the ID token
 pnpm dev:down
 # docker-compose.yml has no host ports; Zima adds docker-compose.tunnel.yml, never the dev overlay
 pnpm lint && pnpm typecheck && pnpm test   # lint → unit (what CI runs)
-pnpm --filter server test:integration
+DATABASE_URL=postgresql://d3auth:d3auth@127.0.0.1:5432/d3auth_test pnpm --filter d3auth-server test:integration   # *_test DBs only
 ./conformance/run.sh oidcc-basic-certification-test-plan
 pnpm e2e
 ```
@@ -48,7 +49,7 @@ pnpm e2e
 - **Every mutation and auth event writes an audit row.** Logs never contain tokens, secrets, passwords or codes.
 - **Anti-features**: no dynamic client registration, no WebFinger, no wildcard redirect URIs, no telemetry, no social login, no public signup.
 - **Throttle before hashing**: per-account 4 free → doubling to 10 min (soft, never lockout); per-IP (`CF-Connecting-IP`) 20 free → doubling.
-- **Cookies**: `__Host-` prefix, `Secure; HttpOnly; SameSite=Lax; Path=/` — set the provider cookie path to `/`, not the mount path.
+- **Cookies**: `__Host-` prefix, `Secure; HttpOnly; SameSite=Lax; Path=/` — set the provider cookie path to `/`, not the mount path. One exception: the provider pins the interaction *resume* cookie's path to the resume URL, so it is `__Secure-d3auth_resume`.
 - **No host ports.** Cloudflare Tunnel only; `provider.proxy = true`.
 - **Deploy is manual** pull-and-restart on Zima from GHCR; migrations run on boot after a pre-migration dump.
 - **No time estimates** anywhere. T-shirt sizes only.

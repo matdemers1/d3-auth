@@ -1,5 +1,5 @@
-import { createApp } from './app.js';
 import { ConfigError, loadConfig, type Config } from './config.js';
+import { createService } from './service.js';
 
 // Structured logging replaces these console calls in T-0.10.
 const log = (msg: string, fields: Record<string, unknown> = {}): void => {
@@ -19,16 +19,20 @@ function readConfig(): Config {
 }
 
 const config = readConfig();
+const service = await createService(config);
+for (const skipped of service.skippedClients) {
+  console.log(JSON.stringify({ level: 'warn', msg: 'app not loaded', ...skipped }));
+}
 
-const server = createApp().listen(config.PORT, (err?: Error) => {
+const server = service.app.listen(config.PORT, (err?: Error) => {
   if (err) throw err;
-  log('listening', { port: config.PORT });
+  log('listening', { port: config.PORT, issuer: config.ISSUER, devLogin: config.DEV_LOGIN_ENABLED });
 });
 
 function shutdown(signal: NodeJS.Signals): void {
   log('shutting down', { signal });
   server.close((err) => {
-    process.exit(err ? 1 : 0);
+    void service.close().finally(() => process.exit(err ? 1 : 0));
   });
   setTimeout(() => process.exit(1), 10_000).unref();
 }

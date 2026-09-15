@@ -17,7 +17,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --offline --frozen-lockfile --filter d3auth-server...
 RUN pnpm --filter d3auth-server build
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter d3auth-server deploy --prod --ignore-scripts /out
+    pnpm --filter d3auth-server deploy --prod /out
 
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production PORT=3000

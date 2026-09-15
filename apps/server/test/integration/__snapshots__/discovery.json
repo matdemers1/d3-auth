@@ -1,0 +1,58 @@
+{
+  "authorization_endpoint": "https://op.d3auth.test/oidc/auth",
+  "claims_parameter_supported": false,
+  "claims_supported": [
+    "sub",
+    "name",
+    "preferred_username",
+    "email",
+    "email_verified",
+    "sid",
+    "auth_time",
+    "iss"
+  ],
+  "code_challenge_methods_supported": [
+    "S256"
+  ],
+  "end_session_endpoint": "https://op.d3auth.test/oidc/session/end",
+  "grant_types_supported": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "issuer": "https://op.d3auth.test",
+  "jwks_uri": "https://op.d3auth.test/oidc/jwks",
+  "authorization_response_iss_parameter_supported": true,
+  "response_modes_supported": [
+    "form_post",
+    "fragment",
+    "query"
+  ],
+  "response_types_supported": [
+    "code"
+  ],
+  "scopes_supported": [
+    "openid",
+    "offline_access",
+    "profile",
+    "email"
+  ],
+  "subject_types_supported": [
+    "public"
+  ],
+  "token_endpoint_auth_methods_supported": [
+    "client_secret_basic",
+    "none"
+  ],
+  "token_endpoint": "https://op.d3auth.test/oidc/token",
+  "id_token_signing_alg_values_supported": [
+    "ES256",
+    "RS256"
+  ],
+  "request_uri_parameter_supported": false,
+  "userinfo_endpoint": "https://op.d3auth.test/oidc/me",
+  "introspection_endpoint": "https://op.d3auth.test/oidc/token/introspection",
+  "revocation_endpoint": "https://op.d3auth.test/oidc/token/revocation",
+  "claim_types_supported": [
+    "normal"
+  ]
+}
