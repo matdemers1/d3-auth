@@ -6,6 +6,7 @@ import * as client from 'openid-client';
 import { applyDevSeed } from '../../src/cli/dev-seed.js';
 import { createDb } from '../../src/db.js';
 import { createSecretHasher } from '../../src/security/hash.js';
+import { createLogger, type Logger } from '../../src/log.js';
 import { createService, type Service } from '../../src/service.js';
 
 // Runs the real service on a loopback port while every party believes it is talking to
@@ -20,6 +21,8 @@ export const NATIVE_CLIENT = { clientId: 'native-app' };
 
 export interface Harness {
   service: Service;
+  /** Every log line the service wrote during the run. */
+  logLines: string[];
   port: number;
   opFetch: typeof fetch;
   close(): Promise<void>;
@@ -41,6 +44,8 @@ export async function startHarness(): Promise<Harness> {
   });
   await seedDb.$disconnect();
 
+  const logLines: string[] = [];
+  const logger: Logger = createLogger({ level: 'debug', destination: { write: (line: string) => { logLines.push(line); } } });
   const service = await createService({
     ISSUER,
     DATABASE_URL: databaseUrl,
@@ -48,7 +53,7 @@ export async function startHarness(): Promise<Harness> {
     PEPPER: pepper,
     COOKIE_KEYS: [randomBytes(32).toString('base64')],
     DEV_LOGIN_ENABLED: true,
-  });
+  }, logger);
   const server: Server = service.app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address() as AddressInfo;
@@ -71,6 +76,7 @@ export async function startHarness(): Promise<Harness> {
 
   return {
     service,
+    logLines,
     port,
     opFetch,
     async close() {

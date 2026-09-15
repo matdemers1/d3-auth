@@ -1,5 +1,6 @@
+import net from 'node:net';
 import * as client from 'openid-client';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { authorize, Browser, discover, ISSUER, NATIVE_CALLBACK, NATIVE_CLIENT, RP_CALLBACK, startHarness, USER, WEB_CLIENT, webClientConfig, type Harness } from './oidc-harness.js';
 
 let h: Harness;
@@ -265,5 +266,58 @@ describe('client authentication (REQ-015, REQ-014)', () => {
     for (const [k, v] of Object.entries({ client_id: WEB_CLIENT.clientId, response_type: 'token', scope: 'openid', redirect_uri: RP_CALLBACK })) url.searchParams.set(k, v);
     const { leftTo } = await new Browser(h.opFetch).navigate(url.toString());
     expect(leftTo?.searchParams.get('error') ?? leftTo?.hash).toMatch(/unsupported_response_type/);
+  });
+});
+
+describe('logs and egress (REQ-112, REQ-139)', () => {
+  it('a full sign-in, refresh and userinfo never write a credential to the logs', async () => {
+    const before = h.logLines.length;
+    const { callback, verifier, state, nonce } = await authorize(h, config);
+    const tokens = await client.authorizationCodeGrant(config, callback, { pkceCodeVerifier: verifier, expectedState: state, expectedNonce: nonce });
+    const refreshed = await client.refreshTokenGrant(config, tokens.refresh_token ?? '');
+    await client.fetchUserInfo(config, refreshed.access_token, tokens.claims()?.sub ?? '');
+
+    const output = h.logLines.slice(before).join('');
+    expect(output).toContain('"msg":"request"');
+    const secrets = [
+      callback.searchParams.get('code') ?? '',
+      tokens.access_token,
+      tokens.refresh_token ?? '',
+      tokens.id_token ?? '',
+      refreshed.access_token,
+      refreshed.refresh_token ?? '',
+      verifier,
+      state,
+      nonce,
+      WEB_CLIENT.secret,
+      USER.password,
+    ];
+    for (const secret of secrets) {
+      expect(secret.length).toBeGreaterThan(8);
+      expect(output).not.toContain(secret);
+    }
+  });
+
+  it('makes no outbound connection except to the database', async () => {
+    const dbPort = String(new URL(process.env.DATABASE_URL ?? '').port || 5432);
+    // Every TCP client (pg, undici, http) ends in Socket#connect, so this sees all egress.
+    const connect = vi.spyOn(net.Socket.prototype, 'connect');
+    let calls: unknown[][];
+    try {
+      // Force fresh pool connections so the database path is exercised, not only reused sockets.
+      await h.service.db.$disconnect();
+      const { callback, verifier, state, nonce } = await authorize(h, config);
+      await client.authorizationCodeGrant(config, callback, { pkceCodeVerifier: verifier, expectedState: state, expectedNonce: nonce });
+    } finally {
+      calls = [...connect.mock.calls];
+      connect.mockRestore();
+    }
+    const ports = calls.map((args: unknown[]) => {
+      const [first] = args;
+      const port = typeof first === 'object' && first !== null && 'port' in first ? first.port : first;
+      return typeof port === 'number' || typeof port === 'string' ? String(port) : 'unknown';
+    });
+    expect(ports).toContain(dbPort);
+    expect(ports.filter((port) => port !== dbPort && port !== String(h.port))).toEqual([]);
   });
 });
