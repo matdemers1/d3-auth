@@ -54,10 +54,12 @@ export function createApp(options: AppOptions = {}): Express {
   // bodies, so no body parser runs globally before it.
   if (options.provider) app.use(options.provider.callback());
 
-  const onError: ErrorRequestHandler = (err, _req, res, _next) => {
-    options.logger?.error({ err, requestId: res.locals.requestId as string | undefined }, 'unhandled error');
+  const onError: ErrorRequestHandler = (err: { status?: unknown; statusCode?: unknown }, _req, res, _next) => {
+    const raw = err.status ?? err.statusCode;
+    const status = typeof raw === 'number' && raw >= 400 && raw < 500 ? raw : 500;
+    if (status === 500) options.logger?.error({ err, requestId: res.locals.requestId as string | undefined }, 'unhandled error');
     if (res.headersSent) return;
-    res.status(500).type('text').send('Something went wrong.');
+    res.status(status).type('text').send(status === 404 ? 'Not found.' : status === 500 ? 'Something went wrong.' : 'Bad request.');
   };
   app.use(onError);
 

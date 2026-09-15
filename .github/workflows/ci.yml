@@ -41,6 +41,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+      - name: Console build and interaction bundle budget (REQ-077)
+        run: pnpm --filter d3auth-console build
 
   integration:
     needs: unit

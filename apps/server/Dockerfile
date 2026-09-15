@@ -14,16 +14,17 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm fetch --frozen-lock
 
 COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --offline --frozen-lockfile --filter d3auth-server...
-RUN pnpm --filter d3auth-server build
+    pnpm install --offline --frozen-lockfile --filter d3auth-server... --filter d3auth-console...
+RUN pnpm --filter d3auth-server build && pnpm --filter d3auth-console build
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm --filter d3auth-server deploy --prod /out
 
 FROM ${NODE_IMAGE} AS runtime
-ENV NODE_ENV=production PORT=3000
+ENV NODE_ENV=production PORT=3000 CONSOLE_DIST=/app/public
 WORKDIR /app
 # Code stays root-owned so the service user cannot modify it; only /backups is writable.
 COPY --from=build /out ./
+COPY --from=build /repo/apps/console/dist ./public
 RUN mkdir -p /backups && chown node:node /backups
 USER node
 EXPOSE 3000

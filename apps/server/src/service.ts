@@ -10,6 +10,7 @@ import { loadClients } from './oidc/clients.js';
 import { loadSigningKeys } from './oidc/keys.js';
 import { createProvider } from './oidc/provider.js';
 import { createSecretHasher } from './security/hash.js';
+import { consoleBuilt, consoleRouter, defaultConsoleDist } from './static.js';
 import { createKekCrypto } from './security/kek.js';
 
 export interface Service {
@@ -19,7 +20,8 @@ export interface Service {
   close(): Promise<void>;
 }
 
-type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' | 'COOKIE_KEYS' | 'DEV_LOGIN_ENABLED'>;
+type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' | 'COOKIE_KEYS' | 'DEV_LOGIN_ENABLED'> &
+  Partial<Pick<Config, 'CONSOLE_DIST'>>;
 
 const PROVIDER_ERROR_EVENTS = [
   'authorization.error',
@@ -66,7 +68,10 @@ export async function createService(config: ServiceConfig, logger: Logger): Prom
   for (const skipped of clients.skipped) logger.warn(skipped, 'app not loaded');
   logger.info({ kids: keys.map((k) => k.kid), clients: clients.metadata.length }, 'provider ready');
 
-  const routers = config.DEV_LOGIN_ENABLED ? [devLoginRouter(provider, db, hasher)] : [];
+  const consoleDist = config.CONSOLE_DIST ?? defaultConsoleDist();
+  if (!consoleBuilt(consoleDist)) logger.warn({ consoleDist }, 'console build not found; /login, /account and /admin answer 503');
+
+  const routers = [consoleRouter(consoleDist), ...(config.DEV_LOGIN_ENABLED ? [devLoginRouter(provider, db, hasher)] : [])];
   const app = createApp({ provider, routers, readiness: databaseReadiness(db), logger });
 
   return {
