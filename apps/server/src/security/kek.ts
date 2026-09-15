@@ -23,7 +23,8 @@ export class KekError extends Error {
 
 export interface KekCrypto {
   readonly keyId: string;
-  encrypt(plaintext: Uint8Array, context: string): Buffer;
+  /** Returns a fresh ArrayBuffer-backed array, the shape Prisma `Bytes` columns take. */
+  encrypt(plaintext: Uint8Array, context: string): Uint8Array<ArrayBuffer>;
   decrypt(sealed: Uint8Array, context: string): Buffer;
 }
 
@@ -40,7 +41,7 @@ export function createKekCrypto(kek: Buffer): KekCrypto {
       const cipher = createCipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_LENGTH });
       cipher.setAAD(Buffer.from(context, 'utf8'));
       const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-      return Buffer.concat([Buffer.from([VERSION]), keyId, iv, cipher.getAuthTag(), ciphertext]);
+      return Uint8Array.from(Buffer.concat([Buffer.from([VERSION]), keyId, iv, cipher.getAuthTag(), ciphertext]));
     },
 
     decrypt(sealed, context) {

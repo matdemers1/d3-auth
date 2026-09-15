@@ -12,8 +12,8 @@ describe('KEK crypto (REQ-117)', () => {
   });
 
   it('never stores the plaintext and uses a fresh IV each time', () => {
-    const a = kek.encrypt(secret, 'ctx');
-    const b = kek.encrypt(secret, 'ctx');
+    const a = Buffer.from(kek.encrypt(secret, 'ctx'));
+    const b = Buffer.from(kek.encrypt(secret, 'ctx'));
     expect(a.includes(secret)).toBe(false);
     expect(a.equals(b)).toBe(false);
   });
@@ -24,7 +24,7 @@ describe('KEK crypto (REQ-117)', () => {
   });
 
   it('refuses a tampered ciphertext', () => {
-    const sealed = kek.encrypt(secret, 'ctx');
+    const sealed = Buffer.from(kek.encrypt(secret, 'ctx'));
     sealed.writeUInt8(sealed.readUInt8(sealed.length - 1) ^ 0x01, sealed.length - 1);
     expect(() => kek.decrypt(sealed, 'ctx')).toThrow(/failed authentication/);
   });
