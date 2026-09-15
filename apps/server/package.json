@@ -25,6 +25,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "argon2": "^0.45.1",
     "express": "^5.2.1",
     "oidc-provider": "^9.12.2",
     "pino": "^10.3.1",

@@ -1,14 +1,28 @@
 import { createApp } from './app.js';
+import { ConfigError, loadConfig, type Config } from './config.js';
 
-// Structured logging and zod-validated config replace these in T-0.10 and T-0.4.
-const port = Number(process.env.PORT ?? 3000);
+// Structured logging replaces these console calls in T-0.10.
 const log = (msg: string, fields: Record<string, unknown> = {}): void => {
   console.log(JSON.stringify({ level: 'info', msg, ...fields }));
 };
 
-const server = createApp().listen(port, (err?: Error) => {
+function readConfig(): Config {
+  try {
+    return loadConfig();
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      console.error(err.message);
+      process.exit(1);
+    }
+    throw err;
+  }
+}
+
+const config = readConfig();
+
+const server = createApp().listen(config.PORT, (err?: Error) => {
   if (err) throw err;
-  log('listening', { port });
+  log('listening', { port: config.PORT });
 });
 
 function shutdown(signal: NodeJS.Signals): void {
