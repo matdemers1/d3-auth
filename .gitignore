@@ -22,5 +22,5 @@ test-results/
 apps/server/src/generated/
 e2e/playwright-report/
 e2e/test-results/
-conformance/.op-tls-root.crt
+conformance/.op-tls/
 .semgrep-results.json

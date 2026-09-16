@@ -44,9 +44,9 @@ trap cleanup EXIT
 
 # Always start from nothing: keys from an earlier run are sealed under a different random KEK.
 compose down -v --remove-orphans > /dev/null 2>&1 || true
-# A file must exist before it is bind-mounted, or Docker makes a directory. The real certificate is
-# copied in once the TLS bridge has minted its CA.
-: > "$HERE/.op-tls-root.crt"
+# The bridge's CA is copied into this directory once Caddy has minted it; the server mounts the
+# directory, so the file it reads is whatever is there when it next starts.
+rm -rf "$HERE/.op-tls" && mkdir -p "$HERE/.op-tls"
 
 echo "==> Building"
 compose build server
@@ -60,7 +60,7 @@ echo "==> Starting the TLS proxy and the suite"
 compose up -d --wait op-tls mongodb suite suite-nginx
 echo "==> Teaching the provider to trust the bridge's CA (back-channel logout)"
 for attempt in $(seq 1 30); do
-  compose cp op-tls:/data/caddy/pki/authorities/local/root.crt "$HERE/.op-tls-root.crt" > /dev/null 2>&1 && [ -s "$HERE/.op-tls-root.crt" ] && break
+  compose cp op-tls:/data/caddy/pki/authorities/local/root.crt "$HERE/.op-tls/root.crt" > /dev/null 2>&1 && [ -s "$HERE/.op-tls/root.crt" ] && break
   [ "$attempt" = "30" ] && { echo "The TLS bridge never minted its CA" >&2; exit 1; }
   sleep 1
 done

@@ -21,10 +21,12 @@ services:
       COOKIE_KEYS: ${CONFORMANCE_COOKIE_KEYS:?run via conformance/run.sh}
       LOG_LEVEL: debug
       # Trust the bridge's internal CA, so back-channel logout tokens reach the suite over TLS.
-      NODE_EXTRA_CA_CERTS: /conformance/op-tls-root.crt
+      NODE_EXTRA_CA_CERTS: /conformance/op-tls/root.crt
     volumes:
       - ./conformance/seed.json:/conformance/seed.json:ro
-      - ./conformance/.op-tls-root.crt:/conformance/op-tls-root.crt:ro
+      # A directory, not the file: replacing a bind-mounted file gives it a new inode the container
+      # never sees on Linux, which is exactly what happened in CI and not on a Mac.
+      - ./conformance/.op-tls:/conformance/op-tls:ro
     networks:
       default:
         aliases: [d3auth-server]
