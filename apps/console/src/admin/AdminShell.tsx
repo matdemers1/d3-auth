@@ -1,5 +1,6 @@
 import { AppDetail } from './AppDetail';
 import { Apps } from './Apps';
+import { Audit } from './Audit';
 import { GroupDetail } from './GroupDetail';
 import { Groups } from './Groups';
 import { Keys } from './Keys';
@@ -17,6 +18,7 @@ const SECTIONS = [
   { path: 'groups', label: 'Groups' },
   { path: 'apps', label: 'Apps' },
   { path: 'keys', label: 'Keys' },
+  { path: 'audit', label: 'Audit' },
 ] as const;
 
 function Nav({ current }: { current: string }) {
@@ -42,7 +44,7 @@ export default function AdminShell() {
 
   return (
     <>
-      <Nav current={section === 'apps' || section === 'groups' || section === 'keys' ? section : 'people'} />
+      <Nav current={['apps', 'groups', 'keys', 'audit'].includes(section) ? section : 'people'} />
       {section === 'apps' ? (
         id === 'new' ? (
           <RegisterApp />
@@ -53,6 +55,8 @@ export default function AdminShell() {
         )
       ) : section === 'keys' ? (
         <Keys />
+      ) : section === 'audit' ? (
+        <Audit />
       ) : section === 'groups' ? (
         id ? (
           <GroupDetail id={id} />

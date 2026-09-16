@@ -8,6 +8,7 @@ import type { SessionControl } from '../security/sessions.js';
 import type { TrustedDevices } from '../security/trusted-device.js';
 import { GrantError, type Grants } from '../authz/grants.js';
 import { AppError, type Apps } from './apps.js';
+import { knownEvents, searchAudit, toCsv, type AuditFilter } from './audit-query.js';
 import { GroupError, type Groups } from './groups.js';
 import type { Invites } from './invites.js';
 import { parseManifest, type Manifest } from './manifest.js';
@@ -703,6 +704,67 @@ export function adminRouter({ db, apps, grants, groups, operatorDisplayName, aut
       return { removed: true };
     }),
   );
+
+  // The audit trail (C-8, REQ-069). Admin-level reading; the table itself refuses writes.
+  const filterFrom = (req: Request): AuditFilter => {
+    const query = req.query as Record<string, string | undefined>;
+    const date = (value: string | undefined): Date | undefined => {
+      if (!value) return undefined;
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+    };
+    return {
+      actorUserId: query.actor,
+      targetId: query.target,
+      event: query.event,
+      from: date(query.from),
+      to: date(query.to),
+      limit: query.limit ? Number(query.limit) : undefined,
+      cursor: query.cursor,
+    };
+  };
+
+  router.get(`${ADMIN_API}/audit`, auth.requireAdmin, (req, res, next) => {
+    void (async () => {
+      try {
+        const page = await searchAudit(db, filterFrom(req));
+        res.set('Cache-Control', 'no-store').json(page);
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  router.get(`${ADMIN_API}/audit/events`, auth.requireAdmin, (_req, res, next) => {
+    void (async () => {
+      try {
+        res.set('Cache-Control', 'no-store').json({ events: await knownEvents(db) });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  /** The same search, as a file. Same filters, so what you see is what you get. */
+  router.get(`${ADMIN_API}/audit/export`, auth.requireAdmin, (req, res, next) => {
+    void (async () => {
+      try {
+        const filter = { ...filterFrom(req), limit: 200 };
+        const page = await searchAudit(db, filter);
+        const stamp = new Date().toISOString().slice(0, 10);
+        if ((req.query as { format?: string }).format === 'json') {
+          res.set('Content-Disposition', `attachment; filename="audit-${stamp}.json"`).json(page.events);
+          return;
+        }
+        res
+          .type('text/csv')
+          .set('Content-Disposition', `attachment; filename="audit-${stamp}.csv"`)
+          .send(toCsv(page));
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
 
   return router;
 }
