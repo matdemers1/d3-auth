@@ -58,11 +58,6 @@ describe('config', () => {
     ).toMatch(/only allowed for localhost/);
   });
 
-  it('refuses the dev login on a real issuer', () => {
-    expect(problems({ ...validEnv(), DEV_LOGIN_ENABLED: 'true' }).join()).toMatch(/DEV_LOGIN_ENABLED/);
-    expect(problems({ ...validEnv(), ISSUER: 'https://op.d3auth.test', DEV_LOGIN_ENABLED: 'true' })).toEqual([]);
-  });
-
   it('allows the conformance PKCE exemption only on a .test issuer (ADR-002)', () => {
     const exempt = { CONFORMANCE_PKCE_EXEMPT_CLIENTS: 'conformance-1, conformance-2' };
     expect(problems({ ...validEnv(), ...exempt }).join()).toMatch(/only allowed for \*\.test issuers/);

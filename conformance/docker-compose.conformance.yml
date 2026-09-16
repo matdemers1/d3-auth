@@ -14,7 +14,6 @@ services:
     environment:
       ISSUER: https://op.d3auth.test
       INSECURE_HTTP_ISSUER: "false"
-      DEV_LOGIN_ENABLED: "true"
       # ADR-002: the Basic plan does not send PKCE; only these suite clients skip it, only on a .test issuer.
       CONFORMANCE_PKCE_EXEMPT_CLIENTS: conformance-1,conformance-2
       KEK: ${CONFORMANCE_KEK:?run via conformance/run.sh}

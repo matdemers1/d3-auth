@@ -1,28 +1,33 @@
 import type { Express } from 'express';
 import type Provider from 'oidc-provider';
 import { createApp } from './app.js';
+import { createAuditWriter } from './audit/writer.js';
 import type { Config } from './config.js';
 import { createDb, type Db } from './db.js';
-import { databaseReadiness } from './health.js';
+import { cached, databaseReadiness, type ReadinessProbe } from './health.js';
+import { interactionRouter, loginPath } from './interaction/routes.js';
+import { recordSessions } from './interaction/sessions.js';
 import type { Logger } from './log.js';
-import { devLoginRouter, INTERACTION_PREFIX } from './interaction/dev-login.js';
+import { createAdapterFactory } from './oidc/adapter.js';
 import { loadClients } from './oidc/clients.js';
 import { loadSigningKeys } from './oidc/keys.js';
 import { createProvider } from './oidc/provider.js';
 import { createSecretHasher } from './security/hash.js';
-import { consoleBuilt, consoleRouter, defaultConsoleDist } from './static.js';
 import { createKekCrypto } from './security/kek.js';
+import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
+import { createThrottle } from './security/throttle.js';
+import { consoleBuilt, consoleRouter, defaultConsoleDist, unavailableGate } from './static.js';
 
 export interface Service {
   app: Express;
   db: Db;
   provider: Provider;
+  readiness: ReadinessProbe;
   close(): Promise<void>;
 }
 
-type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' | 'COOKIE_KEYS' | 'DEV_LOGIN_ENABLED'> &
-  Partial<Pick<Config, 'CONFORMANCE_PKCE_EXEMPT_CLIENTS'>> &
-  Partial<Pick<Config, 'CONSOLE_DIST'>>;
+type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' | 'COOKIE_KEYS'> &
+  Partial<Pick<Config, 'CONSOLE_DIST' | 'CONFORMANCE_PKCE_EXEMPT_CLIENTS' | 'OPERATOR_DISPLAY_NAME'>>;
 
 const PROVIDER_ERROR_EVENTS = [
   'authorization.error',
@@ -36,10 +41,20 @@ const PROVIDER_ERROR_EVENTS = [
   'backchannel.error',
 ] as const;
 
-export async function createService(config: ServiceConfig, logger: Logger): Promise<Service> {
+/** Seams the tests use to watch or stub a dependency. Production passes nothing. */
+export interface ServiceOverrides {
+  passwords?: (real: PasswordVerifier) => PasswordVerifier;
+}
+
+export async function createService(config: ServiceConfig, logger: Logger, overrides: ServiceOverrides = {}): Promise<Service> {
   const db = createDb(config.DATABASE_URL);
   const kek = createKekCrypto(config.KEK);
   const hasher = createSecretHasher(config.PEPPER);
+  const realPasswords = await createPasswordVerifier(hasher);
+  const passwords = overrides.passwords ? overrides.passwords(realPasswords) : realPasswords;
+  const throttle = createThrottle(db);
+  const audit = createAuditWriter(db, logger);
+  const adapterFactory = createAdapterFactory(db);
 
   const keys = await loadSigningKeys(db, kek);
   const clients = await loadClients(db);
@@ -51,12 +66,11 @@ export async function createService(config: ServiceConfig, logger: Logger): Prom
     clientSecretHashes: clients.secretHashes,
     hasher,
     cookieKeys: config.COOKIE_KEYS,
-    interactionPath: (uid) => `${INTERACTION_PREFIX}/${uid}`,
+    interactionPath: loginPath,
     pkceExemptClientIds: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS ?? [],
+    operatorDisplayName: config.OPERATOR_DISPLAY_NAME ?? 'D3 Auth',
+    secureCookies: config.ISSUER.startsWith('https://'),
   });
-  if (config.CONFORMANCE_PKCE_EXEMPT_CLIENTS?.length) {
-    logger.warn({ clients: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS }, 'PKCE exemption active for conformance clients — test issuers only');
-  }
 
   provider.on('server_error', (ctx, err) => {
     logger.error({ err, route: ctx.oidc.route, client_id: ctx.oidc.client?.clientId }, 'provider server error');
@@ -70,19 +84,43 @@ export async function createService(config: ServiceConfig, logger: Logger): Prom
       );
     });
   }
+  recordSessions(provider, db, audit, logger);
+  if (config.CONFORMANCE_PKCE_EXEMPT_CLIENTS?.length) {
+    logger.warn({ clients: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS }, 'PKCE exemption active for conformance clients — test issuers only');
+  }
   for (const skipped of clients.skipped) logger.warn(skipped, 'app not loaded');
   logger.info({ kids: keys.map((k) => k.kid), clients: clients.metadata.length }, 'provider ready');
 
   const consoleDist = config.CONSOLE_DIST ?? defaultConsoleDist();
   if (!consoleBuilt(consoleDist)) logger.warn({ consoleDist }, 'console build not found; /login, /account and /admin answer 503');
 
-  const routers = [consoleRouter(consoleDist), ...(config.DEV_LOGIN_ENABLED ? [devLoginRouter(provider, db, hasher)] : [])];
-  const app = createApp({ provider, routers, readiness: databaseReadiness(db), logger });
+  const readiness = cached(databaseReadiness(db));
+  const app = createApp({
+    provider,
+    routers: [
+      interactionRouter({
+        provider,
+        adapterFactory,
+        db,
+        passwords,
+        throttle,
+        audit,
+        logger,
+        operatorDisplayName: config.OPERATOR_DISPLAY_NAME ?? 'the operator',
+      }),
+      consoleRouter(consoleDist),
+    ],
+    beforeRouters: [unavailableGate(readiness)],
+    readiness,
+    logger,
+    hsts: config.ISSUER.startsWith('https://'),
+  });
 
   return {
     app,
     db,
     provider,
+    readiness,
     close: () => db.$disconnect(),
   };
 }

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
-import { consoleRouter } from '../../src/static.js';
+import { consoleRouter, unavailableGate } from '../../src/static.js';
 
 describe('console statics (REQ-061)', () => {
   let dist: string;
@@ -50,6 +50,23 @@ describe('console statics (REQ-061)', () => {
     expect((await fetch(`${base}/assets/..%2Fsecret.txt`)).status).not.toBe(200);
     expect((await fetch(`${base}/secret.txt`)).status).toBe(404);
     expect((await fetch(`${base}/loginx`)).status).toBe(404);
+  });
+
+  it('serves the static unavailable page when readiness is failing (REQ-084)', async () => {
+    // The probe stands in for a database that is down; the page must render without one.
+    const failing = () => Promise.resolve({ database: false, signingKeys: false, migrations: false });
+    const s = createApp({ beforeRouters: [unavailableGate(failing)], routers: [consoleRouter(dist)] }).listen(0, '127.0.0.1');
+    await once(s, 'listening');
+    try {
+      const res = await fetch(`http://127.0.0.1:${(s.address() as AddressInfo).port}/login/abc`);
+      expect(res.status).toBe(503);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      const html = await res.text();
+      expect(html).toMatch(/Sign-in is unavailable/);
+      expect(html).not.toMatch(/<script/i);
+    } finally {
+      s.close();
+    }
   });
 
   it('answers 503 on console routes when the build is missing', async () => {

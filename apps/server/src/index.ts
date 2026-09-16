@@ -19,7 +19,6 @@ const config = readConfig();
 const logger = createLogger({ level: config.LOG_LEVEL });
 
 if (config.INSECURE_HTTP_ISSUER) logger.warn({ issuer: config.ISSUER }, 'running with an http issuer — local testing only');
-if (config.DEV_LOGIN_ENABLED) logger.warn('development login is enabled — local testing only');
 
 const service = await createService(config, logger).catch((err: unknown) => {
   logger.fatal({ err }, 'failed to start');

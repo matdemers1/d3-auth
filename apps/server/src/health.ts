@@ -56,6 +56,22 @@ export function databaseReadiness(db: Db, migrations: string[] = shippedMigratio
   };
 }
 
+/** Readiness is checked on a short cache: the gate runs on every page request. */
+export function cached(probe: ReadinessProbe, ttlMs = 5_000): ReadinessProbe {
+  let at = 0;
+  let last: Promise<ReadinessChecks> | undefined;
+  return () => {
+    const now = Date.now();
+    if (!last || now - at > ttlMs) {
+      at = now;
+      last = probe();
+    }
+    return last;
+  };
+}
+
+export const allPass = (checks: ReadinessChecks): boolean => Object.values(checks).every(Boolean);
+
 export function healthRouter(readiness?: ReadinessProbe): Router {
   const router = Router();
 
@@ -70,7 +86,7 @@ export function healthRouter(readiness?: ReadinessProbe): Router {
 
   router.get('/readyz', async (_req, res) => {
     const checks = readiness ? await readiness() : {};
-    const ready = Object.values(checks).every(Boolean);
+    const ready = allPass(checks);
     res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'unavailable', checks });
   });
 

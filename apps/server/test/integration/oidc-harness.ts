@@ -21,6 +21,8 @@ export const NATIVE_CLIENT = { clientId: 'native-app' };
 
 export interface Harness {
   service: Service;
+  /** Counts Argon2id verifications, so a test can prove throttling happens before the work. */
+  passwordVerifications: { count: number };
   /** Every log line the service wrote during the run. */
   logLines: string[];
   port: number;
@@ -29,6 +31,7 @@ export interface Harness {
 }
 
 export async function startHarness(options: { pkceExemptClientIds?: string[] } = {}): Promise<Harness> {
+  const passwordVerifications = { count: 0 };
   const databaseUrl = process.env.DATABASE_URL ?? '';
   const pepper = randomBytes(32);
   const seedDb = createDb(databaseUrl);
@@ -52,9 +55,16 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
     KEK: randomBytes(32),
     PEPPER: pepper,
     COOKIE_KEYS: [randomBytes(32).toString('base64')],
-    DEV_LOGIN_ENABLED: true,
     CONFORMANCE_PKCE_EXEMPT_CLIENTS: options.pkceExemptClientIds ?? [],
-  }, logger);
+    OPERATOR_DISPLAY_NAME: 'Matthew',
+  }, logger, {
+    passwords: (real) => ({
+      verify: (hash, password) => {
+        passwordVerifications.count += 1;
+        return real.verify(hash, password);
+      },
+    }),
+  });
   const server: Server = service.app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address() as AddressInfo;
@@ -77,6 +87,7 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
 
   return {
     service,
+    passwordVerifications,
     logLines,
     port,
     opFetch,
@@ -91,6 +102,8 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
 export class Browser {
   readonly cookies = new Map<string, string>();
   readonly setCookieHeaders: string[] = [];
+  /** The last URL this browser was sent to, so login() can find the interaction uid. */
+  lastUrl = ISSUER;
 
   constructor(private readonly opFetch: typeof fetch) {}
 
@@ -121,23 +134,60 @@ export class Browser {
   async navigate(url: string, init: { form?: Record<string, string> } = {}): Promise<{ response: Response; leftTo?: URL }> {
     let res = await this.request(url, init);
     let current = new URL(url);
+    this.lastUrl = url;
     for (let hops = 0; hops < 10; hops++) {
       const location = res.headers.get('location');
       if (res.status < 300 || res.status >= 400 || !location) return { response: res };
       const next = new URL(location, current);
       if (next.origin !== ISSUER) return { response: res, leftTo: next };
       current = next;
+      this.lastUrl = next.toString();
       res = await this.request(next.toString());
     }
     throw new Error('too many redirects');
   }
 
-  /** Completes the dev login form for an interaction page. */
-  async login(interaction: Response, credentials = USER): Promise<{ response: Response; leftTo?: URL }> {
-    const html = await interaction.text();
-    const action = /action="([^"]+)"/.exec(html)?.[1];
-    if (!action) throw new Error(`no login form in: ${html.slice(0, 200)}`);
-    return this.navigate(new URL(action, ISSUER).toString(), { form: { email: credentials.email, password: credentials.password } });
+  /**
+   * Signs in through the real interaction API, the way the console's form does: fetch the step,
+   * post the email, post the password, follow wherever the server sends us.
+   */
+  async login(
+    interaction: Response,
+    credentials: { email: string; password: string } = USER,
+  ): Promise<{ response: Response; leftTo?: URL; status: number; body: Record<string, unknown> }> {
+    const uid = new URL(interaction.url || this.lastUrl).pathname.split('/')[2] ?? '';
+    const view = (await (await this.api(uid, '')).json()) as { csrf: string };
+
+    const identify = await this.api(uid, '/identify', { csrf: view.csrf, email: credentials.email });
+    if (!identify.ok) {
+      return { response: identify, status: identify.status, body: (await identify.json()) as Record<string, unknown> };
+    }
+
+    const password = await this.api(uid, '/password', { csrf: view.csrf, password: credentials.password });
+    const body = (await password.json()) as Record<string, unknown>;
+    if (typeof body.redirectTo !== 'string') {
+      return { response: password, status: password.status, body };
+    }
+    const followed = await this.navigate(body.redirectTo);
+    return { ...followed, status: password.status, body };
+  }
+
+  /** Calls the interaction API with the cookie jar, as the browser would. */
+  async api(uid: string, path: string, body?: Record<string, string>): Promise<Response> {
+    const headers = new Headers({ accept: 'application/json' });
+    if (this.cookies.size > 0) headers.set('cookie', [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; '));
+    if (body) headers.set('content-type', 'application/json');
+    const res = await this.opFetch(`${ISSUER}/api/interaction/${uid}${path}`, {
+      method: body ? 'POST' : 'GET',
+      headers,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    for (const header of res.headers.getSetCookie()) {
+      const [pair = ''] = header.split(';');
+      const eq = pair.indexOf('=');
+      this.cookies.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+    }
+    return res;
   }
 }
 

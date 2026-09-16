@@ -3,13 +3,18 @@ import express, { type ErrorRequestHandler, type Express, type RequestHandler, t
 import type Provider from 'oidc-provider';
 import { healthRouter, type ReadinessProbe } from './health.js';
 import type { Logger } from './log.js';
+import { securityHeaders } from './security/headers.js';
 
 export interface AppOptions {
   provider?: Provider;
-  /** Routes mounted before the provider (interaction UI, console statics). */
+  /** Routes mounted before the provider (interaction API, console statics). */
   routers?: Router[];
+  /** Gates that run before anything else, such as the readiness page. */
+  beforeRouters?: RequestHandler[];
   readiness?: ReadinessProbe;
   logger?: Logger;
+  /** Off for a local http issuer, where HSTS would be meaningless and sticky. */
+  hsts?: boolean;
 }
 
 const QUIET_PATHS = new Set(['/healthz', '/readyz']);
@@ -47,7 +52,10 @@ export function createApp(options: AppOptions = {}): Express {
   app.set('trust proxy', true);
 
   if (options.logger) app.use(requestLog(options.logger));
+  // Headers first, so they are present on every response including errors (REQ-132).
+  app.use(securityHeaders({ hsts: options.hsts ?? true }));
   app.use(healthRouter(options.readiness));
+  for (const gate of options.beforeRouters ?? []) app.use(gate);
   for (const router of options.routers ?? []) app.use(router);
 
   // The provider owns everything else: discovery at the root and /oidc/*. It parses its own

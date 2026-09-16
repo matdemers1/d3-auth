@@ -21,12 +21,12 @@ const config = await client.discovery(issuer, clientId, undefined, client.Client
 
 const jar = new Map();
 async function hop(url, form) {
-  const headers = { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') };
+  const headers = { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '), accept: 'application/json' };
   const init = { redirect: 'manual', headers };
   if (form) {
     init.method = 'POST';
-    headers['content-type'] = 'application/x-www-form-urlencoded';
-    init.body = new URLSearchParams(form).toString();
+    headers['content-type'] = 'application/json';
+    init.body = JSON.stringify(form);
   }
   const res = await fetch(url, init);
   for (const c of res.headers.getSetCookie()) {
@@ -63,10 +63,18 @@ const authUrl = client.buildAuthorizationUrl(config, {
 
 let step = await follow(authUrl.toString());
 if (!step.callback) {
-  const html = await step.res.text();
-  const action = /action="([^"]+)"/.exec(html)?.[1];
-  if (!action) throw new Error(`Expected the login form, got HTTP ${step.res.status}. Is DEV_LOGIN_ENABLED=true?`);
-  step = await follow(new URL(action, issuer).toString(), { email, password });
+  // On the sign-in screen: drive the interaction API exactly as the console's form does.
+  const uid = step.url.pathname.split('/')[2];
+  if (!uid) throw new Error(`Expected the sign-in screen, got ${step.url.pathname} (HTTP ${step.res.status}).`);
+  const api = async (path, body) => {
+    const res = await hop(`${issuer.origin}/api/interaction/${uid}${path}`, body);
+    return res.json();
+  };
+  const { csrf } = await api('', undefined);
+  await api('/identify', { csrf, email });
+  const result = await api('/password', { csrf, password });
+  if (!result.redirectTo) throw new Error(`Sign-in failed: ${JSON.stringify(result)}`);
+  step = await follow(result.redirectTo);
 }
 if (!step.callback) throw new Error(`Sign-in did not return to the client (HTTP ${step.res.status}). Check the dev seed.`);
 

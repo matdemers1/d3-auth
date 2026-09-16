@@ -30,6 +30,14 @@ export const COOKIE_NAMES = {
   resume: '__Secure-d3auth_resume',
 } as const;
 
+/**
+ * Prefixed names require the Secure attribute, which a browser will not accept over plain http —
+ * so a local http issuer (config allows that only for localhost and *.test) uses plain names.
+ * Production is always https and always prefixed.
+ */
+export const cookieNamesFor = (secure: boolean): Record<'session' | 'interaction' | 'resume', string> =>
+  secure ? { ...COOKIE_NAMES } : { session: 'd3auth_session', interaction: 'd3auth_interaction', resume: 'd3auth_resume' };
+
 export interface ProviderOptions {
   issuer: string;
   db: Db;
@@ -39,6 +47,10 @@ export interface ProviderOptions {
   hasher: SecretHasher;
   cookieKeys: string[];
   interactionPath: (uid: string) => string;
+  /** Shown on the logout confirmation, e.g. "Matthew". */
+  operatorDisplayName?: string;
+  /** False only for a local http issuer, where prefixed cookie names cannot be used. */
+  secureCookies?: boolean;
   /** Conformance-suite clients exempt from PKCE; config refuses this outside *.test issuers. */
   pkceExemptClientIds?: readonly string[];
 }
@@ -48,6 +60,7 @@ const escapeHtml = (value: unknown): string =>
 
 export function createProvider(options: ProviderOptions): Provider {
   const pkceExempt = new Set(options.pkceExemptClientIds ?? []);
+  const operatorDisplayName = options.operatorDisplayName ?? 'D3 Auth';
   const configuration: Configuration = {
     adapter: createAdapterFactory(options.db),
     clients: options.clients,
@@ -100,7 +113,7 @@ export function createProvider(options: ProviderOptions): Provider {
 
     cookies: {
       keys: options.cookieKeys,
-      names: COOKIE_NAMES,
+      names: cookieNamesFor(options.secureCookies ?? true),
       long: { httpOnly: true, sameSite: 'lax', path: '/' },
       short: { httpOnly: true, sameSite: 'lax', path: '/' },
     },
@@ -115,7 +128,31 @@ export function createProvider(options: ProviderOptions): Provider {
       },
       revocation: { enabled: true },
       userinfo: { enabled: true },
-      rpInitiatedLogout: { enabled: true },
+      rpInitiatedLogout: {
+        enabled: true,
+        // Plain HTML, no inline styles or script: this renders under the provider's CSP and
+        // still works with JavaScript off (REQ-010).
+        logoutSource(ctx, form) {
+          ctx.type = 'html';
+          ctx.body = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign out</title></head>
+<body>
+<main>
+<h1>Sign out?</h1>
+<p>This ends your session with ${escapeHtml(operatorDisplayName)} and the apps that use it.</p>
+${form}
+<button autofocus type="submit" form="op.logoutForm" value="yes" name="logout">Yes, sign me out</button>
+<button type="submit" form="op.logoutForm">No, stay signed in</button>
+</main>
+</body></html>`;
+        },
+        // Nothing registered to return to, so land on the console's logged-out screen (I-8).
+        postLogoutSuccessSource(ctx) {
+          ctx.status = 303;
+          ctx.redirect('/login/logged-out');
+        },
+      },
       registration: { enabled: false },
       claimsParameter: { enabled: false },
       clientCredentials: { enabled: false },

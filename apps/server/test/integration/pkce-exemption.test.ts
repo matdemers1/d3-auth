@@ -22,10 +22,11 @@ function authUrl(clientId: string, redirectUri: string): string {
 
 describe('conformance PKCE exemption (ADR-002)', () => {
   it('lets an exempt client start an authorization request without PKCE', async () => {
-    const { response, leftTo } = await new Browser(h.opFetch).navigate(authUrl(WEB_CLIENT.clientId, RP_CALLBACK));
+    const browser = new Browser(h.opFetch);
+    const { leftTo } = await browser.navigate(authUrl(WEB_CLIENT.clientId, RP_CALLBACK));
+    // No error back to the client: the request was accepted and the browser is on the sign-in screen.
     expect(leftTo).toBeUndefined();
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain('name="password"');
+    expect(new URL(browser.lastUrl).pathname).toMatch(/^\/login\//);
   });
 
   it('still requires PKCE from every other client', async () => {

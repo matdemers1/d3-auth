@@ -35,3 +35,29 @@
   place-items: center;
   min-height: 100vh;
 }
+
+/* Interaction screens (I-1…I-9): one column, phone first. */
+.signin-title {
+  margin: 0;
+  font-size: var(--text-24);
+  line-height: var(--text-24--line-height);
+  font-weight: var(--font-weight-title);
+}
+
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20);
+}
+
+.signin-identity {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-14);
+}
+
+.signin-footnote {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+}
