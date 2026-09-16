@@ -156,3 +156,9 @@
   font-size: var(--text-12);
   word-break: break-all;
 }
+
+.qr {
+  align-self: flex-start;
+  border-radius: var(--radius-md);
+  background: #fff; /* d3-allow: a QR code must be black on white to scan reliably */
+}

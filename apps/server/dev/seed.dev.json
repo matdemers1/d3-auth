@@ -5,6 +5,12 @@
       "username": "dev",
       "displayName": "Dev Person",
       "password": "correct horse battery staple"
+    },
+    {
+      "email": "passkey@example.com",
+      "username": "passkeyperson",
+      "displayName": "Passkey Person",
+      "password": "willow ember quartz 12"
     }
   ],
   "clients": [
@@ -13,8 +19,12 @@
       "name": "Local development client",
       "type": "confidential_web",
       "secret": "dev-web-secret-for-localhost-only-000000",
-      "redirectUris": ["http://localhost:4000/callback"],
-      "postLogoutRedirectUris": ["http://localhost:4000/"]
+      "redirectUris": [
+        "http://localhost:4000/callback"
+      ],
+      "postLogoutRedirectUris": [
+        "http://localhost:4000/"
+      ]
     }
   ]
 }

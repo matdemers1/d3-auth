@@ -1,6 +1,6 @@
 import { Alert, Button, Card, FormField, Input, PasswordInput } from '@d3cloud/ui';
 import { useEffect, useRef, useState } from 'react';
-import { loadInteraction, submitEmail, submitPassword, type InteractionView, type StepResult } from './api';
+import { loadInteraction, signInWithPasskey, submitCode, submitEmail, submitPassword, type InteractionView, type StepResult } from './api';
 
 // I-1: sign in, phone first. Email step, then password step (REQ-076).
 //
@@ -22,6 +22,7 @@ export function SignIn({ uid }: Props) {
   const [email, setEmail] = useState('');
   const passwordRef = useRef<HTMLInputElement>(null);
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
 
   useEffect(() => {
     loadInteraction(uid)
@@ -63,7 +64,16 @@ export function SignIn({ uid }: Props) {
       return;
     }
     setMessage(undefined);
-    setView((current) => (current ? { ...current, step: result.step ?? current.step, ...(result.csrf ? { csrf: result.csrf } : {}) } : current));
+    setView((current) =>
+      current
+        ? {
+            ...current,
+            step: result.step ?? current.step,
+            ...(result.csrf ? { csrf: result.csrf } : {}),
+            ...(result.factors ? { factors: result.factors } : {}),
+          }
+        : current,
+    );
   }
 
   async function onSubmit(event: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
@@ -74,7 +84,9 @@ export function SignIn({ uid }: Props) {
       const result =
         view.step === 'identify'
           ? await submitEmail(uid, view.csrf, email)
-          : await submitPassword(uid, view.csrf, password);
+          : view.step === 'factor'
+            ? await submitCode(uid, view.csrf, code)
+            : await submitPassword(uid, view.csrf, password);
       apply(result);
     } catch {
       setMessage('We could not reach the server. Check your connection and try again.');
@@ -98,7 +110,22 @@ export function SignIn({ uid }: Props) {
   }
 
   const throttled = retryAfter > 0;
-  const action = `/api/interaction/${encodeURIComponent(uid)}/${view.step === 'identify' ? 'identify' : 'password'}`;
+  const step = view.step === 'identify' ? 'identify' : view.step === 'factor' ? 'totp' : 'password';
+  const action = `/api/interaction/${encodeURIComponent(uid)}/${step}`;
+  const hasPasskey = (view.factors ?? []).includes('passkey');
+
+  async function usePasskey(csrf: string) {
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      apply(await signInWithPasskey(uid, csrf));
+    } catch {
+      // A cancelled prompt is not an error worth shouting about; the password is still there.
+      setMessage(undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <main className="shell shell--narrow">
@@ -116,7 +143,29 @@ export function SignIn({ uid }: Props) {
       <Card padding="lg">
         <form method="post" action={action} onSubmit={(event) => void onSubmit(event)} className="signin-form">
           <input type="hidden" name="csrf" value={view.csrf} />
-          {view.step === 'identify' ? (
+          {view.step === 'factor' ? (
+            <>
+              <p className="signin-identity">One more step: confirm it is you.</p>
+              {hasPasskey ? (
+                <Button type="button" variant="primary" onClick={() => void usePasskey(view.csrf)} disabled={busy}>
+                  Use a passkey
+                </Button>
+              ) : null}
+              <FormField label="Code from your authenticator app" help="Six digits, from the app you set up.">
+                <Input
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                  value={code}
+                  onChange={(event) => {
+                    setCode(event.target.value);
+                  }}
+                />
+              </FormField>
+            </>
+          ) : view.step === 'identify' ? (
             <FormField label="Email" help="The address you were invited with.">
               <Input
                 name="email"
@@ -150,8 +199,8 @@ export function SignIn({ uid }: Props) {
               </FormField>
             </>
           )}
-          <Button type="submit" variant="primary" loading={busy} disabled={throttled}>
-            {view.step === 'identify' ? 'Continue' : 'Sign in'}
+          <Button type="submit" variant={view.step === 'factor' && hasPasskey ? 'secondary' : 'primary'} loading={busy} disabled={throttled}>
+            {view.step === 'identify' ? 'Continue' : view.step === 'factor' ? 'Confirm code' : 'Sign in'}
           </Button>
         </form>
       </Card>

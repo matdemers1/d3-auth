@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { createInvites, type Invites } from './admin/invites.js';
 import { adminRouter } from './admin/routes.js';
 import { createAuditWriter } from './audit/writer.js';
+import { accountRouter } from './account/routes.js';
 import { createConsoleAuth } from './console/auth.js';
 import type { Config } from './config.js';
 import { createDb, type Db } from './db.js';
@@ -24,6 +25,8 @@ import { smtpDriver } from './mail/smtp.js';
 import { workerRelayDriver } from './mail/worker-relay.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
 import { createThrottle } from './security/throttle.js';
+import { createTotp, type Totp } from './security/totp.js';
+import { createWebAuthn, type WebAuthn } from './security/webauthn.js';
 import { createFirstRunSetup } from './setup/first-run.js';
 import { setupRouter } from './setup/routes.js';
 import { consoleBuilt, consoleRouter, defaultConsoleDist, unavailableGate } from './static.js';
@@ -35,6 +38,8 @@ export interface Service {
   readiness: ReadinessProbe;
   mail: MailAdapter;
   invites: Invites;
+  totp: Totp;
+  webauthn: WebAuthn;
   close(): Promise<void>;
 }
 
@@ -138,6 +143,14 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const operatorDisplayName = config.OPERATOR_DISPLAY_NAME ?? 'the operator';
   const mail = buildMail(config, logger);
   const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'));
+  const issuerUrl = new URL(config.ISSUER);
+  const totp = createTotp(db, kek, operatorDisplayName === 'the operator' ? issuerUrl.host : `${operatorDisplayName} (D3 Auth)`);
+  // The RP ID is the bare host and can never change without orphaning every passkey (REQ-034).
+  const webauthn = createWebAuthn(db, adapterFactory, {
+    rpId: issuerUrl.hostname,
+    rpName: `${operatorDisplayName === 'the operator' ? 'D3 Auth' : operatorDisplayName} sign-in`,
+    origin: issuerUrl.origin,
+  });
   const invites = createInvites({
     db,
     mail,
@@ -162,10 +175,13 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         throttle,
         audit,
         logger,
+        totp,
+        webauthn,
         operatorDisplayName,
         consoleDist,
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
+      accountRouter({ db, auth: consoleAuth, totp, webauthn, audit }),
       adminRouter({ db, auth: consoleAuth, invites, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
@@ -183,6 +199,8 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     readiness,
     mail,
     invites,
+    totp,
+    webauthn,
     close: () => db.$disconnect(),
   };
 }

@@ -8,6 +8,8 @@ import type { Logger } from '../log.js';
 import { csrfMatches, csrfToken } from '../security/csrf.js';
 import type { PasswordVerifier } from '../security/password.js';
 import type { Throttle } from '../security/throttle.js';
+import type { Totp } from '../security/totp.js';
+import type { WebAuthn } from '../security/webauthn.js';
 import { renderLoginPage } from './fallback.js';
 import { createFlowStore, type FlowStore, type LoginFlow } from './flow-store.js';
 import { advance, isComplete, start, type Identity, type LoginState } from './machine.js';
@@ -32,12 +34,14 @@ export interface InteractionDeps {
   throttle: Throttle;
   audit: AuditWriter;
   logger: Logger;
+  totp: Totp;
+  webauthn: WebAuthn;
   operatorDisplayName: string;
   /** Where the console build lives; the sign-in form is rendered into its shell. */
   consoleDist: string;
 }
 
-type Step = 'identify' | 'password' | 'done';
+type Step = 'identify' | 'password' | 'factor' | 'done';
 
 const stepFor = (state: LoginState): Step => {
   switch (state.name) {
@@ -45,10 +49,24 @@ const stepFor = (state: LoginState): Step => {
       return 'identify';
     case 'awaiting_password':
       return 'password';
+    case 'awaiting_factor':
+      return 'factor';
     default:
       return 'done';
   }
 };
+
+/**
+ * A factor has just been accepted. The machine offers the person a trusted device next; until
+ * that screen exists (T-2.6) the answer is "no", which is the safe default — it asks for the
+ * factor again next time rather than skipping it.
+ */
+const afterFactor = (state: LoginState): LoginState =>
+  state.name === 'awaiting_trusted_device' ? advance(state, { type: 'trusted_device_answered', trust: false }) : state;
+
+/** What the second-factor screen offers, so it can lead with the passkey when there is one. */
+const factorsOf = (state: LoginState): string[] =>
+  state.name === 'awaiting_factor' ? [...state.identity.factors] : [];
 
 export function interactionRouter(deps: InteractionDeps): Router {
   const { provider, db, passwords, throttle, audit, logger } = deps;
@@ -183,6 +201,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
         csrf: ctx.flow.csrf,
         clientName: ctx.clientName,
         operatorDisplayName: deps.operatorDisplayName,
+        factors: factorsOf(ctx.flow.state),
         ...(ctx.flow.attemptedEmail ? { email: ctx.flow.attemptedEmail } : {}),
       });
     } catch (err) {
@@ -299,12 +318,125 @@ export function interactionRouter(deps: InteractionDeps): Router {
       await throttle.clear(keys);
       const state = advance(ctx.flow.state, { type: 'password_verified' });
       if (!isComplete(state)) {
-        // Second factors arrive in Phase 2; until then nothing else can reach this branch.
         await flows.save(ctx.uid, { ...ctx.flow, state }, FLOW_TTL_SECONDS);
-        reply(req, res, ctx.uid, 200, { step: stepFor(state), csrf: ctx.flow.csrf });
+        // The factors travel with the step: without them the screen cannot know to offer the
+        // passkey, and would ask for a code the person may not have.
+        reply(req, res, ctx.uid, 200, { step: stepFor(state), csrf: ctx.flow.csrf, factors: factorsOf(state) });
         return;
       }
       await finish(req, res, ctx.uid, state.accountId, state.amr);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Second factor: a code from an authenticator app (REQ-033).
+  router.post(`${INTERACTION_API}/:uid/totp`, body, async (req, res, next) => {
+    try {
+      respondNoStore(res);
+      const ctx = await context(req, res);
+      if (!ctx) return;
+      const input = req.body as { code?: unknown; csrf?: unknown };
+      if (!csrfMatches(ctx.flow.csrf, input.csrf)) {
+        reply(req, res, ctx.uid, 403, { error: 'csrf' });
+        return;
+      }
+      if (ctx.flow.state.name !== 'awaiting_factor') {
+        reply(req, res, ctx.uid, 409, { error: 'wrong_step', step: stepFor(ctx.flow.state) });
+        return;
+      }
+
+      const ip = clientIp(req);
+      const keys = { account: ctx.flow.attemptedEmail ?? '', ip };
+      const decision = await throttle.check(keys);
+      if (!decision.allowed) {
+        res.set('Retry-After', String(decision.retryAfterSeconds));
+        reply(req, res, ctx.uid, 429, { error: 'throttled', retryAfterSeconds: decision.retryAfterSeconds });
+        return;
+      }
+
+      const accountId = ctx.flow.state.identity.accountId;
+      const verified = await deps.totp.verify({ userId: accountId, code: typeof input.code === 'string' ? input.code : '' });
+      if (!verified) {
+        await throttle.recordFailure(keys);
+        await audit.write({
+          event: AUDIT_EVENTS.loginFailure,
+          actorUserId: accountId,
+          targetType: 'user',
+          targetId: accountId,
+          ip,
+          userAgent: req.get('user-agent'),
+          detail: { reason: 'bad_totp' },
+        });
+        reply(req, res, ctx.uid, 401, { error: 'invalid_code', message: 'That code did not match. Try the next one.' });
+        return;
+      }
+
+      await throttle.clear(keys);
+      const state = afterFactor(advance(ctx.flow.state, { type: 'factor_verified', method: 'totp' }));
+      if (isComplete(state)) {
+        await finish(req, res, ctx.uid, state.accountId, state.amr);
+        return;
+      }
+      await flows.save(ctx.uid, { ...ctx.flow, state }, FLOW_TTL_SECONDS);
+      reply(req, res, ctx.uid, 200, { step: stepFor(state), csrf: ctx.flow.csrf });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Passkeys, both as a second factor and as a way in on their own (REQ-032, REQ-034).
+  router.post(`${INTERACTION_API}/:uid/passkey/begin`, body, async (req, res, next) => {
+    try {
+      respondNoStore(res);
+      const ctx = await context(req, res);
+      if (!ctx) return;
+      const known = ctx.flow.state.name === 'awaiting_factor' ? ctx.flow.state.identity.accountId : undefined;
+      const options = await deps.webauthn.beginAuthentication({ sessionKey: ctx.uid, ...(known ? { userId: known } : {}) });
+      res.json(options);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post(`${INTERACTION_API}/:uid/passkey/finish`, body, async (req, res, next) => {
+    try {
+      respondNoStore(res);
+      const ctx = await context(req, res);
+      if (!ctx) return;
+      const input = req.body as { response?: unknown; csrf?: unknown };
+      if (!csrfMatches(ctx.flow.csrf, input.csrf)) {
+        reply(req, res, ctx.uid, 403, { error: 'csrf' });
+        return;
+      }
+
+      const result = await deps.webauthn.finishAuthentication({
+        sessionKey: ctx.uid,
+        response: input.response as never,
+      });
+      if (!result.ok || !result.userId) {
+        reply(req, res, ctx.uid, 401, { error: 'passkey_failed', message: 'That passkey was not accepted. Try again, or use your password.' });
+        return;
+      }
+
+      const user = await db.user.findUnique({ where: { id: result.userId } });
+      if (user?.status !== 'active') {
+        reply(req, res, ctx.uid, 401, { error: 'passkey_failed', message: 'That passkey was not accepted.' });
+        return;
+      }
+
+      const identity = { accountId: user.id, factors: [] as const, deviceTrusted: false };
+      const state =
+        ctx.flow.state.name === 'awaiting_factor'
+          ? afterFactor(advance(ctx.flow.state, { type: 'factor_verified', method: 'passkey' }))
+          : advance(start(), { type: 'passkey_authenticated', identity });
+
+      if (isComplete(state)) {
+        await finish(req, res, ctx.uid, state.accountId, state.amr);
+        return;
+      }
+      await flows.save(ctx.uid, { ...ctx.flow, state }, FLOW_TTL_SECONDS);
+      reply(req, res, ctx.uid, 200, { step: stepFor(state), csrf: ctx.flow.csrf });
     } catch (err) {
       next(err);
     }

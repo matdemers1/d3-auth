@@ -43,7 +43,11 @@ export async function applyDevSeed(db: Db, hasher: SecretHasher, input: DevSeed)
       create: { email: u.email, username: u.username, displayName: u.displayName, status: 'active', emailVerified: true },
       update: { username: u.username, displayName: u.displayName, status: 'active', emailVerified: true },
     });
+    // A seeded user is a fixture, so seeding resets it completely: same password every time, and
+    // no factors left over from a previous test run.
     await db.passwordCredential.deleteMany({ where: { userId: user.id } });
+    await db.webauthnCredential.deleteMany({ where: { userId: user.id } });
+    await db.totpCredential.deleteMany({ where: { userId: user.id } });
     await db.passwordCredential.create({ data: { userId: user.id, argon2idHash: await hasher.hash(u.password) } });
     await db.auditEvent.create({ data: { event: 'dev.seed.user', targetType: 'user', targetId: user.id } });
   }
