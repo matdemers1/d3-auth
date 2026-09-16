@@ -1,0 +1,32 @@
+# The example app, deployed beside D3 Auth so the sign-in flow can be tried from a phone.
+#
+#   docker compose -f docker-compose.demo.yml up -d --build
+#
+# It joins D3 Auth's network so the tunnel can reach it by name; it publishes no host ports of its
+# own. The tunnel's ingress sends demo.d3cloud.io here.
+name: d3auth-demo
+
+services:
+  demo:
+    build:
+      context: .
+    image: d3auth-demo:local
+    container_name: d3auth-demo
+    env_file:
+      - path: .env
+        required: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      d3auth:
+        aliases: [demo]
+
+networks:
+  d3auth:
+    external: true
+    name: d3auth_default
