@@ -193,6 +193,9 @@ export function createProvider(options: ProviderOptions): Provider {
         allowedPolicy: (_ctx, client) => client.clientAuthMethod !== 'none',
       },
       revocation: { enabled: true },
+      // Signed logout tokens to every app a session was used with (REQ-011). It is also what
+      // puts `sid` in the ID token, which is how an app knows *which* of its sessions to end.
+      backchannelLogout: { enabled: true },
       userinfo: { enabled: true },
       rpInitiatedLogout: {
         enabled: true,

@@ -55,6 +55,8 @@
   "userinfo_endpoint": "https://op.d3auth.test/oidc/me",
   "introspection_endpoint": "https://op.d3auth.test/oidc/token/introspection",
   "revocation_endpoint": "https://op.d3auth.test/oidc/token/revocation",
+  "backchannel_logout_supported": true,
+  "backchannel_logout_session_supported": true,
   "claim_types_supported": [
     "normal"
   ]

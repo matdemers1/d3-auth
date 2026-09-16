@@ -28,7 +28,8 @@ import { workerRelayDriver } from './mail/worker-relay.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
 import { createThrottle } from './security/throttle.js';
 import { createTotp, type Totp } from './security/totp.js';
-import { createSessionControl } from './security/sessions.js';
+import { createBackchannel, type Backchannel } from './oidc/backchannel.js';
+import { createSessionControl, type SessionControl } from './security/sessions.js';
 import { createTrustedDevices, type TrustedDevices } from './security/trusted-device.js';
 import { createWebAuthn, type WebAuthn } from './security/webauthn.js';
 import { createFirstRunSetup } from './setup/first-run.js';
@@ -49,6 +50,8 @@ export interface Service {
   webauthn: WebAuthn;
   trustedDevices: TrustedDevices;
   recovery: Recovery;
+  backchannel: Backchannel;
+  sessions: SessionControl;
   close(): Promise<void>;
 }
 
@@ -161,10 +164,25 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   });
   const secureCookies = config.ISSUER.startsWith('https://');
   const trustedDevices = createTrustedDevices(db);
-  const sessionControl = createSessionControl(db, provider);
+  const issuerHost = new URL(config.ISSUER).hostname;
+  const backchannel = createBackchannel({
+    provider,
+    audit,
+    logger,
+    // `.test` is reserved for testing (RFC 6761) and localhost is not the internet: an issuer on
+    // either is a development or test instance, where the apps live on loopback.
+    allowPrivateEndpoints: issuerHost === 'localhost' || issuerHost.endsWith('.test'),
+  });
+  const sessionControl = createSessionControl(db, provider, backchannel);
   const deviceCookieName = deviceCookieNameFor(secureCookies);
   const apps = createApps({ db, hasher, audit });
-  const grants = createGrants({ db, audit });
+  const grants = createGrants({
+    db,
+    audit,
+    // A grant that changed is access that changed, so the app hears about it now rather than
+    // when its tokens happen to expire (REQ-056).
+    onChanged: ({ userId, clientId, reason }) => backchannel.notify({ userId, clientId, reason: `grant_${reason}` }).then(() => undefined),
+  });
   const invites = createInvites({
     db,
     mail,
@@ -234,6 +252,8 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     webauthn,
     trustedDevices,
     recovery,
+    backchannel,
+    sessions: sessionControl,
     close: () => db.$disconnect(),
   };
 }

@@ -1,14 +1,14 @@
 import type Provider from 'oidc-provider';
 import type { Db } from '../db.js';
+import type { Backchannel } from '../oidc/backchannel.js';
 
 // Ending sessions, in one place (REQ-038, REQ-039, REQ-083).
 //
 // Revoking has to reach the provider's own session store, not just our mirror table: a row
 // marked revoked while the SSO cookie still works would be a lie told in the console's own UI.
 //
-// Back-channel logout notices to the apps a person is signed in to arrive with that feature in
-// Phase 3 (T-3.6). Until then the session itself is gone here, which is what stops the next
-// authorization request cold.
+// Ending a session here also tells the apps it was used with (REQ-011): a person signed out in
+// the console whose app session keeps working has not really been signed out.
 
 export interface SessionControl {
   /** Ends one provider session by its uid. Missing or already-gone is not an error. */
@@ -17,9 +17,12 @@ export interface SessionControl {
   revokeAll(userId: string, keepUid?: string): Promise<number>;
 }
 
-export function createSessionControl(db: Db, provider: Provider): SessionControl {
+export function createSessionControl(db: Db, provider: Provider, backchannel?: Backchannel, reason = 'session_revoked'): SessionControl {
   const end = async (uid: string | null): Promise<void> => {
     if (!uid) return;
+    // Tell the apps first: once the session is destroyed, the identifiers they know it by are
+    // gone with it.
+    await backchannel?.notifySession({ sessionUid: uid, reason });
     const session = await provider.Session.findByUid(uid).catch(() => undefined);
     await session?.destroy();
   };
