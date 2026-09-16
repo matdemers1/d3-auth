@@ -220,8 +220,10 @@ describe('logout (REQ-010)', () => {
     expect(html).toMatch(/Matthew/);
 
     const xsrf = /name="xsrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
-    const done = await browser.navigate(`${ISSUER}/oidc/session/end/confirm`, { form: { xsrf, logout: 'yes' } });
-    expect(done.response.status).toBeLessThan(400);
+    await browser.navigate(`${ISSUER}/oidc/session/end/confirm`, { form: { xsrf, logout: 'yes' } });
+    // Lands on the console's logged-out screen. Whether that page renders depends on the console
+    // build, which the integration job does not make, so the assertion is where it sent us.
+    expect(new URL(browser.lastUrl).pathname).toBe('/login/logged-out');
 
     const after = await h.service.db.session.findUniqueOrThrow({ where: { id: session.id } });
     expect(after.revokedAt).not.toBeNull();
