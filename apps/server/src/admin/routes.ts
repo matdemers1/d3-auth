@@ -1,9 +1,11 @@
-import express, { Router, type RequestHandler } from 'express';
+import express, { Router, type RequestHandler, type Response } from 'express';
 import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import { consoleUserOf, type ConsoleAuth } from '../console/auth.js';
 import type { Db } from '../db.js';
 import { mustHoldFactor, verifiedFactorCount } from '../security/factors.js';
+import type { SessionControl } from '../security/sessions.js';
+import type { TrustedDevices } from '../security/trusted-device.js';
 import type { Invites } from './invites.js';
 
 // The console's API for the people side of the house (C-1, C-3). Phase 3 adds apps, grants and
@@ -15,10 +17,12 @@ export interface AdminDeps {
   db: Db;
   auth: ConsoleAuth;
   invites: Invites;
+  sessions: SessionControl;
+  trustedDevices: TrustedDevices;
   audit: AuditWriter;
 }
 
-export function adminRouter({ db, auth, invites, audit }: AdminDeps): Router {
+export function adminRouter({ db, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '8kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -114,6 +118,114 @@ export function adminRouter({ db, auth, invites, audit }: AdminDeps): Router {
           detail: { from: target.kind, to: kind },
         });
         res.json({ kind });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  /** Common shape for the two actions that act on somebody else's account. */
+  const target = async (
+    id: string,
+    res: Response,
+  ): Promise<{ id: string; email: string; kind: string; status: string } | undefined> => {
+    const { user: actor } = consoleUserOf(res);
+    const found = await db.user.findUnique({ where: { id }, select: { id: true, email: true, kind: true, status: true } });
+    if (!found) {
+      res.status(404).json({ error: 'not_found' });
+      return undefined;
+    }
+    if (found.id === actor.id) {
+      res.status(409).json({ error: 'not_yourself', message: 'Somebody else has to do this to your account.' });
+      return undefined;
+    }
+    if (found.kind === 'owner') {
+      res.status(409).json({ error: 'owner_protected', message: 'The owner cannot be suspended or reset from here.' });
+      return undefined;
+    }
+    return found;
+  };
+
+  // Suspending somebody (REQ-038). A suspension that left their sessions alive would only stop
+  // the *next* sign-in, so the sessions go with it.
+  router.post<{ id: string }>(`${ADMIN_API}/people/:id/suspend`, auth.requireAdmin, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user: actor } = consoleUserOf(res);
+        const person = await target(req.params.id, res);
+        if (!person) return;
+
+        await db.user.update({ where: { id: person.id }, data: { status: 'suspended' } });
+        const ended = await sessions.revokeAll(person.id);
+        const devices = await trustedDevices.revokeAll(person.id);
+        await audit.write({
+          event: AUDIT_EVENTS.personSuspended,
+          actorUserId: actor.id,
+          targetType: 'user',
+          targetId: person.id,
+          ip: clientIp(req),
+          userAgent: req.get('user-agent'),
+          detail: { sessionsEnded: ended, devicesForgotten: devices },
+        });
+        res.json({ status: 'suspended', sessionsEnded: ended });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  router.post<{ id: string }>(`${ADMIN_API}/people/:id/reactivate`, auth.requireAdmin, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user: actor } = consoleUserOf(res);
+        const person = await target(req.params.id, res);
+        if (!person) return;
+
+        await db.user.update({ where: { id: person.id }, data: { status: 'active' } });
+        await audit.write({
+          event: AUDIT_EVENTS.personReactivated,
+          actorUserId: actor.id,
+          targetType: 'user',
+          targetId: person.id,
+          ip: clientIp(req),
+          userAgent: req.get('user-agent'),
+        });
+        res.json({ status: 'active' });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  // Reset (REQ-039). Everything that could let the old holder back in goes at once, and the
+  // account keeps its id — so its `sub`, its grants and its history survive the reset.
+  router.post<{ id: string }>(`${ADMIN_API}/people/:id/reset`, auth.requireAdmin, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user: actor } = consoleUserOf(res);
+        const person = await target(req.params.id, res);
+        if (!person) return;
+
+        await db.$transaction(async (tx) => {
+          await tx.passwordCredential.deleteMany({ where: { userId: person.id } });
+          await tx.webauthnCredential.deleteMany({ where: { userId: person.id } });
+          await tx.totpCredential.deleteMany({ where: { userId: person.id } });
+        });
+        const ended = await sessions.revokeAll(person.id);
+        const devices = await trustedDevices.revokeAll(person.id);
+
+        const link = await invites.createReEnrol({ userId: person.id, email: person.email, actorUserId: actor.id });
+        await audit.write({
+          event: AUDIT_EVENTS.personReset,
+          actorUserId: actor.id,
+          targetType: 'user',
+          targetId: person.id,
+          ip: clientIp(req),
+          userAgent: req.get('user-agent'),
+          detail: { sessionsEnded: ended, devicesForgotten: devices, mailDelivered: link.mail.delivered },
+        });
+        // The link comes back either way: that is the fallback when mail is down (REQ-108).
+        res.json({ url: link.url, expiresAt: link.expiresAt, mail: link.mail, sessionsEnded: ended });
       } catch (err) {
         next(err);
       }

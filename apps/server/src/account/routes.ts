@@ -1,5 +1,4 @@
 import express, { Router, type RequestHandler } from 'express';
-import type Provider from 'oidc-provider';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
@@ -7,6 +6,7 @@ import { consoleUserOf, isAdmin, type ConsoleAuth } from '../console/auth.js';
 import type { Db } from '../db.js';
 import { readCookie } from '../security/cookies.js';
 import { verifiedFactorCount } from '../security/factors.js';
+import type { SessionControl } from '../security/sessions.js';
 import type { TrustedDevices } from '../security/trusted-device.js';
 import type { SecretHasher } from '../security/hash.js';
 import type { PasswordVerifier } from '../security/password.js';
@@ -27,7 +27,7 @@ export const ACCOUNT_API = '/api/account';
 
 export interface AccountDeps {
   db: Db;
-  provider: Provider;
+  sessions: SessionControl;
   auth: ConsoleAuth;
   hasher: SecretHasher;
   passwords: PasswordVerifier;
@@ -41,7 +41,7 @@ export interface AccountDeps {
 
 export function accountRouter({
   db,
-  provider,
+  sessions,
   auth,
   hasher,
   passwords,
@@ -59,24 +59,6 @@ export function accountRouter({
       if (err) next(err);
       else next();
     });
-  };
-
-  /** Ends a provider session, so revoking is not just a row in our own table. */
-  const endSession = async (uid: string | null): Promise<void> => {
-    if (!uid) return;
-    const session = await provider.Session.findByUid(uid).catch(() => undefined);
-    await session?.destroy();
-  };
-
-  /** Revokes every session but the one given. Returns how many were ended. */
-  const revokeSessions = async (userId: string, keepUid: string | undefined): Promise<number> => {
-    const rows = await db.session.findMany({
-      where: { userId, revokedAt: null, ...(keepUid ? { oidcSessionUid: { not: keepUid } } : {}) },
-      select: { id: true, oidcSessionUid: true },
-    });
-    for (const row of rows) await endSession(row.oidcSessionUid);
-    const { count } = await db.session.updateMany({ where: { id: { in: rows.map((row) => row.id) } }, data: { revokedAt: new Date() } });
-    return count;
   };
 
   router.get(`${ACCOUNT_API}/factors`, auth.requireUser, (_req, res, next) => {
@@ -434,7 +416,7 @@ export function accountRouter({
 
         // Every other session belonged to the old password. This one stays: signing the person
         // out of the screen they are standing on helps nobody.
-        const revoked = await revokeSessions(user.id, sessionUid);
+        const revoked = await sessions.revokeAll(user.id, sessionUid);
         await audit.write({
           event: AUDIT_EVENTS.passwordChanged,
           actorUserId: user.id,
@@ -482,7 +464,7 @@ export function accountRouter({
           res.status(404).json({ error: 'not_found' });
           return;
         }
-        await endSession(row.oidcSessionUid);
+        await sessions.end(row.oidcSessionUid);
         await db.session.update({ where: { id: row.id }, data: { revokedAt: new Date() } });
         await audit.write({
           event: AUDIT_EVENTS.sessionRevoked,
@@ -503,7 +485,7 @@ export function accountRouter({
     void (async () => {
       try {
         const { user, sessionUid } = consoleUserOf(res);
-        const revoked = await revokeSessions(user.id, sessionUid);
+        const revoked = await sessions.revokeAll(user.id, sessionUid);
         await audit.write({
           event: AUDIT_EVENTS.sessionRevoked,
           actorUserId: user.id,

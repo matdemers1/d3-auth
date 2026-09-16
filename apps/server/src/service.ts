@@ -26,6 +26,7 @@ import { workerRelayDriver } from './mail/worker-relay.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
 import { createThrottle } from './security/throttle.js';
 import { createTotp, type Totp } from './security/totp.js';
+import { createSessionControl } from './security/sessions.js';
 import { createTrustedDevices, type TrustedDevices } from './security/trusted-device.js';
 import { createWebAuthn, type WebAuthn } from './security/webauthn.js';
 import { createFirstRunSetup } from './setup/first-run.js';
@@ -155,6 +156,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   });
   const secureCookies = config.ISSUER.startsWith('https://');
   const trustedDevices = createTrustedDevices(db);
+  const sessionControl = createSessionControl(db, provider);
   const deviceCookieName = deviceCookieNameFor(secureCookies);
   const invites = createInvites({
     db,
@@ -189,8 +191,8 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         consoleDist,
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
-      accountRouter({ db, provider, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
-      adminRouter({ db, auth: consoleAuth, invites, audit }),
+      accountRouter({ db, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
+      adminRouter({ db, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
     ],
