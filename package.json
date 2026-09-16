@@ -13,7 +13,7 @@
   "scripts": {
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present --filter '!e2e' test",
     "build": "pnpm -r --if-present build",
     "e2e": "pnpm --filter e2e test",
     "dev:up": "node scripts/dev-env.mjs && docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --wait && pnpm dev:seed",
