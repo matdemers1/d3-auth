@@ -30,6 +30,7 @@ import { createPasswordVerifier, type PasswordVerifier } from './security/passwo
 import { createThrottle } from './security/throttle.js';
 import { createTotp, type Totp } from './security/totp.js';
 import { createBackchannel, type Backchannel } from './oidc/backchannel.js';
+import { revokeTokens, revokeTokensIfNoAccess } from './oidc/revoke-tokens.js';
 import { createSessionControl, type SessionControl } from './security/sessions.js';
 import { createTrustedDevices, type TrustedDevices } from './security/trusted-device.js';
 import { createWebAuthn, type WebAuthn } from './security/webauthn.js';
@@ -188,7 +189,11 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     // A group that changes is access that changes, for everybody in it (REQ-056).
     onAccessChanged: async ({ userIds, clientIds, reason }) => {
       for (const userId of userIds) {
-        for (const clientId of clientIds) await backchannel.notify({ userId, clientId, reason });
+        for (const clientId of clientIds) {
+          await backchannel.notify({ userId, clientId, reason });
+          // Only for people the change actually left without access (REQ-051).
+          await revokeTokensIfNoAccess(db, userId, clientId);
+        }
       }
     },
   });
@@ -197,7 +202,11 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     audit,
     // A grant that changed is access that changed, so the app hears about it now rather than
     // when its tokens happen to expire (REQ-056).
-    onChanged: ({ userId, clientId, reason }) => backchannel.notify({ userId, clientId, reason: `grant_${reason}` }).then(() => undefined),
+    onChanged: async ({ userId, clientId, reason }) => {
+      await backchannel.notify({ userId, clientId, reason: `grant_${reason}` });
+      // A revoked grant takes its tokens with it: an app ignoring the logout still cannot use them.
+      if (reason === 'revoked') await revokeTokens(db, userId, clientId);
+    },
   });
   const invites = createInvites({
     db,

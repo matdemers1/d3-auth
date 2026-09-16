@@ -1,6 +1,7 @@
 import type Provider from 'oidc-provider';
 import type { Db } from '../db.js';
 import type { Backchannel } from '../oidc/backchannel.js';
+import { revokeAllTokens } from '../oidc/revoke-tokens.js';
 
 // Ending sessions, in one place (REQ-038, REQ-039, REQ-083).
 //
@@ -13,7 +14,13 @@ import type { Backchannel } from '../oidc/backchannel.js';
 export interface SessionControl {
   /** Ends one provider session by its uid. Missing or already-gone is not an error. */
   end(uid: string | null): Promise<void>;
-  /** Revokes every session for a user except `keepUid`. Returns how many were ended. */
+  /**
+   * Revokes every session for a user except `keepUid`. Returns how many were ended.
+   *
+   * With nothing kept — a suspension, a reset — the person is being cut off, so every token they
+   * were ever issued goes too. With a session kept, it is somebody tidying up their own devices,
+   * and the apps they are using right now keep working.
+   */
   revokeAll(userId: string, keepUid?: string): Promise<number>;
 }
 
@@ -39,6 +46,7 @@ export function createSessionControl(db: Db, provider: Provider, backchannel?: B
         where: { id: { in: rows.map((row) => row.id) } },
         data: { revokedAt: new Date() },
       });
+      if (!keepUid) await revokeAllTokens(db, userId);
       return count;
     },
   };
