@@ -1,4 +1,5 @@
 import { createHash, generateKeyPairSync, type JsonWebKey } from 'node:crypto';
+import { AUDIT_EVENTS } from '../audit/events.js';
 import type { Db } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { KekCrypto } from '../security/kek.js';
@@ -125,7 +126,7 @@ export async function generateNext(db: Db, kek: KekCrypto, alg: SigningAlg): Pro
     },
   });
   await db.auditEvent.create({
-    data: { event: 'key.generated', targetType: 'signing_key', targetId: created.kid, detail: { alg, status: 'next' } },
+    data: { event: AUDIT_EVENTS.keyGenerated, targetType: 'signing_key', targetId: created.kid, detail: { alg, status: 'next' } },
   });
   return summarise(created, new Date());
 }
@@ -165,7 +166,7 @@ export async function promoteNext(
     await tx.signingKey.update({ where: { kid: next.kid }, data: { status: 'current' } });
     await tx.auditEvent.create({
       data: {
-        event: 'key.promoted',
+        event: AUDIT_EVENTS.keyPromoted,
         targetType: 'signing_key',
         targetId: next.kid,
         detail: { alg, retiring: current?.kid ?? null, forced: options.force === true },
@@ -200,7 +201,7 @@ export async function retire(db: Db, options: { kid?: string; force?: boolean; n
   for (const key of due) {
     await db.signingKey.update({ where: { kid: key.kid }, data: { status: 'retired' } });
     await db.auditEvent.create({
-      data: { event: 'key.retired', targetType: 'signing_key', targetId: key.kid, detail: { alg: key.alg, forced: options.force === true } },
+      data: { event: AUDIT_EVENTS.keyRetired, targetType: 'signing_key', targetId: key.kid, detail: { alg: key.alg, forced: options.force === true } },
     });
   }
   return due.map((key) => summarise({ ...key, status: 'retired' }, now));
@@ -228,7 +229,7 @@ export async function loadSigningKeys(db: Db, kek: KekCrypto): Promise<PrivateJw
         },
       });
       await tx.auditEvent.create({
-        data: { event: 'key.generated', targetType: 'signing_key', targetId: privateJwk.kid, detail: { alg, status: 'current' } },
+        data: { event: AUDIT_EVENTS.keyGenerated, targetType: 'signing_key', targetId: privateJwk.kid, detail: { alg, status: 'current' } },
       });
     }
   });

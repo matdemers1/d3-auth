@@ -47,6 +47,22 @@ export function GroupDetail({ id }: { id: string }) {
 
   useEffect(load, [id]);
 
+  /**
+   * Deleting a group is the one action with nowhere to come back to: the page it was on no longer
+   * describes anything. So it goes back to the list, which is where a person's eyes already are.
+   */
+  async function remove() {
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      await api.post(`/api/admin/groups/${encodeURIComponent(id)}/remove`, {});
+      window.location.assign('/admin/groups');
+    } catch (err) {
+      setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That did not work.' });
+      setBusy(false);
+    }
+  }
+
   async function act(path: string, body: unknown, said: string) {
     setBusy(true);
     setMessage(undefined);
@@ -201,7 +217,7 @@ export function GroupDetail({ id }: { id: string }) {
         <Button
           variant="danger-ghost"
           disabled={busy}
-          onClick={() => void act(`${base}/remove`, {}, `${group.name} is gone, and the access it carried with it.`)}
+          onClick={() => void remove()}
         >
           Delete this group
         </Button>
