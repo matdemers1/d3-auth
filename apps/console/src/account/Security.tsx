@@ -1,6 +1,7 @@
 import { Alert, Badge, Button, Card, EmptyState, FormField, Input, PageHeader, Skeleton } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
+import { describeDevice } from './device-name';
 
 // A-4: how you sign in. A passkey is the good path and leads; an authenticator app is the
 // fallback for anyone whose device cannot do one.
@@ -240,7 +241,9 @@ export function Security() {
                 {devices.map((device) => (
                   <li key={device.id} className="row">
                     <div>
-                      <strong>{device.current ? 'This browser' : (device.userAgent ?? 'A browser')}</strong>
+                      <strong title={device.userAgent ?? undefined}>
+                        {device.current ? 'This browser' : describeDevice(device.userAgent)}
+                      </strong>
                       <div className="muted">
                         trusted {when(device.createdAt)} · stops {when(device.expiresAt)}
                       </div>

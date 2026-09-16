@@ -19,6 +19,8 @@ import { COOKIE_NAMES, cookieNamesFor } from '../oidc/provider.js';
 export interface ConsoleUser {
   user: User;
   sessionId: string;
+  /** The provider's session uid, which is what our own session rows are keyed by. */
+  sessionUid: string | undefined;
 }
 
 export const isAdmin = (user: User): boolean => mustHoldFactor(user.kind);
@@ -45,13 +47,13 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
   const current = async (req: Request): Promise<ConsoleUser | undefined> => {
     const sessionId = readCookie(req, names.session) ?? readCookie(req, COOKIE_NAMES.session);
     if (!sessionId) return undefined;
-    const payload: unknown = await sessions.find(sessionId);
-    const accountId = (payload as { accountId?: string } | undefined)?.accountId;
+    const payload = (await sessions.find(sessionId)) as { accountId?: string; uid?: string } | undefined;
+    const accountId = payload?.accountId;
     if (!accountId) return undefined;
     const user = await db.user.findUnique({ where: { id: accountId } });
     // A suspended account keeps its session row but loses the console (REQ-041).
     if (!user || user.status !== 'active') return undefined;
-    return { user, sessionId };
+    return { user, sessionId, sessionUid: payload.uid };
   };
 
   /** A cross-site fetch never gets to act on the session, whatever the cookie says. */

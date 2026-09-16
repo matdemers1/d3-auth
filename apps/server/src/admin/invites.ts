@@ -5,7 +5,7 @@ import type { Db } from '../db.js';
 import type { MailAdapter } from '../mail/adapter.js';
 import { inviteMail, reEnrolMail, type TemplateContext } from '../mail/templates.js';
 import type { Prisma } from '../generated/prisma/client.js';
-import { checkPassword } from '../security/policy.js';
+import { checkPassword, USERNAME_PATTERN, USERNAME_RULE } from '../security/policy.js';
 import type { SecretHasher } from '../security/hash.js';
 
 // Invites (REQ-065, REQ-078, REQ-040, REQ-108). There is no public signup, so this is how anyone
@@ -137,9 +137,7 @@ export function createInvites({ db, mail, hasher, audit, template }: InvitesDeps
       const username = input.username.trim();
       const displayName = input.displayName.trim();
       const problems: string[] = [];
-      if (!/^[a-z0-9][a-z0-9._-]{1,30}$/i.test(username)) {
-        problems.push('Usernames are 2–31 characters: letters, numbers, dot, dash or underscore.');
-      }
+      if (!USERNAME_PATTERN.test(username)) problems.push(USERNAME_RULE);
       if (displayName.length < 1) problems.push('Enter the name people will see.');
       problems.push(...checkPassword(input.password, { email: invite.email, username, displayName }).problems);
       if (problems.length > 0) return { ok: false, error: 'invalid', problems };

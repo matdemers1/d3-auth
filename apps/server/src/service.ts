@@ -189,7 +189,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         consoleDist,
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
-      accountRouter({ db, auth: consoleAuth, totp, webauthn, trustedDevices, deviceCookieName, audit }),
+      accountRouter({ db, provider, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
       adminRouter({ db, auth: consoleAuth, invites, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),

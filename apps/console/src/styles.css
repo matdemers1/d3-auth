@@ -117,6 +117,35 @@
   font-weight: var(--font-weight-semibold);
 }
 
+.account-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  max-width: var(--size-shell, 48rem);
+  margin: 0 auto;
+  padding: var(--space-16) var(--space-16) 0;
+}
+
+.account-nav-link {
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-md);
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+  text-decoration: none;
+}
+
+.account-nav-link:hover,
+.account-nav-link:focus-visible {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+}
+
+.account-nav-link[aria-current='page'] {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-weight: var(--font-weight-medium);
+}
+
 .rows {
   margin: 0;
   padding: 0;

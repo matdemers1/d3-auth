@@ -43,6 +43,10 @@ function normalise(password: string): string[] {
   return [...new Set([lower, trimmedDigits, collapsed].filter((value) => value.length > 0))];
 }
 
+/** Usernames appear in URLs and audit lines, so they stay short, lower-ish and unambiguous. */
+export const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{1,30}$/i;
+export const USERNAME_RULE = 'Usernames are 2–31 characters: letters, numbers, dot, dash or underscore.';
+
 export function checkPassword(password: string, context: PolicyContext = {}): PolicyResult {
   const problems: string[] = [];
 

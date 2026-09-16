@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import * as client from 'openid-client';
 import { applyDevSeed } from '../../src/cli/dev-seed.js';
 import { createDb } from '../../src/db.js';
-import { createSecretHasher } from '../../src/security/hash.js';
+import { createSecretHasher, type SecretHasher } from '../../src/security/hash.js';
 import { createLogger, type Logger } from '../../src/log.js';
 import { createService, type Service } from '../../src/service.js';
 
@@ -21,6 +21,8 @@ export const NATIVE_CLIENT = { clientId: 'native-app' };
 
 export interface Harness {
   service: Service;
+  /** The same hasher the service uses, so a test can create an account it can sign in as. */
+  hasher: SecretHasher;
   /** Counts Argon2id verifications, so a test can prove throttling happens before the work. */
   passwordVerifications: { count: number };
   /** Every log line the service wrote during the run. */
@@ -87,6 +89,7 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
 
   return {
     service,
+    hasher: createSecretHasher(pepper),
     passwordVerifications,
     logLines,
     port,
@@ -220,6 +223,7 @@ export async function authorize(
   config: client.Configuration,
   params: Record<string, string> = {},
   browser = new Browser(h.opFetch),
+  credentials: { email: string; password: string } = USER,
 ): Promise<CodeResult> {
   const verifier = client.randomPKCECodeVerifier();
   const state = client.randomState();
@@ -234,7 +238,7 @@ export async function authorize(
     ...params,
   });
   let step = await browser.navigate(url.toString());
-  if (!step.leftTo) step = await browser.login(step.response);
+  if (!step.leftTo) step = await browser.login(step.response, credentials);
   if (!step.leftTo) throw new Error(`authorization did not return to the client: ${step.response.status}`);
   return { callback: step.leftTo, verifier, state, nonce, browser };
 }
