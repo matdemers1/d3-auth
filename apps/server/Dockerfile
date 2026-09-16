@@ -20,7 +20,11 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm --filter d3auth-server deploy --prod /out
 
 FROM ${NODE_IMAGE} AS runtime
-ENV NODE_ENV=production PORT=3000 CONSOLE_DIST=/app/public
+# pg_dump takes the pre-migration dump at boot (REQ-121) and the backup bundle in Phase 6.
+# The 17 client talks to a 16 server; the newer client is the supported direction.
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=production PORT=3000 CONSOLE_DIST=/app/public BACKUP_DIR=/backups
 WORKDIR /app
 # Code stays root-owned so the service user cannot modify it; only /backups is writable.
 COPY --from=build /out ./

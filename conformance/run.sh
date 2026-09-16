@@ -43,14 +43,16 @@ trap cleanup EXIT
 # Always start from nothing: keys from an earlier run are sealed under a different random KEK.
 compose down -v --remove-orphans > /dev/null 2>&1 || true
 
-echo "==> Building and migrating"
+echo "==> Building"
 compose build server
-compose up -d --wait postgres
-compose run --rm migrate
+echo "==> Starting the provider (it migrates on boot)"
+compose up -d --wait postgres server
 echo "==> Seeding conformance clients and user"
-compose run --rm --no-deps server node dist/cli/dev-seed.js /conformance/seed.json
-echo "==> Starting provider, TLS proxy and suite"
-compose up -d --wait server op-tls mongodb suite suite-nginx
+compose exec -T server node dist/cli/dev-seed.js /conformance/seed.json
+# Clients are read at boot, so the freshly seeded ones need a restart to exist.
+compose up -d --wait --no-deps --force-recreate server
+echo "==> Starting the TLS proxy and the suite"
+compose up -d --wait op-tls mongodb suite suite-nginx
 
 echo "==> Waiting for the suite to accept API calls"
 for attempt in $(seq 1 120); do

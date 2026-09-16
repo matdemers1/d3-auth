@@ -1,4 +1,6 @@
+import { migrateOnBoot } from './boot/migrate.js';
 import { ConfigError, loadConfig, type Config } from './config.js';
+import { createDb } from './db.js';
 import { createLogger } from './log.js';
 import { createService } from './service.js';
 
@@ -19,6 +21,17 @@ const config = readConfig();
 const logger = createLogger({ level: config.LOG_LEVEL });
 
 if (config.INSECURE_HTTP_ISSUER) logger.warn({ issuer: config.ISSUER }, 'running with an http issuer — local testing only');
+
+// Migrations first (REQ-121): nothing listens until the schema this build expects is in place.
+const migrationDb = createDb(config.DATABASE_URL);
+try {
+  await migrateOnBoot(migrationDb, { databaseUrl: config.DATABASE_URL, backupDir: config.BACKUP_DIR, logger });
+} catch (err) {
+  logger.fatal({ err }, 'migrations failed; refusing to serve');
+  process.exit(1);
+} finally {
+  await migrationDb.$disconnect();
+}
 
 const service = await createService(config, logger).catch((err: unknown) => {
   logger.fatal({ err }, 'failed to start');
