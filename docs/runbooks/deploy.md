@@ -69,18 +69,27 @@ Images are published by CI from `main` only, after lint, unit, integration, conf
 
 ---
 
-## 4. The tunnel route
+## 4. The tunnel
 
-`cloudflared` already runs on this host for Bindery and joins the external `tunnel` network. Add a public hostname in the Cloudflare Zero Trust dashboard (Networks → Tunnels → the Zima tunnel → Public Hostnames):
+D3 Auth runs **its own** `cloudflared`, exactly as Bindery does, so neither service can take the
+other down. `docker-compose.tunnel.yml` starts it and needs one value in `.env`:
+
+```ini
+TUNNEL_TOKEN=<the d3auth tunnel's token>
+```
+
+The tunnel is *remotely managed*: its ingress lives in Cloudflare, not in a file on the host.
 
 | Field | Value |
 |---|---|
-| Subdomain | `auth` |
-| Domain | `d3cloud.io` |
+| Tunnel name | `d3auth` |
+| Public hostname | `auth.d3cloud.io` |
 | Service | `http://server:3000` |
 | HTTP Host Header | `auth.d3cloud.io` |
 
-The DNS record is created by Cloudflare and must stay **proxied** (orange cloud): the origin is only reachable through the tunnel.
+The DNS record is a **proxied** CNAME to `<tunnel-id>.cfargotunnel.com`: the origin is only
+reachable through the tunnel. Read the token back at any time with
+`GET /accounts/{account}/cfd_tunnel/{tunnel}/token`.
 
 `provider.proxy = true`, so the service trusts `X-Forwarded-Proto` and `CF-Connecting-IP`. That is safe only because nothing but the tunnel can reach it — never publish a host port here.
 
@@ -88,7 +97,9 @@ The DNS record is created by Cloudflare and must stay **proxied** (orange cloud)
 
 ## 5. WAF rate rules (REQ-019, R-07)
 
-In the dashboard, Security → WAF → Rate limiting rules, on the `d3cloud.io` zone:
+In the dashboard, Security → WAF → Rate limiting rules, on the `d3cloud.io` zone. (An API token
+needs *Zone → Firewall Services → Edit* to add these; the deploy token does not have it, so these
+three are added by hand.)
 
 | Rule | Match | Limit | Action |
 |---|---|---|---|

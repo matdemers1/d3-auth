@@ -1,9 +1,15 @@
-# Zima overlay: cloudflared joins the external `tunnel` network and reaches the server there.
-# No host ports. Deploy runbook lands in T-1.11.
+# Zima overlay: D3 Auth's own Cloudflare Tunnel, the same shape Bindery uses.
+#
+# The tunnel is remotely managed — its ingress (auth.d3cloud.io → http://server:3000) lives in
+# Cloudflare, not in a file here — so this only needs the tunnel's token. No host ports (REQ-125).
 services:
-  server:
-    networks: [default, tunnel]
-
-networks:
   tunnel:
-    external: true
+    image: cloudflare/cloudflared:latest
+    container_name: d3auth-tunnel
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env — see docs/runbooks/deploy.md}
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
