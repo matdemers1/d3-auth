@@ -25,10 +25,9 @@ let publicJwk: JWK;
 /** The token endpoint will return whatever this is set to. */
 let nextIdToken = '';
 
-const provider: typeof fetch = (input, init) => {
+const provider: typeof fetch = (input) => {
   const url = new URL(input instanceof Request ? input.url : input.toString());
   const json = (body: unknown): Response => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
-  void init;
   switch (url.pathname) {
     case '/.well-known/openid-configuration':
       return Promise.resolve(

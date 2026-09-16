@@ -112,7 +112,7 @@ export async function createAuthClient(options: AuthClientOptions): Promise<Auth
     try {
       await jwtVerify(idToken, keys, { issuer, audience: options.clientId, algorithms: [...ALLOWED_ALGORITHMS] });
     } catch (err) {
-      throw new Error(`refusing an ID token that does not verify: ${err instanceof Error ? err.message : 'signature'}`);
+      throw new Error(`refusing an ID token that does not verify: ${err instanceof Error ? err.message : 'signature'}`, { cause: err });
     }
   };
 
