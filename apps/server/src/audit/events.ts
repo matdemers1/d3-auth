@@ -32,6 +32,8 @@ export const AUDIT_EVENTS = {
   appDisabled: 'app.disabled',
   appRemoved: 'app.removed',
   keyGenerated: 'key.generated',
+  keyPromoted: 'key.promoted',
+  keyRetired: 'key.retired',
   ownerClaimed: 'owner.claimed',
   personSuspended: 'person.suspended',
   personReactivated: 'person.reactivated',

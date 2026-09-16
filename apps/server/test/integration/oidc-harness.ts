@@ -6,6 +6,7 @@ import * as client from 'openid-client';
 import { applyDevSeed } from '../../src/cli/dev-seed.js';
 import { createDb } from '../../src/db.js';
 import { createSecretHasher, type SecretHasher } from '../../src/security/hash.js';
+import { createKekCrypto, type KekCrypto } from '../../src/security/kek.js';
 import { createLogger, type Logger } from '../../src/log.js';
 import { createService, type Service } from '../../src/service.js';
 
@@ -21,6 +22,8 @@ export const NATIVE_CLIENT = { clientId: 'native-app' };
 
 export interface Harness {
   service: Service;
+  /** The KEK this run sealed its keys under, so a test can mint one the service can read. */
+  kek: Buffer;
   /** The same hasher the service uses, so a test can create an account it can sign in as. */
   hasher: SecretHasher;
   /** Counts Argon2id verifications, so a test can prove throttling happens before the work. */
@@ -70,10 +73,11 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
 
   const logLines: string[] = [];
   const logger: Logger = createLogger({ level: 'debug', destination: { write: (line: string) => { logLines.push(line); } } });
+  const kek = randomBytes(32);
   const service = await createService({
     ISSUER,
     DATABASE_URL: databaseUrl,
-    KEK: randomBytes(32),
+    KEK: kek,
     PEPPER: pepper,
     COOKIE_KEYS: [randomBytes(32).toString('base64')],
     CONFORMANCE_PKCE_EXEMPT_CLIENTS: options.pkceExemptClientIds ?? [],
@@ -108,6 +112,7 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
 
   return {
     service,
+    kek,
     hasher: createSecretHasher(pepper),
     passwordVerifications,
     logLines,
@@ -135,6 +140,9 @@ export async function grantAccess(h: Harness, userId: string, clientId: string =
   await h.service.db.grantRole.deleteMany({ where: { grantId: grant.id } });
   await h.service.db.grantRole.createMany({ data: wanted.map((role) => ({ grantId: grant.id, roleId: role.id })) });
 }
+
+/** The KEK crypto for this run, for tests that mint a signing key. */
+export const testKek = (h: Harness): KekCrypto => createKekCrypto(h.kek);
 
 /**
  * Marks an app as already visited, so the continue-as interstitial is not due (REQ-059). Most

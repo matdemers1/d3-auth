@@ -19,6 +19,7 @@ import type { Logger } from './log.js';
 import { createAdapterFactory } from './oidc/adapter.js';
 import { describeClients } from './oidc/clients.js';
 import { loadSigningKeys } from './oidc/keys.js';
+import { keysRouter } from './oidc/keys-routes.js';
 import { createProvider, deviceCookieNameFor } from './oidc/provider.js';
 import { createSecretHasher } from './security/hash.js';
 import { createKekCrypto } from './security/kek.js';
@@ -239,6 +240,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         operatorDisplayName,
         consoleDist,
       }),
+      keysRouter({ db, kek, requireOwner: consoleAuth.requireOwner, loadedKids: keys.map((key) => key.kid) }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
       accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
       adminRouter({ db, apps, grants, groups, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
