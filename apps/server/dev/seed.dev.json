@@ -4,13 +4,21 @@
       "email": "dev@example.com",
       "username": "dev",
       "displayName": "Dev Person",
-      "password": "correct horse battery staple"
+      "password": "correct horse battery staple",
+      "kind": "owner"
     },
     {
       "email": "passkey@example.com",
       "username": "passkeyperson",
       "displayName": "Passkey Person",
       "password": "willow ember quartz 12"
+    },
+    {
+      "email": "resetme@example.com",
+      "username": "resetme",
+      "displayName": "Reset Me",
+      "password": "cardamom trellis window",
+      "kind": "guest"
     }
   ],
   "clients": [

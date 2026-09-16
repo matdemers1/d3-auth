@@ -15,6 +15,8 @@ export const ADMIN_API = '/api/admin';
 
 export interface AdminDeps {
   db: Db;
+  /** Used in copy the console shows to people, e.g. "Ask Matthew" (REQ-087). */
+  operatorDisplayName: string;
   auth: ConsoleAuth;
   invites: Invites;
   sessions: SessionControl;
@@ -22,7 +24,7 @@ export interface AdminDeps {
   audit: AuditWriter;
 }
 
-export function adminRouter({ db, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
+export function adminRouter({ db, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '8kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -49,6 +51,7 @@ export function adminRouter({ db, auth, invites, sessions, trustedDevices, audit
           displayName: user.displayName,
           kind: user.kind,
           status: user.status,
+          operatorDisplayName,
         });
       } catch (err) {
         next(err);

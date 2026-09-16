@@ -109,7 +109,7 @@ jobs:
       - run: pnpm --filter e2e exec playwright install --with-deps chromium
       - name: Start the stack (builds the image, migrates, seeds the dev user)
         run: pnpm dev:up
-      - name: Playwright flows F1 at phone and desktop (REQ-133, REQ-076)
+      - name: Playwright flows F1, F2, F5, F6 and the a11y sweep, at phone and desktop (REQ-133, REQ-076, REQ-085)
         run: pnpm e2e
       - name: Upload the Playwright report
         if: always()

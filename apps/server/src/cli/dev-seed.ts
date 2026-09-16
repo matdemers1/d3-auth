@@ -26,6 +26,8 @@ export const devSeedSchema = z.object({
         username: z.string().min(1),
         displayName: z.string().min(1),
         password: z.string().min(12),
+        /** Development fixtures need an owner to open the admin screens with. */
+        kind: z.enum(['owner', 'admin', 'guest']).default('guest'),
       }),
     )
     .default([]),
@@ -40,8 +42,8 @@ export async function applyDevSeed(db: Db, hasher: SecretHasher, input: DevSeed)
   for (const u of seed.users) {
     const user = await db.user.upsert({
       where: { email: u.email },
-      create: { email: u.email, username: u.username, displayName: u.displayName, status: 'active', emailVerified: true },
-      update: { username: u.username, displayName: u.displayName, status: 'active', emailVerified: true },
+      create: { email: u.email, username: u.username, displayName: u.displayName, kind: u.kind, status: 'active', emailVerified: true },
+      update: { username: u.username, displayName: u.displayName, kind: u.kind, status: 'active', emailVerified: true },
     });
     // A seeded user is a fixture, so seeding resets it completely: same password every time, and
     // no factors left over from a previous test run.

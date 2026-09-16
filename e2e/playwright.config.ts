@@ -7,6 +7,7 @@ const EXAMPLE_URL = process.env.EXAMPLE_URL ?? 'http://localhost:4000';
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: './global-setup.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

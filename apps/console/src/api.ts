@@ -33,6 +33,8 @@ export interface Me {
   displayName: string;
   kind: 'owner' | 'admin' | 'guest';
   status: 'invited' | 'active' | 'suspended';
+  /** Whoever runs this instance, by name, for copy like "Ask Matthew" (REQ-087). */
+  operatorDisplayName: string;
 }
 
 export interface Person {

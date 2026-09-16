@@ -11,6 +11,10 @@ interface ProfileView {
   displayName: string;
 }
 
+interface Operator {
+  operatorDisplayName: string;
+}
+
 export function Profile() {
   const [profile, setProfile] = useState<ProfileView | undefined>();
   const [displayName, setDisplayName] = useState('');
@@ -18,6 +22,7 @@ export function Profile() {
   const [problems, setProblems] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [operator, setOperator] = useState('an admin');
 
   useEffect(() => {
     api
@@ -29,6 +34,14 @@ export function Profile() {
       })
       .catch(() => {
         setProblems(['We could not load your profile.']);
+      });
+    api
+      .get<Operator>('/api/me')
+      .then((me) => {
+        setOperator(me.operatorDisplayName);
+      })
+      .catch(() => {
+        // The generic wording is the fallback, not an error worth showing.
       });
   }, []);
 
@@ -98,7 +111,7 @@ export function Profile() {
                 }}
               />
             </FormField>
-            <FormField label="Email" help="Ask an admin if this needs to change.">
+            <FormField label="Email" help={`Ask ${operator} if this needs to change.`}>
               <Input name="email" value={profile.email} readOnly />
             </FormField>
             <Button type="submit" variant="primary" loading={busy}>
