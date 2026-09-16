@@ -1,7 +1,7 @@
 // The interaction API (server: apps/server/src/interaction/routes.ts). The screens never decide
 // anything; they render what the server says the current step is.
 
-export type Step = 'identify' | 'password' | 'factor' | 'done';
+export type Step = 'identify' | 'password' | 'factor' | 'trust' | 'done';
 
 export interface InteractionView {
   step: Step;
@@ -47,6 +47,9 @@ export const submitEmail = (uid: string, csrf: string, email: string): Promise<S
 
 export const submitPassword = (uid: string, csrf: string, password: string): Promise<StepResult> =>
   post(uid, '/password', { csrf, password });
+
+/** The trusted-device offer (REQ-036). Either answer finishes the login. */
+export const answerTrust = (uid: string, csrf: string, trust: boolean): Promise<StepResult> => post(uid, '/trust', { csrf, trust });
 
 export const submitCode = (uid: string, csrf: string, code: string): Promise<StepResult> => post(uid, '/totp', { csrf, code });
 

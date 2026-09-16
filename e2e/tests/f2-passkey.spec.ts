@@ -37,6 +37,11 @@ async function signInWithPassword(page: Page): Promise<void> {
   await expect(page.locator('#signed-in')).toBeVisible();
 }
 
+async function signOut(page: Page): Promise<void> {
+  await page.goto('/logout');
+  await page.getByRole('button', { name: 'Yes, sign me out' }).click();
+}
+
 test.describe('F2 passkeys', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', 'needs Chrome DevTools virtual authenticator');
 
@@ -60,8 +65,7 @@ test.describe('F2 passkeys', () => {
     expect((await listFactors()).passkeys).toHaveLength(1);
 
     // Sign out of the provider, then sign in again using the passkey as the second factor.
-    await page.goto('/logout');
-    await page.getByRole('button', { name: 'Yes, sign me out' }).click();
+    await signOut(page);
 
     await page.goto('/login');
     await page.getByLabel('Email').fill(USER.email);
@@ -72,6 +76,31 @@ test.describe('F2 passkeys', () => {
     // The account now has a factor, so the second step appears — and the passkey answers it.
     await expect(page.getByText('One more step')).toBeVisible();
     await page.getByRole('button', { name: 'Use a passkey' }).click();
+
+    // Having proved it is them, they are offered the trusted device (REQ-036).
+    await expect(page.getByText('Skip this step on this browser?')).toBeVisible();
+    await page.getByRole('button', { name: 'Yes, remember this browser' }).click();
+    await expect(page.locator('#signed-in')).toBeVisible();
+
+    // And the offer means something: the next sign-in asks for the password alone.
+    await signOut(page);
+    await signInWithPassword(page);
+
+    // Until it is taken back, at which point the factor is asked for again.
+    await page.goto(`${AUTH}/account/security`);
+    await expect(page.getByRole('heading', { name: 'Browsers that skip the second step' })).toBeVisible();
+    await page.getByRole('button', { name: 'Forget' }).click();
+    await expect(page.getByRole('heading', { name: 'Browsers that skip the second step' })).toBeHidden();
+
+    await signOut(page);
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(USER.email);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByLabel('Password', { exact: true }).fill(USER.password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByText('One more step')).toBeVisible();
+    await page.getByRole('button', { name: 'Use a passkey' }).click();
+    await page.getByRole('button', { name: 'Not this time' }).click();
     await expect(page.locator('#signed-in')).toBeVisible();
 
     // Leave the account as it was found: the virtual authenticator dies with this browser, so a

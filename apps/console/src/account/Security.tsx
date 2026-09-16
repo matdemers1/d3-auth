@@ -24,6 +24,14 @@ interface Factors {
   factorRequired: boolean;
 }
 
+interface TrustedDevice {
+  id: string;
+  userAgent: string | null;
+  createdAt: string;
+  expiresAt: string;
+  current: boolean;
+}
+
 interface Enrolment {
   credentialId: string;
   uri: string;
@@ -34,6 +42,7 @@ const when = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateSt
 
 export function Security() {
   const [factors, setFactors] = useState<Factors | undefined>();
+  const [devices, setDevices] = useState<TrustedDevice[]>([]);
   const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | undefined>();
   const [busy, setBusy] = useState(false);
   const [enrolment, setEnrolment] = useState<Enrolment | undefined>();
@@ -46,6 +55,15 @@ export function Security() {
       .then(setFactors)
       .catch(() => {
         setMessage({ tone: 'danger', text: 'We could not load your security settings.' });
+      });
+    api
+      .get<{ devices: TrustedDevice[] }>('/api/account/devices')
+      .then((answer) => {
+        setDevices(answer.devices);
+      })
+      .catch(() => {
+        // The factor list is the point of this screen; a missing device list is not worth an alarm.
+        setDevices([]);
       });
   };
 
@@ -99,6 +117,17 @@ export function Security() {
       setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That code did not match.' });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function forgetDevice(id: string) {
+    setMessage(undefined);
+    try {
+      await api.post(`/api/account/devices/${encodeURIComponent(id)}/revoke`);
+      setMessage({ tone: 'success', text: 'That browser will be asked for a passkey or code again.' });
+      load();
+    } catch {
+      setMessage({ tone: 'danger', text: 'That did not work.' });
     }
   }
 
@@ -203,6 +232,27 @@ export function Security() {
               </Button>
             )}
           </Card>
+
+          {devices.length > 0 ? (
+            <Card padding="lg">
+              <h2 className="section-title">Browsers that skip the second step</h2>
+              <ul className="rows">
+                {devices.map((device) => (
+                  <li key={device.id} className="row">
+                    <div>
+                      <strong>{device.current ? 'This browser' : (device.userAgent ?? 'A browser')}</strong>
+                      <div className="muted">
+                        trusted {when(device.createdAt)} · stops {when(device.expiresAt)}
+                      </div>
+                    </div>
+                    <Button variant="danger-ghost" size="sm" onClick={() => void forgetDevice(device.id)}>
+                      Forget
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
           {factors.factorRequired ? (
             <Alert tone="info" title="Admins keep at least one factor">

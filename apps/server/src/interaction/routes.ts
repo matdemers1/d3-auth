@@ -5,9 +5,11 @@ import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import type { Db } from '../db.js';
 import type { Logger } from '../log.js';
+import { readCookie } from '../security/cookies.js';
 import { csrfMatches, csrfToken } from '../security/csrf.js';
 import type { PasswordVerifier } from '../security/password.js';
 import type { Throttle } from '../security/throttle.js';
+import { TRUSTED_DEVICE_DAYS, type TrustedDevices } from '../security/trusted-device.js';
 import type { Totp } from '../security/totp.js';
 import type { WebAuthn } from '../security/webauthn.js';
 import { renderLoginPage } from './fallback.js';
@@ -36,12 +38,17 @@ export interface InteractionDeps {
   logger: Logger;
   totp: Totp;
   webauthn: WebAuthn;
+  trustedDevices: TrustedDevices;
+  /** Cookie name for the trusted-device token; `__Host-` prefixed on an https issuer. */
+  deviceCookieName: string;
+  /** False only for a local http issuer, where a Secure cookie would never be sent back. */
+  secureCookies: boolean;
   operatorDisplayName: string;
   /** Where the console build lives; the sign-in form is rendered into its shell. */
   consoleDist: string;
 }
 
-type Step = 'identify' | 'password' | 'factor' | 'done';
+type Step = 'identify' | 'password' | 'factor' | 'trust' | 'done';
 
 const stepFor = (state: LoginState): Step => {
   switch (state.name) {
@@ -51,18 +58,12 @@ const stepFor = (state: LoginState): Step => {
       return 'password';
     case 'awaiting_factor':
       return 'factor';
+    case 'awaiting_trusted_device':
+      return 'trust';
     default:
       return 'done';
   }
 };
-
-/**
- * A factor has just been accepted. The machine offers the person a trusted device next; until
- * that screen exists (T-2.6) the answer is "no", which is the safe default — it asks for the
- * factor again next time rather than skipping it.
- */
-const afterFactor = (state: LoginState): LoginState =>
-  state.name === 'awaiting_trusted_device' ? advance(state, { type: 'trusted_device_answered', trust: false }) : state;
 
 /** What the second-factor screen offers, so it can lead with the passkey when there is one. */
 const factorsOf = (state: LoginState): string[] =>
@@ -117,7 +118,40 @@ export function interactionRouter(deps: InteractionDeps): Router {
     return { uid: details.uid, flow, clientName: client?.clientName ?? String(details.params.client_id) };
   }
 
-  async function finish(req: Request, res: Response, uid: string, accountId: string, amr: readonly string[]): Promise<void> {
+  /**
+   * The person said "don't ask on this browser again". The cookie is written before the redirect
+   * so it survives the hop back to the app, and never for an account that cannot sign in.
+   */
+  async function rememberDevice(req: Request, res: Response, accountId: string): Promise<void> {
+    const issued = await deps.trustedDevices.issue({ userId: accountId, userAgent: req.get('user-agent') });
+    if (!issued) return;
+    res.cookie(deps.deviceCookieName, issued.token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: deps.secureCookies,
+      path: '/',
+      expires: issued.expiresAt,
+    });
+    await audit.write({
+      event: AUDIT_EVENTS.deviceTrusted,
+      actorUserId: accountId,
+      targetType: 'user',
+      targetId: accountId,
+      ip: clientIp(req),
+      userAgent: req.get('user-agent'),
+      detail: { days: TRUSTED_DEVICE_DAYS },
+    });
+  }
+
+  async function finish(
+    req: Request,
+    res: Response,
+    uid: string,
+    accountId: string,
+    amr: readonly string[],
+    trustDevice = false,
+  ): Promise<void> {
+    if (trustDevice) await rememberDevice(req, res, accountId);
     const redirectTo = await provider.interactionResult(
       req,
       res,
@@ -234,6 +268,13 @@ export function interactionRouter(deps: InteractionDeps): Router {
           webauthnCredentials: { select: { credentialId: true } },
         },
       });
+      // A trusted-device cookie only means something once we know whose account this is: it is
+      // checked against *this* user, so somebody else's cookie skips nothing.
+      const deviceTrusted =
+        user && user.status === 'active'
+          ? await deps.trustedDevices.verify({ userId: user.id, token: readCookie(req, deps.deviceCookieName) })
+          : false;
+
       const identity: Identity | undefined =
         user && user.status === 'active'
           ? {
@@ -242,7 +283,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
                 ...(user.totpCredentials.length > 0 ? (['totp'] as const) : []),
                 ...(user.webauthnCredentials.length > 0 ? (['passkey'] as const) : []),
               ],
-              deviceTrusted: false,
+              deviceTrusted,
             }
           : undefined;
 
@@ -373,7 +414,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
       }
 
       await throttle.clear(keys);
-      const state = afterFactor(advance(ctx.flow.state, { type: 'factor_verified', method: 'totp' }));
+      const state = advance(ctx.flow.state, { type: 'factor_verified', method: 'totp' });
       if (isComplete(state)) {
         await finish(req, res, ctx.uid, state.accountId, state.amr);
         return;
@@ -428,7 +469,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
       const identity = { accountId: user.id, factors: [] as const, deviceTrusted: false };
       const state =
         ctx.flow.state.name === 'awaiting_factor'
-          ? afterFactor(advance(ctx.flow.state, { type: 'factor_verified', method: 'passkey' }))
+          ? advance(ctx.flow.state, { type: 'factor_verified', method: 'passkey' })
           : advance(start(), { type: 'passkey_authenticated', identity });
 
       if (isComplete(state)) {
@@ -437,6 +478,32 @@ export function interactionRouter(deps: InteractionDeps): Router {
       }
       await flows.save(ctx.uid, { ...ctx.flow, state }, FLOW_TTL_SECONDS);
       reply(req, res, ctx.uid, 200, { step: stepFor(state), csrf: ctx.flow.csrf });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // "Don't ask again on this browser" (REQ-036). Either answer finishes the login; only "yes"
+  // writes a cookie, and only for thirty days.
+  router.post(`${INTERACTION_API}/:uid/trust`, body, async (req, res, next) => {
+    try {
+      respondNoStore(res);
+      const ctx = await context(req, res);
+      if (!ctx) return;
+      const input = req.body as { trust?: unknown; csrf?: unknown };
+      if (!csrfMatches(ctx.flow.csrf, input.csrf)) {
+        reply(req, res, ctx.uid, 403, { error: 'csrf' });
+        return;
+      }
+      if (ctx.flow.state.name !== 'awaiting_trusted_device') {
+        reply(req, res, ctx.uid, 409, { error: 'wrong_step', step: stepFor(ctx.flow.state) });
+        return;
+      }
+      // A form post sends the string "true"; the console sends a boolean. Anything else is "no".
+      const trust = input.trust === true || input.trust === 'true';
+      const state = advance(ctx.flow.state, { type: 'trusted_device_answered', trust });
+      if (!isComplete(state)) throw new Error('the trusted-device answer must complete the login');
+      await finish(req, res, ctx.uid, state.accountId, state.amr, state.trustDevice);
     } catch (err) {
       next(err);
     }

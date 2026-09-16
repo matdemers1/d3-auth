@@ -1,6 +1,6 @@
 import { Alert, Button, Card, FormField, Input, PasswordInput } from '@d3cloud/ui';
 import { useEffect, useRef, useState } from 'react';
-import { loadInteraction, signInWithPasskey, submitCode, submitEmail, submitPassword, type InteractionView, type StepResult } from './api';
+import { answerTrust, loadInteraction, signInWithPasskey, submitCode, submitEmail, submitPassword, type InteractionView, type StepResult } from './api';
 
 // I-1: sign in, phone first. Email step, then password step (REQ-076).
 //
@@ -110,9 +110,21 @@ export function SignIn({ uid }: Props) {
   }
 
   const throttled = retryAfter > 0;
-  const step = view.step === 'identify' ? 'identify' : view.step === 'factor' ? 'totp' : 'password';
+  const step =
+    view.step === 'identify' ? 'identify' : view.step === 'factor' ? 'totp' : view.step === 'trust' ? 'trust' : 'password';
   const action = `/api/interaction/${encodeURIComponent(uid)}/${step}`;
   const hasPasskey = (view.factors ?? []).includes('passkey');
+
+  async function answerDevice(csrf: string, trust: boolean) {
+    setBusy(true);
+    try {
+      apply(await answerTrust(uid, csrf, trust));
+    } catch {
+      setMessage('We could not reach the server. Check your connection and try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function usePasskey(csrf: string) {
     setBusy(true);
@@ -140,6 +152,44 @@ export function SignIn({ uid }: Props) {
           Wait {retryAfter} second{retryAfter === 1 ? '' : 's'} and try again. Nothing is locked — this is just a pause.
         </Alert>
       ) : null}
+      {view.step === 'trust' ? (
+        <Card padding="lg">
+          <form method="post" action={action} className="signin-form">
+            <input type="hidden" name="csrf" value={view.csrf} />
+            <p className="signin-identity">Skip this step on this browser?</p>
+            <p className="signin-footnote">
+              We will not ask for your passkey or code here for the next 30 days. Use this only on a browser that is yours
+              — you can undo it from Security in your account.
+            </p>
+            <Button
+              type="submit"
+              name="trust"
+              value="true"
+              variant="primary"
+              loading={busy}
+              onClick={(event) => {
+                event.preventDefault();
+                void answerDevice(view.csrf, true);
+              }}
+            >
+              Yes, remember this browser
+            </Button>
+            <Button
+              type="submit"
+              name="trust"
+              value="false"
+              variant="secondary"
+              disabled={busy}
+              onClick={(event) => {
+                event.preventDefault();
+                void answerDevice(view.csrf, false);
+              }}
+            >
+              Not this time
+            </Button>
+          </form>
+        </Card>
+      ) : (
       <Card padding="lg">
         <form method="post" action={action} onSubmit={(event) => void onSubmit(event)} className="signin-form">
           <input type="hidden" name="csrf" value={view.csrf} />
@@ -204,6 +254,7 @@ export function SignIn({ uid }: Props) {
           </Button>
         </form>
       </Card>
+      )}
       <p className="signin-footnote">Trouble signing in? Ask {view.operatorDisplayName}.</p>
     </main>
   );

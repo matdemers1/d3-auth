@@ -20,24 +20,57 @@ const escape = (value: string): string => value.replace(/[&<>"']/g, (c) => `&#${
 
 export function fallbackForm(view: FallbackView): string {
   const action = `/api/interaction/${encodeURIComponent(view.uid)}`;
-  const onPassword = view.flow.state.name !== 'awaiting_identifier';
+  const csrf = `<input type="hidden" name="csrf" value="${escape(view.flow.csrf)}">`;
+  const state = view.flow.state;
   const email = view.flow.attemptedEmail ?? '';
+  const signingInAs = `<p class="signin-identity">Signing in as <strong>${escape(email)}</strong></p>`;
 
-  const field = onPassword
-    ? `<p class="signin-identity">Signing in as <strong>${escape(email)}</strong></p>
-      <label class="signin-label" for="password">Password</label>
-      <input class="signin-input" id="password" name="password" type="password" autocomplete="current-password" required autofocus>`
-    : `<label class="signin-label" for="email">Email</label>
+  // Each step is its own small form, because each posts to its own endpoint. The passkey has no
+  // no-JavaScript form at all: the ceremony *is* JavaScript, so that step offers the code instead.
+  const form = (endpoint: string, inner: string): string =>
+    `<form class="signin-form signin-form--fallback" method="post" action="${action}/${endpoint}">${csrf}${inner}</form>`;
+
+  let body: string;
+  switch (state.name) {
+    case 'awaiting_identifier':
+      body = form(
+        'identify',
+        `<label class="signin-label" for="email">Email</label>
       <input class="signin-input" id="email" name="email" type="email" autocomplete="username" inputmode="email" required autofocus>
-      <p class="signin-footnote">The address you were invited with.</p>`;
+      <p class="signin-footnote">The address you were invited with.</p>
+      <button class="signin-button" type="submit">Continue</button>`,
+      );
+      break;
+    case 'awaiting_factor':
+      body = form(
+        'totp',
+        `${signingInAs}
+      <label class="signin-label" for="code">Code from your authenticator app</label>
+      <input class="signin-input" id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+      <button class="signin-button" type="submit">Confirm</button>`,
+      );
+      break;
+    case 'awaiting_trusted_device':
+      body = form(
+        'trust',
+        `<p class="signin-identity">Skip this step on this browser for the next 30 days?</p>
+      <button class="signin-button" type="submit" name="trust" value="true">Yes, remember this browser</button>
+      <button class="signin-button signin-button--quiet" type="submit" name="trust" value="false">Not this time</button>`,
+      );
+      break;
+    default:
+      body = form(
+        'password',
+        `${signingInAs}
+      <label class="signin-label" for="password">Password</label>
+      <input class="signin-input" id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button class="signin-button" type="submit">Sign in</button>`,
+      );
+  }
 
   return `<main class="shell shell--narrow">
     <h1 class="signin-title">Sign in to ${escape(view.clientName)}</h1>
-    <form class="signin-form signin-form--fallback" method="post" action="${action}/${onPassword ? 'password' : 'identify'}">
-      <input type="hidden" name="csrf" value="${escape(view.flow.csrf)}">
-      ${field}
-      <button class="signin-button" type="submit">${onPassword ? 'Sign in' : 'Continue'}</button>
-    </form>
+    ${body}
     <p class="signin-footnote">Trouble signing in? Ask ${escape(view.operatorDisplayName)}.</p>
   </main>`;
 }

@@ -97,6 +97,13 @@
   cursor: pointer;
 }
 
+/* The second choice on a two-button fallback step: present, but not the one being suggested. */
+.signin-button--quiet {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-weight: var(--font-weight-regular);
+}
+
 /* Console lists and forms. Tokens only. */
 .stack {
   display: flex;

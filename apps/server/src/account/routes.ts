@@ -4,6 +4,9 @@ import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import { consoleUserOf, isAdmin, type ConsoleAuth } from '../console/auth.js';
 import type { Db } from '../db.js';
+import { readCookie } from '../security/cookies.js';
+import { verifiedFactorCount } from '../security/factors.js';
+import type { TrustedDevices } from '../security/trusted-device.js';
 import type { Totp } from '../security/totp.js';
 import type { WebAuthn } from '../security/webauthn.js';
 
@@ -19,10 +22,12 @@ export interface AccountDeps {
   auth: ConsoleAuth;
   totp: Totp;
   webauthn: WebAuthn;
+  trustedDevices: TrustedDevices;
+  deviceCookieName: string;
   audit: AuditWriter;
 }
 
-export function accountRouter({ db, auth, totp, webauthn, audit }: AccountDeps): Router {
+export function accountRouter({ db, auth, totp, webauthn, trustedDevices, deviceCookieName, audit }: AccountDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '16kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -30,15 +35,6 @@ export function accountRouter({ db, auth, totp, webauthn, audit }: AccountDeps):
       if (err) next(err);
       else next();
     });
-  };
-
-  /** How many verified factors the person would have left after removing one. */
-  const factorCount = async (userId: string): Promise<number> => {
-    const [passkeys, codes] = await Promise.all([
-      db.webauthnCredential.count({ where: { userId } }),
-      db.totpCredential.count({ where: { userId, confirmedAt: { not: null } } }),
-    ]);
-    return passkeys + codes;
   };
 
   router.get(`${ACCOUNT_API}/factors`, auth.requireUser, (_req, res, next) => {
@@ -112,7 +108,7 @@ export function accountRouter({ db, auth, totp, webauthn, audit }: AccountDeps):
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
-        if (isAdmin(user) && (await factorCount(user.id)) <= 1) {
+        if (isAdmin(user) && (await verifiedFactorCount(db, user.id)) <= 1) {
           res.status(409).json({
             error: 'last_factor',
             message: 'Admins keep at least one passkey or authenticator app. Add another before removing this one.',
@@ -192,7 +188,7 @@ export function accountRouter({ db, auth, totp, webauthn, audit }: AccountDeps):
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
-        if (isAdmin(user) && (await factorCount(user.id)) <= 1) {
+        if (isAdmin(user) && (await verifiedFactorCount(db, user.id)) <= 1) {
           res.status(409).json({
             error: 'last_factor',
             message: 'Admins keep at least one passkey or authenticator app. Add another before removing this one.',
@@ -214,6 +210,43 @@ export function accountRouter({ db, auth, totp, webauthn, audit }: AccountDeps):
           detail: { factor: 'totp' },
         });
         res.json({ removed: true });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  // Trusted devices (REQ-036): the list is what makes "don't ask again" reversible.
+  router.get(`${ACCOUNT_API}/devices`, auth.requireUser, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user } = consoleUserOf(res);
+        const devices = await trustedDevices.list({ userId: user.id, token: readCookie(req, deviceCookieName) });
+        res.set('Cache-Control', 'no-store').json({ devices });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  router.post<{ id: string }>(`${ACCOUNT_API}/devices/:id/revoke`, auth.requireUser, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user } = consoleUserOf(res);
+        const revoked = await trustedDevices.revoke({ userId: user.id, id: req.params.id });
+        if (!revoked) {
+          res.status(404).json({ error: 'not_found' });
+          return;
+        }
+        await audit.write({
+          event: AUDIT_EVENTS.deviceRevoked,
+          actorUserId: user.id,
+          targetType: 'user',
+          targetId: user.id,
+          ip: clientIp(req),
+          userAgent: req.get('user-agent'),
+        });
+        res.json({ revoked: true });
       } catch (err) {
         next(err);
       }

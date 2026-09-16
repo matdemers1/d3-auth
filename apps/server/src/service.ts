@@ -16,7 +16,7 @@ import type { Logger } from './log.js';
 import { createAdapterFactory } from './oidc/adapter.js';
 import { loadClients } from './oidc/clients.js';
 import { loadSigningKeys } from './oidc/keys.js';
-import { createProvider } from './oidc/provider.js';
+import { createProvider, deviceCookieNameFor } from './oidc/provider.js';
 import { createSecretHasher } from './security/hash.js';
 import { createKekCrypto } from './security/kek.js';
 import { createMailAdapter, type MailAdapter } from './mail/adapter.js';
@@ -26,6 +26,7 @@ import { workerRelayDriver } from './mail/worker-relay.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
 import { createThrottle } from './security/throttle.js';
 import { createTotp, type Totp } from './security/totp.js';
+import { createTrustedDevices, type TrustedDevices } from './security/trusted-device.js';
 import { createWebAuthn, type WebAuthn } from './security/webauthn.js';
 import { createFirstRunSetup } from './setup/first-run.js';
 import { setupRouter } from './setup/routes.js';
@@ -40,6 +41,7 @@ export interface Service {
   invites: Invites;
   totp: Totp;
   webauthn: WebAuthn;
+  trustedDevices: TrustedDevices;
   close(): Promise<void>;
 }
 
@@ -151,6 +153,9 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     rpName: `${operatorDisplayName === 'the operator' ? 'D3 Auth' : operatorDisplayName} sign-in`,
     origin: issuerUrl.origin,
   });
+  const secureCookies = config.ISSUER.startsWith('https://');
+  const trustedDevices = createTrustedDevices(db);
+  const deviceCookieName = deviceCookieNameFor(secureCookies);
   const invites = createInvites({
     db,
     mail,
@@ -177,11 +182,14 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         logger,
         totp,
         webauthn,
+        trustedDevices,
+        deviceCookieName,
+        secureCookies,
         operatorDisplayName,
         consoleDist,
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
-      accountRouter({ db, auth: consoleAuth, totp, webauthn, audit }),
+      accountRouter({ db, auth: consoleAuth, totp, webauthn, trustedDevices, deviceCookieName, audit }),
       adminRouter({ db, auth: consoleAuth, invites, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
@@ -201,6 +209,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     invites,
     totp,
     webauthn,
+    trustedDevices,
     close: () => db.$disconnect(),
   };
 }

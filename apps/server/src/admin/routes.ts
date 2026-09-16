@@ -3,6 +3,7 @@ import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import { consoleUserOf, type ConsoleAuth } from '../console/auth.js';
 import type { Db } from '../db.js';
+import { mustHoldFactor, verifiedFactorCount } from '../security/factors.js';
 import type { Invites } from './invites.js';
 
 // The console's API for the people side of the house (C-1, C-3). Phase 3 adds apps, grants and
@@ -66,6 +67,53 @@ export function adminRouter({ db, auth, invites, audit }: AdminDeps): Router {
           }),
         ]);
         res.set('Cache-Control', 'no-store').json({ people, pendingInvites: pending });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  // Making somebody an admin (REQ-035). The factor rule is enforced here, at grant time, because
+  // this is the moment an account gains the power that makes a second factor non-negotiable —
+  // checking it later, at sign-in, would already be too late.
+  router.post<{ id: string }>(`${ADMIN_API}/people/:id/kind`, auth.requireOwner, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user: actor } = consoleUserOf(res);
+        const input = req.body as { kind?: unknown };
+        const kind = input.kind;
+        if (kind !== 'admin' && kind !== 'guest') {
+          res.status(400).json({ error: 'invalid_kind', message: 'A person can be an admin or a guest.' });
+          return;
+        }
+        const target = await db.user.findUnique({ where: { id: req.params.id }, select: { id: true, kind: true } });
+        if (!target) {
+          res.status(404).json({ error: 'not_found' });
+          return;
+        }
+        if (target.kind === 'owner') {
+          res.status(409).json({ error: 'owner_unchanged', message: 'The owner cannot be demoted here.' });
+          return;
+        }
+        if (mustHoldFactor(kind) && (await verifiedFactorCount(db, target.id)) === 0) {
+          res.status(409).json({
+            error: 'factor_required',
+            message: 'Ask them to add a passkey or an authenticator app first. Admins must be able to prove it is them.',
+          });
+          return;
+        }
+
+        await db.user.update({ where: { id: target.id }, data: { kind } });
+        await audit.write({
+          event: AUDIT_EVENTS.personKindChanged,
+          actorUserId: actor.id,
+          targetType: 'user',
+          targetId: target.id,
+          ip: clientIp(req),
+          userAgent: req.get('user-agent'),
+          detail: { from: target.kind, to: kind },
+        });
+        res.json({ kind });
       } catch (err) {
         next(err);
       }

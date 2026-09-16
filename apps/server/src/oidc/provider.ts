@@ -38,6 +38,12 @@ export const COOKIE_NAMES = {
 export const cookieNamesFor = (secure: boolean): Record<'session' | 'interaction' | 'resume', string> =>
   secure ? { ...COOKIE_NAMES } : { session: 'd3auth_session', interaction: 'd3auth_interaction', resume: 'd3auth_resume' };
 
+/**
+ * Ours, not the provider's: the trusted-device cookie (REQ-036). It is kept out of the provider's
+ * own cookie names so nothing here can be mistaken for part of the protocol.
+ */
+export const deviceCookieNameFor = (secure: boolean): string => (secure ? '__Host-d3auth_device' : 'd3auth_device');
+
 export interface ProviderOptions {
   issuer: string;
   db: Db;

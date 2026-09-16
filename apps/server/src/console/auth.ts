@@ -1,6 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { AdapterFactory } from 'oidc-provider';
 import type { Db } from '../db.js';
+import { readCookie } from '../security/cookies.js';
+import { mustHoldFactor } from '../security/factors.js';
 import type { UserModel as User } from '../generated/prisma/models.js';
 import { COOKIE_NAMES, cookieNamesFor } from '../oidc/provider.js';
 
@@ -19,19 +21,7 @@ export interface ConsoleUser {
   sessionId: string;
 }
 
-export const isAdmin = (user: User): boolean => user.kind === 'owner' || user.kind === 'admin';
-
-function cookieValue(req: Request, name: string): string | undefined {
-  const raw = req.headers.cookie;
-  if (!raw) return undefined;
-  for (const part of raw.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== name) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
-  }
-  return undefined;
-}
+export const isAdmin = (user: User): boolean => mustHoldFactor(user.kind);
 
 /** The user a guard has already established. Only valid inside a guarded handler. */
 export const consoleUserOf = (res: Response): ConsoleUser => {
@@ -53,7 +43,7 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
   const names = cookieNamesFor(secureCookies);
 
   const current = async (req: Request): Promise<ConsoleUser | undefined> => {
-    const sessionId = cookieValue(req, names.session) ?? cookieValue(req, COOKIE_NAMES.session);
+    const sessionId = readCookie(req, names.session) ?? readCookie(req, COOKIE_NAMES.session);
     if (!sessionId) return undefined;
     const payload: unknown = await sessions.find(sessionId);
     const accountId = (payload as { accountId?: string } | undefined)?.accountId;
