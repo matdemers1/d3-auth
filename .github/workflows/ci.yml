@@ -44,6 +44,20 @@ jobs:
       - name: Console build and interaction bundle budget (REQ-077)
         run: pnpm --filter d3auth-console build
 
+  # The Python SDK has no Node in it, so it gets its own short job rather than slowing that one.
+  python-sdk:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install the package and its test tools
+        run: pip install -e './packages/auth-client-python[fastapi,dev]'
+      - name: Contract tests (REQ-090, REQ-093, REQ-098, REQ-099)
+        run: python -m pytest packages/auth-client-python -q
+
   integration:
     needs: unit
     runs-on: ubuntu-latest
@@ -127,7 +141,7 @@ jobs:
   # Only this job publishes, and only from main after everything above is green (REQ-134).
   # Deploying is still a deliberate pull-and-restart on the host (REQ-136).
   images:
-    needs: e2e
+    needs: [e2e, python-sdk]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
