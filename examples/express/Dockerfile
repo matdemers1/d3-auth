@@ -5,6 +5,10 @@ FROM node:22-trixie-slim
 ENV NODE_ENV=production PORT=4000
 WORKDIR /app
 
+# The source is ESM with top-level await, so the image needs its own module type; without it
+# tsx transforms to CommonJS and the app will not start.
+RUN printf '{\n  "name": "d3auth-express-demo",\n  "private": true,\n  "type": "module"\n}\n' > package.json
+
 # Pinned, and installed directly rather than from the workspace lockfile.
 RUN npm install --no-fund --no-audit --no-package-lock \
       express@5.2.1 \
