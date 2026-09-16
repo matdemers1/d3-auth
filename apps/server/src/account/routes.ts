@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import express, { Router, type RequestHandler } from 'express';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { AUDIT_EVENTS } from '../audit/events.js';
@@ -24,6 +25,12 @@ import type { WebAuthn } from '../security/webauthn.js';
 // borrowed session with a known password would otherwise be enough to take the account.
 
 export const ACCOUNT_API = '/api/account';
+
+/**
+ * The step-up challenge is keyed by the session, but the session id is the cookie value itself —
+ * so it is hashed first. Otherwise a row in the payload table would carry a live session token.
+ */
+const stepUpKey = (sessionId: string): string => `stepup:${createHash('sha256').update(sessionId).digest('hex')}`;
 
 export interface AccountDeps {
   db: Db;
@@ -335,7 +342,7 @@ export function accountRouter({
     void (async () => {
       try {
         const { user, sessionId } = consoleUserOf(res);
-        const options = await webauthn.beginAuthentication({ userId: user.id, sessionKey: `stepup:${sessionId}` });
+        const options = await webauthn.beginAuthentication({ userId: user.id, sessionKey: stepUpKey(sessionId) });
         res.set('Cache-Control', 'no-store').json(options);
       } catch (err) {
         next(err);
@@ -355,7 +362,7 @@ export function accountRouter({
     }
     if (input.passkey && typeof input.passkey === 'object') {
       const result = await webauthn.finishAuthentication({
-        sessionKey: `stepup:${input.sessionId}`,
+        sessionKey: stepUpKey(input.sessionId),
         response: input.passkey as AuthenticationResponseJSON,
       });
       return result.ok && result.userId === input.userId;
