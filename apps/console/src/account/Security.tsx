@@ -53,6 +53,9 @@ export function Security() {
   // Adding or removing a factor asks for fresh proof (ASVS 7.5.1): a borrowed session must not be
   // able to plant a passkey that outlasts a password change.
   const [pending, setPending] = useState<{ describe: string; retry: () => void } | undefined>();
+  // After a factor changes, offer to end every other sign-in (ASVS 7.4.3): if the change was made
+  // because something was lost or suspected, the other sessions are exactly what to worry about.
+  const [offerSignOutOthers, setOfferSignOutOthers] = useState(false);
   const askFirst = (err: unknown, describe: string, retry: () => void): boolean => {
     if (err instanceof ApiError && err.body.error === 'step_up_required') {
       setPending({ describe, retry });
@@ -90,6 +93,7 @@ export function Security() {
       const response = await startRegistration({ optionsJSON: options });
       await api.post('/api/account/passkeys/finish', { response, label: 'Passkey' });
       setMessage({ tone: 'success', text: 'Passkey added. You can use it to sign in from now on.' });
+      setOfferSignOutOthers(true);
       load();
     } catch (err) {
       if (askFirst(err, 'adding a passkey', () => void addPasskey())) return;
@@ -126,6 +130,7 @@ export function Security() {
       setQr(undefined);
       setCode('');
       setMessage({ tone: 'success', text: 'Authenticator app added.' });
+      setOfferSignOutOthers(true);
       load();
     } catch (err) {
       if (askFirst(err, 'adding an authenticator app', () => undefined)) return;
@@ -146,10 +151,25 @@ export function Security() {
     }
   }
 
+  async function signOutOthers() {
+    setBusy(true);
+    try {
+      const answer = await api.post<{ revoked?: number }>('/api/account/sessions/revoke-others');
+      setOfferSignOutOthers(false);
+      setMessage({ tone: 'success', text: answer.revoked ? `Signed out of ${String(answer.revoked)} other sign-in(s).` : 'You were not signed in anywhere else.' });
+    } catch (err) {
+      if (askFirst(err, 'ending your other sign-ins', () => void signOutOthers())) return;
+      setMessage({ tone: 'danger', text: 'That did not work.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(kind: 'passkeys' | 'totp', id: string) {
     setMessage(undefined);
     try {
       await api.post(`/api/account/${kind}/${encodeURIComponent(id)}/remove`);
+      setOfferSignOutOthers(true);
       load();
     } catch (err) {
       if (askFirst(err, kind === 'passkeys' ? 'removing a passkey' : 'removing an authenticator app', () => void remove(kind, id))) return;
@@ -165,6 +185,27 @@ export function Security() {
         <Alert tone={message.tone} dynamic title={message.tone === 'danger' ? 'That did not work' : 'Done'}>
           {message.text}
         </Alert>
+      ) : null}
+
+      {offerSignOutOthers ? (
+        <Card padding="lg">
+          <h2 className="section-title">Sign out everywhere else?</h2>
+          <p className="muted">If you made this change because a device was lost or you suspect someone else, end every other sign-in too.</p>
+          <div className="row-meta">
+            <Button variant="primary" loading={busy} onClick={() => void signOutOthers()}>
+              Sign out everywhere else
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                setOfferSignOutOthers(false);
+              }}
+            >
+              Not now
+            </Button>
+          </div>
+        </Card>
       ) : null}
 
       {pending ? (

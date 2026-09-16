@@ -40,6 +40,11 @@ function Nav({ current }: { current: string }) {
           {section.label}
         </a>
       ))}
+      {/* Sign-out is on every signed-in page (ASVS 7.4.4). The provider asks before it acts, so a
+          stray click costs a "No, stay signed in". */}
+      <a className="account-nav-link" href="/oidc/session/end">
+        Sign out
+      </a>
     </nav>
   );
 }
