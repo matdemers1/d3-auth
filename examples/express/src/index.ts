@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createAuthClient, createBackchannelHandler, identityKey, type AuthClient, type SsoMode } from '@d3cloud/auth-client';
 import express, { type Request, type Response } from 'express';
 
@@ -42,7 +42,15 @@ interface Session {
 // SSO-required app must keep (rule 10).
 const accounts = new Map<string, Account>([['owner', { id: 'owner', username: 'owner', password: 'the-local-owner-password', roles: ['admin'] }]]);
 const sessions = new Map<string, Session>();
+/**
+ * Sign-ins that have started and not come back, keyed by a random id held in a cookie on the browser
+ * that started them — never by `state` alone. A callback is only accepted from that browser, with the
+ * state it was given (ASVS 5.0 10.1.2). Keyed by state, anybody could hand somebody else a sign-in to
+ * finish: the victim lands in the attacker's account, or — through linking — the attacker's account
+ * takes on the victim's identity and roles.
+ */
 const pending = new Map<string, { verifier: string; state: string; nonce: string; link?: string }>();
+const TX_COOKIE = 'example_signin';
 
 let auth: AuthClient | undefined;
 try {
@@ -86,7 +94,7 @@ const startSession = (res: Response, session: Session): void => {
   const id = randomUUID();
   sessions.set(id, session);
   // The app's own session, which outlives the ID token and survives the provider being down.
-  res.set('Set-Cookie', `example_session=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+  res.append('Set-Cookie', `example_session=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
 };
 
 app.get('/', (req: Request, res: Response) => {
@@ -151,15 +159,22 @@ app.get('/login', async (req: Request, res: Response) => {
   // Linking (rule 9): the account to attach this identity to is the one already signed in here,
   // never one matched by email afterwards.
   const linkTo = req.query.link === '1' ? sessionOf(req)?.account.id : undefined;
-  pending.set(start.state, { ...start, ...(linkTo ? { link: linkTo } : {}) });
+  const tx = randomBytes(32).toString('base64url');
+  pending.set(tx, { ...start, ...(linkTo ? { link: linkTo } : {}) });
+  // Lax is sent on the provider's redirect back, which is a top-level navigation; ten minutes is longer
+  // than any real sign-in takes.
+  res.set('Set-Cookie', `${TX_COOKIE}=${tx}; Path=/callback; HttpOnly; SameSite=Lax; Max-Age=600${BASE_URL.startsWith('https:') ? '; Secure' : ''}`);
   res.redirect(start.url);
 });
 
 app.get('/callback', async (req: Request, res: Response) => {
   const state = typeof req.query.state === 'string' ? req.query.state : '';
-  const started = pending.get(state);
-  pending.delete(state);
-  if (!started || !auth) {
+  const tx = cookie(req, TX_COOKIE) ?? '';
+  const started = pending.get(tx);
+  pending.delete(tx);
+  res.append('Set-Cookie', `${TX_COOKIE}=; Path=/callback; HttpOnly; SameSite=Lax; Max-Age=0`);
+  // This browser started it, and it is the sign-in it started. Anything else is refused.
+  if (!started || started.state !== state || !auth) {
     res.status(400).type('html').send(page('<h1>Unexpected sign-in response</h1><p>Start again from the home page.</p>'));
     return;
   }

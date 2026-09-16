@@ -25,6 +25,12 @@ PKCE is required of every client, confidential ones included. `state` is what ti
 to the request your app started; `nonce` is what ties the ID token to it. Generating them is not
 the point — **checking them on the way back** is.
 
+And keep them **with the browser that started the sign-in** — in its session, or under a random id
+in a short-lived `HttpOnly` cookie — never in a server-wide table keyed by `state`. Keyed by state,
+anybody can hand somebody else a sign-in to finish: the victim ends up in the attacker's account, or,
+through linking, the attacker's account takes on the victim's identity and roles. The reference
+Express app got this wrong until the Phase 5 security gate caught it.
+
 ## 3. Verify the ID token against a pinned algorithm list.
 
 Check `iss` equals the issuer discovery gave you, `aud` contains your `client_id`, `nonce`
