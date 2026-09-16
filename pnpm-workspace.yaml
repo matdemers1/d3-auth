@@ -11,7 +11,22 @@ packages:
 # the registry (a git URL or a tarball nobody reviewed).
 minimumReleaseAge: 10080
 trustPolicy: no-downgrade
+# A takeover shows up as a *new* release, so only releases from the last 30 days are judged. Without
+# a window, versions published long before a package adopted provenance are flagged for lacking it
+# (undici-types@6.21.0, types only, from a Node.js core maintainer). A cold cache is what exposes
+# this: a warm one hid it, which is why some builds passed and CI's image build did not.
+trustPolicyIgnoreAfter: 43200
 blockExoticSubdeps: true
+
+# One exact version is excused from the trust policy, with the evidence (2026-09-16):
+# prisma@7.10.0 — the CLI only — was published without the SLSA provenance 7.8.0 through 7.9.1
+# carried. Its runtime packages at 7.10.0 (@prisma/client, adapter-pg, engines, config) all have it.
+# Same publisher account; a GitHub release by a Prisma maintainer seven minutes after publish; npm
+# registry signatures verify for the whole tree; and a pre-release that week named
+# `integration-fix-prisma-publish-token`. A publishing slip, not a takeover. Remove this line with
+# the next Prisma upgrade: the policy should hold for every other version, this package included.
+trustPolicyExclude:
+  - prisma@7.10.0
 
 # pnpm 10 runs no dependency install scripts unless named, so each one here is a decision.
 # Allowed, because the project does not work without them: argon2 builds or verifies its native
