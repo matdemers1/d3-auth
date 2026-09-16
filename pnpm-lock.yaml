@@ -260,7 +260,7 @@ packages:
     engines: {node: '>=12'}
 
   '@d3cloud/ui@https://github.com/matdemers1/d3-design-system/releases/download/v1.0.0/d3cloud-ui-1.0.0.tgz':
-    resolution: {tarball: https://github.com/matdemers1/d3-design-system/releases/download/v1.0.0/d3cloud-ui-1.0.0.tgz}
+    resolution: {integrity: sha512-tZB1PbzN60f4wsl3wSHH0kaDQR7EPrQblxj/8Amo75h0cDNwmASLJ5flMtDDSVZ3cQvSsrMLNJXRldXhopn+3Q==, tarball: https://github.com/matdemers1/d3-design-system/releases/download/v1.0.0/d3cloud-ui-1.0.0.tgz}
     version: 1.0.0
     engines: {node: '>=20.0.0'}
     hasBin: true

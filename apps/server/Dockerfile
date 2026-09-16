@@ -5,7 +5,7 @@ ARG NODE_IMAGE=node:22-trixie-slim
 
 FROM ${NODE_IMAGE} AS build
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true
-RUN npm install -g pnpm@9.15.9
+RUN npm install -g pnpm@10.34.5
 WORKDIR /repo
 
 # Fetch from the lockfile alone so dependency layers survive source edits.
@@ -16,8 +16,11 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --offline --frozen-lockfile --filter d3auth-server... --filter d3auth-console...
 RUN pnpm --filter d3auth-server build && pnpm --filter d3auth-console build
+# The release-age policy gates *resolving* new versions, which happens at `pnpm install` on a
+# developer's machine. This step reproduces a lockfile that already passed it, so the check is off
+# here and only here. `--legacy`: the server has no workspace dependencies to inject.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter d3auth-server deploy --prod /out
+    pnpm --filter d3auth-server deploy --prod --legacy --config.minimum-release-age=0 /out
 
 FROM ${NODE_IMAGE} AS runtime
 # pg_dump takes the pre-migration dump at boot (REQ-121) and the backup bundle in Phase 6.

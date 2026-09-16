@@ -1,0 +1,12 @@
+# Actions are pinned to commit SHAs (T-5.3): a tag can be moved by whoever owns it. Dependabot keeps
+# the pins current, so pinning does not quietly become "never updated".
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # The same seven days the packages wait (pnpm-workspace.yaml): a release that is going to be
+    # pulled is usually pulled in that window.
+    cooldown:
+      default-days: 7

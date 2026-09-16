@@ -59,6 +59,8 @@ export function consoleRouter(dist: string): Router {
       res.status(503).type('text').send('The console is not available on this build.');
       return;
     }
+    // The path is the build's own index.html, fixed at startup; nothing from the request reaches it.
+    // nosemgrep: javascript.express.security.audit.express-res-sendfile.express-res-sendfile
     res.sendFile(index);
   });
 

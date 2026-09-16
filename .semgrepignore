@@ -1,0 +1,12 @@
+# Semgrep scans source, not what is built from it or fetched into it.
+node_modules/
+**/dist/
+**/generated/
+**/.venv/
+e2e/playwright-report/
+e2e/test-results/
+conformance/.suite-scripts/
+conformance/logs/
+# The rule tests are meant to match; they are run with `semgrep --test .semgrep/`.
+.semgrep/d3auth.ts
+.semgrep/d3auth.py

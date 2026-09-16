@@ -4,3 +4,26 @@ packages:
   - workers/*
   - examples/express
   - e2e
+
+# Supply chain (T-5.3). A package published in the last seven days is not installed: most malicious
+# releases are found and pulled within that window. A dependency whose provenance gets *weaker*
+# than an earlier release is refused, and so is a transitive dependency fetched from anywhere but
+# the registry (a git URL or a tarball nobody reviewed).
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
+
+# pnpm 10 runs no dependency install scripts unless named, so each one here is a decision.
+# Allowed, because the project does not work without them: argon2 builds or verifies its native
+# binding (without it, hashing segfaults); esbuild installs the binary tsx runs on; @prisma/engines
+# fetches the schema engine migrations use.
+onlyBuiltDependencies:
+  - argon2
+  - esbuild
+  - '@prisma/engines'
+# Refused, because nothing here needs them: prisma's own postinstall (the build runs `prisma
+# generate` itself), workerd's runtime download (only `wrangler dev` uses it), and a donation notice.
+ignoredBuiltDependencies:
+  - prisma
+  - workerd
+  - core-js-pure

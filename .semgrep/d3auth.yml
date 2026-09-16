@@ -1,0 +1,109 @@
+# Custom Semgrep rules for D3 Auth (T-5.3, REQ-130).
+#
+# The registry packs (p/jwt, p/owasp-top-ten) find the generic mistakes. These find the ones that
+# are specific to an OpenID provider and its SDKs — each is a rule this project already states in
+# prose somewhere, turned into something a machine refuses to merge. Every rule has a test in
+# tests/, run with `semgrep --test .semgrep/`.
+
+rules:
+  - id: d3auth.jwt-verify-without-algorithms
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      jwtVerify without an `algorithms` list trusts whatever `alg` the token names. Pin it to
+      ES256/RS256 (REQ-094, REQ-095).
+    patterns:
+      - pattern-either:
+          - pattern: jwtVerify($TOKEN, $KEY)
+          - pattern: jwtVerify($TOKEN, $KEY, {...})
+      - pattern-not: "jwtVerify($TOKEN, $KEY, {..., algorithms: $ALGS, ...})"
+
+  - id: d3auth.unverified-jwt-decode
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      decodeJwt reads a token without checking its signature. Anything decided from its claims can
+      be forged; use jwtVerify with pinned algorithms instead.
+    paths:
+      exclude: ['**/test/**', '**/*.test.ts', '**/e2e/**']
+    pattern-either:
+      - pattern: decodeJwt(...)
+      - pattern: jose.decodeJwt(...)
+
+  - id: d3auth.code-grant-without-state-or-nonce
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      An authorization code exchange must check the state and nonce it started with, or a code
+      from somebody else's sign-in can be injected (REQ-094).
+    patterns:
+      - pattern-either:
+          - pattern: $OIDC.authorizationCodeGrant($CONFIG, $URL, {...})
+          - pattern: authorizationCodeGrant($CONFIG, $URL, {...})
+      - pattern-not: "$OIDC.authorizationCodeGrant($CONFIG, $URL, {..., expectedState: $S, ..., expectedNonce: $N, ...})"
+      - pattern-not: "$OIDC.authorizationCodeGrant($CONFIG, $URL, {..., expectedNonce: $N, ..., expectedState: $S, ...})"
+      - pattern-not: "authorizationCodeGrant($CONFIG, $URL, {..., expectedState: $S, ..., expectedNonce: $N, ...})"
+      - pattern-not: "authorizationCodeGrant($CONFIG, $URL, {..., expectedNonce: $N, ..., expectedState: $S, ...})"
+
+  - id: d3auth.authorization-url-without-pkce-s256
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Every authorization request uses PKCE with S256 (REQ-003). A request without it is a request
+      the provider refuses, and a habit worth not forming.
+    paths:
+      exclude: ['**/test/**', '**/*.test.ts']
+    patterns:
+      - pattern-either:
+          - pattern: $OIDC.buildAuthorizationUrl($CONFIG, {...})
+          - pattern: buildAuthorizationUrl($CONFIG, {...})
+      - pattern-not: "$OIDC.buildAuthorizationUrl($CONFIG, {..., code_challenge_method: 'S256', ...})"
+      - pattern-not: "buildAuthorizationUrl($CONFIG, {..., code_challenge_method: 'S256', ...})"
+
+  - id: d3auth.symmetric-or-none-alg
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      D3 Auth signs and accepts ES256 and RS256 only. `none` and the HMAC algorithms are refused
+      everywhere outside the tests that prove they are refused.
+    paths:
+      exclude: ['**/test/**', '**/*.test.ts', '**/adversarial/**']
+    pattern-either:
+      - pattern: "{..., alg: 'none', ...}"
+      - pattern: "{..., alg: 'HS256', ...}"
+      - pattern: "{..., alg: 'HS384', ...}"
+      - pattern: "{..., alg: 'HS512', ...}"
+
+  - id: d3auth.insecure-randomness
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Math.random is not a source of secrets. Use crypto.randomBytes or crypto.randomUUID for
+      anything an attacker would benefit from guessing.
+    paths:
+      include: ['apps/server/src/**', 'packages/auth-client/src/**', 'workers/**/src/**']
+    pattern: Math.random()
+
+  - id: d3auth.python-jwt-decode-without-algorithms
+    languages: [python]
+    severity: ERROR
+    message: >-
+      joserfc's jwt.decode without `algorithms=` accepts its default set. Pin it to ES256/RS256
+      (REQ-094, REQ-095).
+    patterns:
+      - pattern: jwt.decode($TOKEN, $KEY, ...)
+      - pattern-not: jwt.decode($TOKEN, $KEY, ..., algorithms=$ALGS, ...)
+
+  - id: d3auth.email-as-identity
+    languages: [typescript, python]
+    severity: ERROR
+    message: >-
+      Accounts are linked by (iss, sub), never by email (REQ-093). An email can be claimed by
+      somebody who has not proved they own it.
+    paths:
+      include: ['packages/**', 'examples/**']
+      exclude: ['**/test/**', '**/tests/**', '**/*.test.ts']
+    pattern-either:
+      - pattern: $X.find(($A) => $A.email === $CLAIMS.email)
+      - pattern: $X.find(($A) => $CLAIMS.email === $A.email)
+      - pattern: "$X.findUnique({ where: { email: $CLAIMS.email } })"

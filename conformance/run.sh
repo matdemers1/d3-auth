@@ -27,6 +27,7 @@ fi
 # The runner substitutes client certificates from this directory; D3 Auth's plans need none.
 mkdir -p "$scripts/certs-keys"
 
+export POSTGRES_PASSWORD="$(openssl rand -hex 24)"
 export CONFORMANCE_KEK="$(openssl rand -base64 32)"
 export CONFORMANCE_PEPPER="$(openssl rand -base64 32)"
 export CONFORMANCE_COOKIE_KEYS="$(openssl rand -base64 32)"
