@@ -16,6 +16,8 @@ const clientSchema = z.object({
   secret: z.string().min(32, 'client secrets must be at least 32 characters').optional(),
   redirectUris: z.array(z.url()).min(1),
   postLogoutRedirectUris: z.array(z.url()).default([]),
+  /** Where to POST a logout token. Without one the app is *slow revoke* (REQ-012). */
+  backchannelLogoutUri: z.url().optional(),
   /** Roles the fixture app declares. Real apps declare them in a manifest (REQ-047). */
   roles: z.array(z.object({ key: z.string().min(1), display: z.string().min(1), default: z.boolean().default(false) })).default([]),
 });
@@ -67,6 +69,7 @@ export async function applyDevSeed(db: Db, hasher: SecretHasher, input: DevSeed)
       clientType: c.type,
       clientSecretHash,
       postLogoutRedirectUris: c.postLogoutRedirectUris,
+      backchannelLogoutUri: c.backchannelLogoutUri ?? null,
       enabled: true,
     };
     const app = await db.app.upsert({

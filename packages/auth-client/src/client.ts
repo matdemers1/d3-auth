@@ -21,6 +21,11 @@ export interface AuthClientOptions {
   /** `d3:roles` is what makes the roles claim appear at all. */
   scope?: string;
   ssoMode?: SsoMode;
+  /**
+   * Allows a plain http issuer. Development only, and named so it reads badly in production
+   * code: an http issuer means the ID token and the code travel in the clear.
+   */
+  allowInsecureHttp?: boolean;
   /** Swap in for tests. */
   fetch?: typeof fetch;
 }
@@ -77,9 +82,12 @@ export async function createAuthClient(options: AuthClientOptions): Promise<Auth
   const doFetch = options.fetch ?? fetch;
 
   const auth = options.clientSecret ? oidc.ClientSecretBasic(options.clientSecret) : oidc.None();
+  const insecure = options.allowInsecureHttp === true && new URL(issuer).protocol === 'http:';
   const config = await oidc
     .discovery(new URL(issuer), options.clientId, undefined, auth, {
       [oidc.customFetch]: (url, init) => doFetch(url, init as RequestInit),
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- deprecated by design, so it stands out
+      ...(insecure ? { execute: [oidc.allowInsecureRequests] } : {}),
     })
     .catch((err: unknown) => {
       throw new SsoUnavailable(err instanceof Error ? err.message : 'discovery failed');

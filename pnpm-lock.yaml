@@ -136,6 +136,9 @@ importers:
 
   examples/express:
     dependencies:
+      '@d3cloud/auth-client':
+        specifier: workspace:*
+        version: link:../../packages/auth-client
       express:
         specifier: ^5.2.1
         version: 5.2.1

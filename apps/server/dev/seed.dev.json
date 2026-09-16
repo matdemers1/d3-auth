@@ -67,7 +67,8 @@
           "display": "Member",
           "default": true
         }
-      ]
+      ],
+      "backchannelLogoutUri": "http://host.docker.internal:4000/backchannel-logout"
     }
   ]
 }

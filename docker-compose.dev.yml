@@ -7,5 +7,9 @@ services:
   server:
     ports:
       - "127.0.0.1:3000:3000"
+    # The example app runs on the host, so back-channel logout has to be able to reach it.
+    # Docker Desktop provides this name; on Linux the mapping below adds it.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./apps/server/dev:/app/dev:ro
