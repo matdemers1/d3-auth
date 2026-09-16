@@ -22,7 +22,7 @@ from joserfc.jwk import KeySet as JoseKeySet
 LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout"
 
 #: Asymmetric only. ``alg=none`` has no signature; HMAC means the verifier could have forged it.
-ALLOWED_ALGORITHMS = ["ES256", "RS256", "ES384", "RS384", "ES512", "RS512"]
+ALLOWED_ALGORITHMS = ["ES256", "RS256"]
 
 #: How old a logout token may be. Two minutes, like the provider's own lifetime.
 DEFAULT_MAX_AGE_SECONDS = 120

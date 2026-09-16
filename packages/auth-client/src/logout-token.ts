@@ -10,7 +10,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 export const LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout';
 
 /** Asymmetric only. `alg=none` has no signature; HMAC means the verifier could have forged it. */
-export const ALLOWED_ALGORITHMS = ['ES256', 'RS256', 'ES384', 'RS384', 'ES512', 'RS512'] as const;
+export const ALLOWED_ALGORITHMS = ['ES256', 'RS256'] as const;
 
 /** Anything jose can verify against: a remote key set, or a local one in a test. */
 export type KeyResolver = Parameters<typeof jwtVerify>[1];

@@ -1,3 +1,4 @@
+import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
 import * as oidc from 'openid-client';
 import { type Identity } from './identity.js';
 import { ALLOWED_ALGORITHMS } from './logout-token.js';
@@ -95,23 +96,30 @@ export async function createAuthClient(options: AuthClientOptions): Promise<Auth
   config[oidc.customFetch] = (url, init) => doFetch(url, init as RequestInit);
 
   /**
-   * The pinned algorithm list (REQ-094, REQ-095). `openid-client` checks the signature against
-   * the provider's JWKS; this makes sure the algorithm it accepted is one we are willing to
-   * trust — never `none`, and never a symmetric one, where the key that verifies is the key that
-   * signs.
+   * The ID token's signature, checked against the provider's published keys with the pinned
+   * algorithm list (REQ-094, REQ-095).
+   *
+   * `openid-client` does not do this for a token that came straight from the token endpoint —
+   * OpenID Connect allows skipping it there, because TLS already says who answered. This SDK does
+   * it anyway: an app run over plain http in development, or one that ever trusts an ID token it
+   * got some other way, would otherwise believe a token signed by anybody. Never `none`, never a
+   * symmetric algorithm, where the key that verifies is the key that signs.
    */
-  const checkAlgorithm = (idToken: string): void => {
-    const header = JSON.parse(Buffer.from(idToken.split('.')[0] ?? '', 'base64url').toString('utf8')) as { alg?: unknown };
-    const alg = typeof header.alg === 'string' ? header.alg : '';
-    if (!(ALLOWED_ALGORITHMS as readonly string[]).includes(alg)) {
-      throw new Error(`refusing an ID token signed with "${alg || 'none'}"`);
+  const jwksUri = config.serverMetadata().jwks_uri;
+  if (!jwksUri) throw new SsoUnavailable('the provider publishes no signing keys');
+  const keys = createRemoteJWKSet(new URL(jwksUri), { [customFetch]: (url: string, init: RequestInit) => doFetch(url, init) });
+  const verifySignature = async (idToken: string): Promise<void> => {
+    try {
+      await jwtVerify(idToken, keys, { issuer, audience: options.clientId, algorithms: [...ALLOWED_ALGORITHMS] });
+    } catch (err) {
+      throw new Error(`refusing an ID token that does not verify: ${err instanceof Error ? err.message : 'signature'}`);
     }
   };
 
   const sessionFrom = async (tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers): Promise<Session> => {
     const idToken = tokens.id_token ?? '';
     if (!idToken) throw new Error('the provider returned no ID token');
-    checkAlgorithm(idToken);
+    await verifySignature(idToken);
 
     const claims = tokens.claims() as unknown as Record<string, unknown> | undefined;
     const sub = typeof claims?.sub === 'string' ? claims.sub : '';
