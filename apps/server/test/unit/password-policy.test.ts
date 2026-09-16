@@ -90,23 +90,28 @@ describe('password verification (REQ-026, REQ-086)', () => {
     expect(spy.calls.filter((c) => c.startsWith('hash:'))).toHaveLength(1);
   });
 
-  it('takes a comparable amount of work for known and unknown accounts', async () => {
-    const delays: number[] = [];
-    const slow: SecretHasher = {
-      hash: () => Promise.resolve('h'),
-      verify: async () => {
-        const started = performance.now();
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        delays.push(performance.now() - started);
-        return false;
+  it('does the same work for a known and an unknown account', async () => {
+    // Uniform *timing* is measured under load in the Phase 5 adversarial suite (T-5.1); a
+    // wall-clock comparison on a shared CI runner measures the runner, not the code. What is
+    // deterministic, and what the decoy exists for, is that both paths perform one verification
+    // against a hash of the same shape.
+    const seen: { hash: string; password: string }[] = [];
+    const recording: SecretHasher = {
+      hash: () => Promise.resolve('$argon2id$decoy'),
+      verify: (hash, password) => {
+        seen.push({ hash, password });
+        return Promise.resolve(false);
       },
     };
-    const verifier = await createPasswordVerifier(slow);
-    await verifier.verify('h', 'x');
-    await verifier.verify(undefined, 'x');
-    expect(delays).toHaveLength(2);
-    const [known = 0, unknown = 0] = delays;
-    expect(Math.abs(known - unknown) / known).toBeLessThan(0.5);
+    const verifier = await createPasswordVerifier(recording);
+
+    await verifier.verify('$argon2id$real', 'guess');
+    await verifier.verify(undefined, 'guess');
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]?.password).toBe(seen[1]?.password);
+    expect(seen[1]?.hash).toBe('$argon2id$decoy');
+    expect(seen[1]?.hash).not.toBe('');
   });
 });
 
