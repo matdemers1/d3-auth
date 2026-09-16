@@ -157,7 +157,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   });
   // Resolved per send, so changing it in the console takes effect without a deploy (REQ-071).
   const mail = mailFromSettings(settings, logger);
-  const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'));
+  const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'), new URL(config.ISSUER).origin);
   const issuerUrl = new URL(config.ISSUER);
   const totp = createTotp(db, kek, operatorDisplayName === 'the operator' ? issuerUrl.host : `${operatorDisplayName} (D3 Auth)`);
   // The RP ID is the bare host and can never change without orphaning every passkey (REQ-034).

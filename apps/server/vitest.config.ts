@@ -20,6 +20,17 @@ export default defineConfig({
           hookTimeout: 60_000,
         },
       },
+      {
+        // The security gate (REQ-128): one file per attack class, against the real service.
+        test: {
+          name: 'adversarial',
+          include: ['test/adversarial/**/*.test.ts'],
+          globalSetup: ['test/integration/global-setup.ts'],
+          fileParallelism: false,
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
+        },
+      },
     ],
   },
 });

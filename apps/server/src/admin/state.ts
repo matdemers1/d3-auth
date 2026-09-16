@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AUDIT_EVENTS } from '../audit/events.js';
 import type { AuditWriter } from '../audit/writer.js';
 import type { Db } from '../db.js';
+import { mustHoldFactor, verifiedFactorCount } from '../security/factors.js';
 
 // Exporting and importing the administrative state (REQ-072).
 //
@@ -80,6 +81,55 @@ export interface ImportPlan {
   needsReEnrolment: string[];
   /** Anything the file asks for that cannot be done, with the reason. */
   problems: string[];
+  /**
+   * The kind each person will actually end up with, by email; absent means "left as it is".
+   * Decided here, once, so the preview and the apply cannot disagree about who becomes an admin.
+   */
+  kinds: Record<string, 'admin' | 'guest'>;
+}
+
+/**
+ * Who an import may make powerful (REQ-035). The answer is: nobody the console could not.
+ *
+ * - The owner is claimed on first run, never imported, never demoted by a file.
+ * - An admin must already hold a verified factor *here*. A file cannot carry one, so a person the
+ *   file invents is never an admin, whatever it says.
+ * - Lowering somebody to guest is allowed: taking power away is not the dangerous direction.
+ */
+async function decideKinds(
+  db: Db,
+  state: AdminState,
+  problems: string[],
+): Promise<Record<string, 'admin' | 'guest'>> {
+  const existing = await db.user.findMany({
+    where: { email: { in: state.people.map((person) => person.email) } },
+    select: { id: true, email: true, kind: true },
+  });
+  const byEmail = new Map(existing.map((row) => [row.email.toLowerCase(), row]));
+  const kinds: Record<string, 'admin' | 'guest'> = {};
+
+  for (const person of state.people) {
+    const current = byEmail.get(person.email.toLowerCase());
+    if (current?.kind === 'owner') {
+      if (person.kind !== 'owner') problems.push(`${person.email} is the owner here; a file cannot change that.`);
+      continue;
+    }
+    if (person.kind === 'owner') {
+      problems.push(`${person.email} is an owner in the file. The owner is claimed on first run, not imported; they arrive as ${current ? 'they are' : 'a guest'}.`);
+      if (!current) kinds[person.email] = 'guest';
+      continue;
+    }
+    if (mustHoldFactor(person.kind)) {
+      const factors = current ? await verifiedFactorCount(db, current.id) : 0;
+      if (factors === 0) {
+        problems.push(`${person.email} would be an admin with no verified factor; they arrive as ${current ? 'they are' : 'a guest'}.`);
+        if (!current) kinds[person.email] = 'guest';
+        continue;
+      }
+    }
+    kinds[person.email] = person.kind;
+  }
+  return kinds;
 }
 
 /** Everything an operator would need to rebuild this instance's shape elsewhere. */
@@ -186,6 +236,7 @@ export async function planImport(db: Db, state: AdminState): Promise<ImportPlan>
     select: { email: true },
   });
   const canSignIn = new Set(withCredentials.map((row) => row.email));
+  const kinds = await decideKinds(db, state, problems);
 
   return {
     apps: {
@@ -210,6 +261,7 @@ export async function planImport(db: Db, state: AdminState): Promise<ImportPlan>
       .map((app) => app.client_id),
     needsReEnrolment: state.people.filter((person) => !canSignIn.has(person.email)).map((person) => person.email),
     problems,
+    kinds,
   };
 }
 
@@ -263,17 +315,20 @@ export async function importState(
   }
 
   for (const person of state.people) {
+    // The plan decided the kind; the file only asked for one.
+    const kind = plan.kinds[person.email];
     // Created without credentials: an imported person cannot sign in until they are re-enrolled.
+    // Status is never raised by a file either — a suspension is lifted in the console or not at all.
     const saved = await db.user.upsert({
       where: { email: person.email },
       create: {
         email: person.email,
         username: person.username,
         displayName: person.display_name,
-        kind: person.kind,
-        status: person.status === 'active' ? 'invited' : person.status,
+        kind: kind ?? 'guest',
+        status: person.status === 'suspended' ? 'suspended' : 'invited',
       },
-      update: { username: person.username, displayName: person.display_name, kind: person.kind },
+      update: { username: person.username, displayName: person.display_name, ...(kind ? { kind } : {}) },
     });
 
     for (const grant of person.grants) {

@@ -47,7 +47,7 @@ export interface ConsoleAuth {
 /** Five minutes: long enough to finish what you started, short enough to matter. */
 export const STEP_UP_WINDOW_MS = 5 * 60 * 1000;
 
-export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secureCookies: boolean): ConsoleAuth {
+export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secureCookies: boolean, issuerOrigin?: string): ConsoleAuth {
   const sessions = adapterFactory('Session');
   const names = cookieNamesFor(secureCookies);
 
@@ -69,10 +69,18 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
     };
   };
 
-  /** A cross-site fetch never gets to act on the session, whatever the cookie says. */
+  /**
+   * A cross-site fetch never gets to act on the session, whatever the cookie says.
+   *
+   * Fetch metadata is the first answer. A browser too old to send it still sends `Origin` on a
+   * POST, so that is the second: absent, or ours. SameSite=Lax already keeps the cookie off a
+   * cross-site POST; this is the layer that does not depend on the browser getting that right.
+   */
   const sameOrigin = (req: Request): boolean => {
     const site = req.get('sec-fetch-site');
-    return site === undefined || site === 'same-origin' || site === 'none';
+    if (site !== undefined) return site === 'same-origin' || site === 'none';
+    const origin = req.get('origin');
+    return origin === undefined || issuerOrigin === undefined || origin === issuerOrigin;
   };
 
   const guard =

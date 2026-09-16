@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
+    "test:adversarial": "vitest run --project adversarial",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "flow": "node scripts/flow.mjs"
