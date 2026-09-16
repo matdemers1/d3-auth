@@ -59,8 +59,6 @@ export const manifestSchema = z
     post_logout_redirect_uris: z.array(z.string().min(1)).default([]),
     /** Absent means the app cannot be told to sign somebody out — the console calls that *slow revoke*. */
     backchannel_logout_uri: z.string().min(1).optional(),
-    /** Some apps want the roles under their own name; the claim is still scoped to them. */
-    roles_claim_name: z.string().regex(/^[a-z][a-z0-9_:.]{0,63}$/i).default('roles'),
     roles: z.array(roleSchema).default([]),
   })
   .superRefine((manifest, at) => {
@@ -118,7 +116,6 @@ export interface ExistingApp {
   description: string;
   clientType: string;
   backchannelLogoutUri: string | null;
-  rolesClaimName: string;
   postLogoutRedirectUris: string[];
   redirectUris: { uri: string }[];
   roles: { key: string; displayName: string; description: string; sortOrder: number; isDefault: boolean; _count?: { grantRoles: number } }[];
@@ -155,7 +152,6 @@ export function diffManifest(manifest: Manifest, existing: ExistingApp | null): 
   compare('description', existing.description, manifest.description);
   compare('client_type', existing.clientType, manifest.client_type);
   compare('backchannel_logout_uri', existing.backchannelLogoutUri ?? '', manifest.backchannel_logout_uri ?? '');
-  compare('roles_claim_name', existing.rolesClaimName, manifest.roles_claim_name);
   compare('post_logout_redirect_uris', existing.postLogoutRedirectUris.join(' '), manifest.post_logout_redirect_uris.join(' '));
 
   const before = new Map(existing.roles.map((role) => [role.key, role]));

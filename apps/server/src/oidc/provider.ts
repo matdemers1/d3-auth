@@ -113,11 +113,26 @@ export function createProvider(options: ProviderOptions): Provider {
     routes: ROUTES,
 
     responseTypes: ['code'],
-    scopes: ['openid', 'offline_access', 'profile', 'email'],
+    // `d3:roles` is ours (REQ-052). Apps that do not ask for it never see a roles claim, and an
+    // app that does sees only its own.
+    scopes: ['openid', 'offline_access', 'profile', 'email', 'd3:roles'],
     claims: {
-      openid: ['sub'],
+      // Declaring `claims` replaces the provider's defaults, and anything undeclared is filtered
+      // out of the token — which is how `amr`, `auth_time` and `sid` went missing the first time
+      // (REQ-017). The four below belong to no scope: they describe the sign-in itself.
+      acr: null,
+      amr: null,
+      auth_time: null,
+      sid: null,
+      iss: null,
+      // Listed against `openid` as well, because a top-level claim is only *supported*: nothing
+      // puts it in a token until a scope asks for it, and REQ-017 says every ID token carries
+      // how and when the person proved who they were. `sid` joins them once an app declares a
+      // back-channel logout endpoint (T-3.5), which is the only thing it is useful for.
+      openid: ['sub', 'amr', 'auth_time'],
       email: ['email', 'email_verified'],
       profile: ['name', 'preferred_username'],
+      'd3:roles': ['roles'],
     },
     clientAuthMethods: ['client_secret_basic', 'none'],
     clientDefaults: {

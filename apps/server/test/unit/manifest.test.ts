@@ -30,7 +30,7 @@ const problemsOf = (input: unknown): string[] => {
 describe('reading a manifest', () => {
   it('accepts the documented example and fills in the defaults', () => {
     const manifest = parsed(good);
-    expect(manifest).toMatchObject({ client_id: 'bindery', roles_claim_name: 'roles', description: '' });
+    expect(manifest).toMatchObject({ client_id: 'bindery', description: '' });
     expect(manifest.roles[0]).toMatchObject({ key: 'admin', default: false });
     expect(manifest.roles[1]).toMatchObject({ key: 'member', default: true });
   });
@@ -76,7 +76,6 @@ describe('diffing a manifest against what is registered', () => {
     description: '',
     clientType: 'confidential_web',
     backchannelLogoutUri: 'https://bindery.d3cloud.io/api/auth/oidc/backchannel-logout',
-    rolesClaimName: 'roles',
     postLogoutRedirectUris: ['https://bindery.d3cloud.io/'],
     redirectUris: [{ uri: 'https://bindery.d3cloud.io/api/auth/oidc/callback' }],
     roles: [

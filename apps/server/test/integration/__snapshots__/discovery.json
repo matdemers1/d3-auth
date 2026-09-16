@@ -3,12 +3,14 @@
   "claims_parameter_supported": false,
   "claims_supported": [
     "sub",
+    "amr",
+    "auth_time",
     "name",
     "preferred_username",
     "email",
     "email_verified",
+    "roles",
     "sid",
-    "auth_time",
     "iss"
   ],
   "code_challenge_methods_supported": [
@@ -34,7 +36,8 @@
     "openid",
     "offline_access",
     "profile",
-    "email"
+    "email",
+    "d3:roles"
   ],
   "subject_types_supported": [
     "public"
