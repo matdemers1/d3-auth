@@ -88,3 +88,26 @@ Three rows tell the whole story: `recovery.minted` (someone on the host asked), 
 (the link was opened and the factors cleared), `recovery.used` (the window was spent by a
 sign-in). A `minted` with no `claimed` means a link is loose — it expires on its own, but mint no
 more than you need.
+
+## Signing everybody out at once
+
+For an incident — a leaked database dump, a compromised device you cannot identify, a key you no
+longer trust — end every sign-in and every token in one step (ASVS 5.0 7.4.5). Nobody is locked
+out: people sign in again with what they already have, and apps are sent to do the same.
+
+```bash
+docker compose exec postgres psql -U d3auth -d d3auth -c "
+  begin;
+  delete from oidc_payload where kind in ('Session', 'Grant', 'AccessToken', 'RefreshToken', 'AuthorizationCode', 'Interaction');
+  update session set revoked_at = now() where revoked_at is null;
+  commit;"
+```
+
+Rotating `COOKIE_KEYS` is **not** a substitute: it invalidates the cookie's signature for the
+provider, but the console finds a session by its id, and the session itself is still in the table.
+Delete the sessions.
+
+Apps are not told by back-channel logout this way — their own sessions end the next time they need
+a token, within ten minutes for an access token. If that is too slow for the incident, disable the
+app in the console too. Afterwards, write down why in the audit trail's absence: this is a
+database operation, so it leaves no audit row of its own.
