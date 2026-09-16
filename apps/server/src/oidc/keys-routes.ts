@@ -45,10 +45,16 @@ export function keysRouter({ db, kek, requireOwner, loadedKids }: KeysDeps): Rou
   router.get('/oidc/jwks', (_req: Request, res: Response, next) => {
     void (async () => {
       try {
-        const rows = await db.signingKey.findMany({
-          where: { status: { in: ['current', 'next', 'retiring'] } },
-          orderBy: { createdAt: 'desc' },
-        });
+        const rows = await db.signingKey.findMany({ where: { status: { in: ['current', 'next', 'retiring'] } } });
+        // Current first, and ES256 before RS256 — the same order the provider published, so a
+        // consumer that naively takes the first key still takes the one doing the signing.
+        const rank = { current: 0, next: 1, retiring: 2 } as Record<string, number>;
+        rows.sort(
+          (a, b) =>
+            (rank[a.status] ?? 9) - (rank[b.status] ?? 9) ||
+            SIGNING_ALGS.indexOf(a.alg as SigningAlg) - SIGNING_ALGS.indexOf(b.alg as SigningAlg) ||
+            b.createdAt.getTime() - a.createdAt.getTime(),
+        );
         res
           .type('application/jwk-set+json')
           .set('Cache-Control', 'public, max-age=3600')
