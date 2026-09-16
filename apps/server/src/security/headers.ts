@@ -6,9 +6,15 @@ import type { RequestHandler } from 'express';
 //   - Our own pages and API (console, interaction, health): locked down. Everything is
 //     same-origin — fonts are self-hosted, there is no inline script, no framing, no form target
 //     other than ourselves.
-//   - The provider's own responses under /oidc: same locks, except `form-action`, because
-//     form_post response mode and the logout confirmation post to a registered client URL that
-//     the provider (not the browser) has already validated exactly.
+//   - The provider's own responses under /oidc: same locks, except `form-action`. Browsers apply
+//     form-action to the redirect that *follows* a form submission, and the sign-out confirmation
+//     is a form whose answer redirects to the app's registered post-logout URL. Locking it to
+//     'self' would break sign-out for every app. The target is one the provider has already
+//     matched exactly against the registration (REQ-005), and no page here renders anything a
+//     person or app supplied. (ZAP reports the omission; it is filtered there with this reason.)
+//
+// No 'unsafe-inline' anywhere. The provider's one inline script — the auto-submitting form — gets a
+// sha256 hash added to script-src by the provider itself.
 
 const BASE_CSP = [
   "default-src 'self'",
@@ -26,7 +32,7 @@ const BASE_CSP = [
 
 export const CONSOLE_CSP = [...BASE_CSP, "form-action 'self'"].join('; ');
 /** The provider redirects and form-posts to validated client URLs; it never renders our console. */
-export const PROVIDER_CSP = [...BASE_CSP.filter((d) => !d.startsWith('script-src')), "script-src 'self' 'unsafe-inline'"].join('; ');
+export const PROVIDER_CSP = BASE_CSP.join('; ');
 
 export const HSTS = 'max-age=63072000; includeSubDomains; preload';
 

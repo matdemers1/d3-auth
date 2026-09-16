@@ -265,7 +265,11 @@ describe('client authentication (REQ-015, REQ-014)', () => {
     const url = new URL(`${ISSUER}/oidc/auth`);
     for (const [k, v] of Object.entries({ client_id: WEB_CLIENT.clientId, response_type: 'token', scope: 'openid', redirect_uri: RP_CALLBACK })) url.searchParams.set(k, v);
     const { leftTo } = await new Browser(h.opFetch).navigate(url.toString());
-    expect(leftTo?.searchParams.get('error') ?? leftTo?.hash).toMatch(/unsupported_response_type/);
+    // Refused either for the response type or, first, for the fragment response mode it implies —
+    // clients accept query responses only (T-5.4). What matters is an error and no token.
+    const answer = `${leftTo?.search ?? ''}${leftTo?.hash ?? ''}`;
+    expect(answer).toMatch(/error=(unsupported_response_type|invalid_request)/);
+    expect(answer).not.toMatch(/access_token|id_token/);
   });
 });
 

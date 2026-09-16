@@ -44,6 +44,10 @@ export function clientMetadataFor(app: AppClient): ClientResult {
     post_logout_redirect_uris: app.postLogoutRedirectUris,
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
+    // The code comes back in the query string and nowhere else. form_post and fragment responses are
+    // refused per client: nothing here uses them, and form_post is the one mode that would need the
+    // provider's pages to allow a form to post off-site (T-5.4).
+    response_modes: ['query'],
     id_token_signed_response_alg: 'ES256',
     ...(app.backchannelLogoutUri ? { backchannel_logout_uri: app.backchannelLogoutUri, backchannel_logout_session_required: true } : {}),
   };

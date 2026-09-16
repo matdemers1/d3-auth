@@ -1,0 +1,153 @@
+# ZAP Automation Framework plan: the authenticated scan of /login, /account and /admin (T-5.4, REQ-131).
+#
+#   security/zap/run.sh              (brings the dev stack's session, runs this, writes security/zap/report/)
+#
+# Three decisions shape it:
+#
+# - Authenticated by header, not by teaching ZAP to sign in. The sign-in is a state machine with
+#   CSRF tokens and a continue-as step; `session.mjs` drives the real flow once and ZAP rides the
+#   cookie it gets, which tests the thing that matters — what a signed-in owner can reach.
+# - The API is seeded, not spidered. A spider follows links; a JSON API has none. Every GET route the
+#   console calls is listed so the active scan has parameters to attack.
+# - Anything that would end the scan's own session is out of scope for the *active* scan: signing
+#   out, revoking sessions, suspending, resetting. Attacking those does not find vulnerabilities, it
+#   finds a scanner that has logged itself out and reports a clean bill of health for the login page.
+
+env:
+  contexts:
+    - name: d3auth
+      urls:
+        - ${ZAP_TARGET}
+      includePaths:
+        - ${ZAP_TARGET}/.*
+      excludePaths:
+        - ${ZAP_TARGET}/oidc/session/end.*
+        - ${ZAP_TARGET}/api/account/sessions/.*
+        - ${ZAP_TARGET}/api/account/devices/.*/revoke
+        - ${ZAP_TARGET}/api/account/password
+        - ${ZAP_TARGET}/api/admin/people/.*/(suspend|reset|kind|access/revoke)
+        - ${ZAP_TARGET}/api/admin/keys/(generate|promote|retire)
+        - ${ZAP_TARGET}/api/admin/state/import.*
+        - ${ZAP_TARGET}/api/admin/settings/.*
+        - ${ZAP_TARGET}/api/interaction/.*/abort
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: replacer
+    parameters:
+      deleteAllRules: true
+    rules:
+      - description: The signed-in owner's session (session.mjs)
+        matchType: req_header
+        matchString: Cookie
+        matchRegex: false
+        replacementString: ${ZAP_COOKIE}
+      - description: What a browser sends for a same-origin fetch; without it the console API refuses, correctly
+        matchType: req_header
+        matchString: Sec-Fetch-Site
+        matchRegex: false
+        replacementString: same-origin
+
+  # A scan that silently lost its session would scan the sign-in page and call everything clean. The
+  # first three requests must come back 200, or the run fails before any scanning starts.
+  - type: requestor
+    requests:
+      - url: ${ZAP_TARGET}/api/me
+        responseCode: 200
+      - url: ${ZAP_TARGET}/api/admin/people
+        responseCode: 200
+      - url: ${ZAP_TARGET}/api/account/profile
+        responseCode: 200
+      - url: ${ZAP_TARGET}/.well-known/openid-configuration
+      - url: ${ZAP_TARGET}/oidc/jwks
+      - url: ${ZAP_TARGET}/login
+      - url: ${ZAP_TARGET}/account
+      - url: ${ZAP_TARGET}/account/security
+      - url: ${ZAP_TARGET}/admin
+      - url: ${ZAP_TARGET}/admin/people
+      - url: ${ZAP_TARGET}/admin/groups
+      - url: ${ZAP_TARGET}/admin/apps
+      - url: ${ZAP_TARGET}/admin/keys
+      - url: ${ZAP_TARGET}/admin/audit
+      - url: ${ZAP_TARGET}/admin/settings
+      - url: ${ZAP_TARGET}/admin/transfer
+      - url: ${ZAP_TARGET}/api/account/factors
+      - url: ${ZAP_TARGET}/api/account/apps
+      - url: ${ZAP_TARGET}/api/account/devices
+      - url: ${ZAP_TARGET}/api/admin/overview
+      - url: ${ZAP_TARGET}/api/admin/groups
+      - url: ${ZAP_TARGET}/api/admin/apps
+      - url: ${ZAP_TARGET}/api/admin/apps/dev-web
+      - url: ${ZAP_TARGET}/api/admin/apps/dev-web/access
+      - url: ${ZAP_TARGET}/api/admin/keys
+      - url: ${ZAP_TARGET}/api/admin/audit?event=login.success&limit=20
+      - url: ${ZAP_TARGET}/api/admin/audit/events
+      - url: ${ZAP_TARGET}/api/admin/audit/export?format=json
+      - url: ${ZAP_TARGET}/api/admin/settings
+      - url: ${ZAP_TARGET}/api/admin/state/export
+      - url: ${ZAP_TARGET}/oidc/auth?client_id=dev-web&response_type=code&scope=openid&redirect_uri=http%3A%2F%2Flocalhost%3A4000%2Fcallback&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&state=zap&nonce=zap
+
+  - type: spider
+    parameters:
+      context: d3auth
+      maxDuration: 2
+
+  # Findings that are understood and deliberate, each with the reason. A filter is scoped to the
+  # URLs the reason covers, so the same alert anywhere else still counts.
+  - type: alertFilter
+    alertFilters:
+      - ruleId: 10098
+        ruleName: Cross-Domain Misconfiguration
+        newRisk: False Positive
+        url: ${ZAP_TARGET}/(\.well-known/openid-configuration|oidc/jwks)
+        urlRegex: true
+        # Discovery and the key set are public by definition and fetched by browser-based apps
+        # from other origins; `Access-Control-Allow-Origin: *` is what makes that possible.
+      - ruleId: 10055
+        ruleName: "CSP: Failure to Define Directive with No Fallback"
+        newRisk: Info
+        url: ${ZAP_TARGET}/oidc/.*
+        urlRegex: true
+        # form-action is omitted on /oidc on purpose: browsers apply it to the redirect after the
+        # sign-out confirmation, which goes to the app's exactly-matched post-logout URL (see
+        # apps/server/src/security/headers.ts).
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan
+    parameters:
+      context: d3auth
+      maxRuleDurationInMins: 2
+      maxScanDurationInMins: 25
+      threadPerHost: 4
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/report
+      reportFile: zap-report.html
+      reportTitle: D3 Auth — ZAP authenticated scan
+    risks: [high, medium, low, info]
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk/report
+      reportFile: zap-report.json
+    risks: [high, medium, low, info]
+
+  # The gate (REQ-131): any High fails the run. Mediums are read and triaged, not ignored, but they
+  # do not stop a nightly scan by themselves.
+  - type: exitStatus
+    parameters:
+      errorLevel: High
+      warnLevel: Medium

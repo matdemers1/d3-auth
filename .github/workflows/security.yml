@@ -1,0 +1,47 @@
+# Nightly dynamic security scan (T-5.4, REQ-131): ZAP, signed in as the owner, against a fresh dev
+# stack built from main. Any High fails the run; the report is kept either way.
+#
+# Nightly rather than per push because an active scan is slow and noisy, and because what it finds
+# is rarely caused by the commit in front of it. Run it by hand from the Actions tab after anything
+# that changes headers, cookies or the console API.
+
+name: security
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security
+  cancel-in-progress: false
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Dev stack (built from this commit)
+        run: pnpm dev:up
+      - name: ZAP authenticated scan — /login, /account, /admin and the API behind them
+        run: ./security/zap/run.sh
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: zap-report
+          path: security/zap/report/
+          if-no-files-found: warn
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --no-color server | tail -200
