@@ -88,7 +88,7 @@ export function accountRouter({
     })();
   });
 
-  router.post(`${ACCOUNT_API}/passkeys/begin`, auth.requireUser, (_req, res, next) => {
+  router.post(`${ACCOUNT_API}/passkeys/begin`, auth.requireFreshUser, (_req, res, next) => {
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
@@ -104,7 +104,7 @@ export function accountRouter({
     })();
   });
 
-  router.post(`${ACCOUNT_API}/passkeys/finish`, auth.requireUser, body, (req, res, next) => {
+  router.post(`${ACCOUNT_API}/passkeys/finish`, auth.requireFreshUser, body, (req, res, next) => {
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
@@ -138,7 +138,7 @@ export function accountRouter({
     })();
   });
 
-  router.post<{ id: string }>(`${ACCOUNT_API}/passkeys/:id/remove`, auth.requireUser, (req, res, next) => {
+  router.post<{ id: string }>(`${ACCOUNT_API}/passkeys/:id/remove`, auth.requireFreshUser, (req, res, next) => {
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
@@ -170,7 +170,7 @@ export function accountRouter({
     })();
   });
 
-  router.post(`${ACCOUNT_API}/totp/begin`, auth.requireUser, body, (req, res, next) => {
+  router.post(`${ACCOUNT_API}/totp/begin`, auth.requireFreshUser, body, (req, res, next) => {
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
@@ -188,7 +188,7 @@ export function accountRouter({
     })();
   });
 
-  router.post(`${ACCOUNT_API}/totp/confirm`, auth.requireUser, body, (req, res, next) => {
+  router.post(`${ACCOUNT_API}/totp/confirm`, auth.requireFreshUser, body, (req, res, next) => {
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
@@ -218,7 +218,7 @@ export function accountRouter({
     })();
   });
 
-  router.post<{ id: string }>(`${ACCOUNT_API}/totp/:id/remove`, auth.requireUser, (req, res, next) => {
+  router.post<{ id: string }>(`${ACCOUNT_API}/totp/:id/remove`, auth.requireFreshUser, (req, res, next) => {
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
@@ -536,7 +536,7 @@ export function accountRouter({
     })();
   });
 
-  router.post<{ id: string }>(`${ACCOUNT_API}/sessions/:id/revoke`, auth.requireUser, (req, res, next) => {
+  router.post<{ id: string }>(`${ACCOUNT_API}/sessions/:id/revoke`, auth.requireFreshUser, (req, res, next) => {
     void (async () => {
       try {
         const { user } = consoleUserOf(res);
@@ -562,7 +562,7 @@ export function accountRouter({
     })();
   });
 
-  router.post(`${ACCOUNT_API}/sessions/revoke-others`, auth.requireUser, (req, res, next) => {
+  router.post(`${ACCOUNT_API}/sessions/revoke-others`, auth.requireFreshUser, (req, res, next) => {
     void (async () => {
       try {
         const { user, sessionUid } = consoleUserOf(res);

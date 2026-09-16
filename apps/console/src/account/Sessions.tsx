@@ -1,6 +1,7 @@
 import { Alert, Badge, Button, Card, PageHeader, Skeleton } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, ApiError } from '../api';
+import { StepUp } from '../admin/StepUp';
 import { describeAddress, describeDevice } from './device-name';
 
 // A-5: where you are signed in, and how to end any of it (REQ-083).
@@ -29,6 +30,8 @@ export function Sessions() {
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [message, setMessage] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  // Ending other sign-ins asks for fresh proof first (ASVS 7.5.2).
+  const [pending, setPending] = useState<(() => void) | undefined>();
 
   const load = () => {
     api
@@ -58,7 +61,11 @@ export function Sessions() {
       await api.post(path);
       setMessage(said);
       load();
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiError && err.body.error === 'step_up_required') {
+        setPending(() => () => void act(path, said));
+        return;
+      }
       setMessage('That did not work. Try again.');
     } finally {
       setBusy(false);
@@ -75,6 +82,20 @@ export function Sessions() {
         <Alert tone="info" dynamic title="Sessions">
           {message}
         </Alert>
+      ) : null}
+
+      {pending ? (
+        <StepUp
+          action="ending a sign-in"
+          onProved={() => {
+            const retry = pending;
+            setPending(undefined);
+            retry();
+          }}
+          onCancel={() => {
+            setPending(undefined);
+          }}
+        />
       ) : null}
 
       {!sessions ? (

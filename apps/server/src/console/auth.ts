@@ -43,6 +43,8 @@ export interface ConsoleAuth {
   requireOwner: RequestHandler;
   /** Owner, and proved it within the step-up window (REQ-037). */
   requireFreshOwner: RequestHandler;
+  /** Anybody signed in, having proved it within the step-up window (ASVS 7.5.1, 7.5.2). */
+  requireFreshUser: RequestHandler;
 }
 
 /** Five minutes: long enough to finish what you started, short enough to matter. */
@@ -116,39 +118,50 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
    * borrowed session should not be enough. Signing in counts as proof for five minutes; after
    * that they re-prove it, with a password and a factor if they have one.
    */
-  const requireFreshOwner: RequestHandler = (req, res, next) => {
-    void (async () => {
-      const found = await current(req);
-      if (!found) {
-        res.status(401).json({ error: 'sign_in_required' });
-        return;
-      }
-      if (!sameOrigin(req)) {
-        res.status(403).json({ error: 'cross_site' });
-        return;
-      }
-      if (found.user.kind !== 'owner') {
-        res.status(403).json({ error: 'not_allowed' });
-        return;
-      }
+  /** A guard that also wants proof within the step-up window, for whoever `allow` admits. */
+  const requireFresh =
+    (allow: (user: User) => boolean): RequestHandler =>
+    (req, res, next) => {
+      void (async () => {
+        const found = await current(req);
+        if (!found) {
+          res.status(401).json({ error: 'sign_in_required' });
+          return;
+        }
+        if (!sameOrigin(req)) {
+          res.status(403).json({ error: 'cross_site' });
+          return;
+        }
+        if (!allow(found.user)) {
+          res.status(403).json({ error: 'not_allowed' });
+          return;
+        }
 
-      const row = found.sessionUid
-        ? await db.session.findUnique({ where: { oidcSessionUid: found.sessionUid }, select: { steppedUpAt: true } })
-        : null;
-      const proved = [row?.steppedUpAt, found.authTime].filter((at): at is Date => at instanceof Date);
-      const freshest = proved.sort((a, b) => b.getTime() - a.getTime())[0];
-      if (!freshest || Date.now() - freshest.getTime() > STEP_UP_WINDOW_MS) {
-        res.status(401).json({
-          error: 'step_up_required',
-          message: 'Confirm it is you before changing something this important.',
-        });
-        return;
-      }
+        const row = found.sessionUid
+          ? await db.session.findUnique({ where: { oidcSessionUid: found.sessionUid }, select: { steppedUpAt: true } })
+          : null;
+        const proved = [row?.steppedUpAt, found.authTime].filter((at): at is Date => at instanceof Date);
+        const freshest = proved.sort((a, b) => b.getTime() - a.getTime())[0];
+        if (!freshest || Date.now() - freshest.getTime() > STEP_UP_WINDOW_MS) {
+          res.status(401).json({
+            error: 'step_up_required',
+            message: 'Confirm it is you before changing something this important.',
+          });
+          return;
+        }
 
-      res.locals.consoleUser = found;
-      next();
-    })();
-  };
+        res.locals.consoleUser = found;
+        next();
+      })();
+    };
+
+  const requireFreshOwner = requireFresh((user) => user.kind === 'owner');
+  /**
+   * Anybody, with fresh proof (ASVS 5.0 7.5.1, 7.5.2). For the account changes a borrowed session
+   * must not be able to make: adding a passkey or an authenticator app — which would outlast a
+   * password change — removing one, or ending other sign-ins.
+   */
+  const requireFreshUser = requireFresh(() => true);
 
   return {
     current,
@@ -156,5 +169,6 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
     requireAdmin: guard(isAdmin),
     requireOwner: guard((user) => user.kind === 'owner'),
     requireFreshOwner,
+    requireFreshUser,
   };
 }

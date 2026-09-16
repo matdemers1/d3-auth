@@ -1,6 +1,7 @@
 import { Alert, Badge, Button, Card, EmptyState, FormField, Input, PageHeader, Skeleton } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
+import { StepUp } from '../admin/StepUp';
 import { describeDevice } from './device-name';
 
 // A-4: how you sign in. A passkey is the good path and leads; an authenticator app is the
@@ -49,6 +50,16 @@ export function Security() {
   const [enrolment, setEnrolment] = useState<Enrolment | undefined>();
   const [qr, setQr] = useState<string | undefined>();
   const [code, setCode] = useState('');
+  // Adding or removing a factor asks for fresh proof (ASVS 7.5.1): a borrowed session must not be
+  // able to plant a passkey that outlasts a password change.
+  const [pending, setPending] = useState<{ describe: string; retry: () => void } | undefined>();
+  const askFirst = (err: unknown, describe: string, retry: () => void): boolean => {
+    if (err instanceof ApiError && err.body.error === 'step_up_required') {
+      setPending({ describe, retry });
+      return true;
+    }
+    return false;
+  };
 
   const load = () => {
     api
@@ -81,6 +92,7 @@ export function Security() {
       setMessage({ tone: 'success', text: 'Passkey added. You can use it to sign in from now on.' });
       load();
     } catch (err) {
+      if (askFirst(err, 'adding a passkey', () => void addPasskey())) return;
       if (err instanceof ApiError) setMessage({ tone: 'danger', text: err.message });
       // A cancelled prompt is a choice, not a failure.
     } finally {
@@ -96,7 +108,8 @@ export function Security() {
       setEnrolment(started);
       const { toDataURL } = await import('qrcode');
       setQr(await toDataURL(started.uri, { margin: 1, width: 220 }));
-    } catch {
+    } catch (err) {
+      if (askFirst(err, 'adding an authenticator app', () => void startTotp())) return;
       setMessage({ tone: 'danger', text: 'We could not start that. Try again.' });
     } finally {
       setBusy(false);
@@ -115,6 +128,7 @@ export function Security() {
       setMessage({ tone: 'success', text: 'Authenticator app added.' });
       load();
     } catch (err) {
+      if (askFirst(err, 'adding an authenticator app', () => undefined)) return;
       setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That code did not match.' });
     } finally {
       setBusy(false);
@@ -138,6 +152,7 @@ export function Security() {
       await api.post(`/api/account/${kind}/${encodeURIComponent(id)}/remove`);
       load();
     } catch (err) {
+      if (askFirst(err, kind === 'passkeys' ? 'removing a passkey' : 'removing an authenticator app', () => void remove(kind, id))) return;
       setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That did not work.' });
     }
   }
@@ -150,6 +165,20 @@ export function Security() {
         <Alert tone={message.tone} dynamic title={message.tone === 'danger' ? 'That did not work' : 'Done'}>
           {message.text}
         </Alert>
+      ) : null}
+
+      {pending ? (
+        <StepUp
+          action={pending.describe}
+          onProved={() => {
+            const { retry } = pending;
+            setPending(undefined);
+            retry();
+          }}
+          onCancel={() => {
+            setPending(undefined);
+          }}
+        />
       ) : null}
 
       {!factors ? (
