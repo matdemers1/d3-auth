@@ -8,6 +8,27 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react.tsx"
+  },
+  "dependencies": {
+    "jose": "^6.2.12",
+    "openid-client": "^6.8.8"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@d3cloud/ui": "https://github.com/matdemers1/d3-design-system/releases/download/v1.0.0/d3cloud-ui-1.0.0.tgz",
+    "react": "^19.3.0",
+    "@types/react": "^19.3.0"
   }
 }
