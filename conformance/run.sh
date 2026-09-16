@@ -64,6 +64,9 @@ for attempt in $(seq 1 30); do
   [ "$attempt" = "30" ] && { echo "The TLS bridge never minted its CA" >&2; exit 1; }
   sleep 1
 done
+# docker cp keeps Caddy's restrictive mode, and the server runs as an unprivileged user: on Linux it
+# could not read the file and Node skipped it with only a warning. The certificate is public.
+chmod 0755 "$HERE/.op-tls" && chmod 0644 "$HERE/.op-tls/root.crt"
 compose up -d --wait --no-deps --force-recreate server
 
 echo "==> Waiting for the suite to accept API calls"
