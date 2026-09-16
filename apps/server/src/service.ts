@@ -33,6 +33,7 @@ import { createBackchannel, type Backchannel } from './oidc/backchannel.js';
 import { createSessionControl, type SessionControl } from './security/sessions.js';
 import { createTrustedDevices, type TrustedDevices } from './security/trusted-device.js';
 import { createWebAuthn, type WebAuthn } from './security/webauthn.js';
+import { seedOnBoot } from './boot/seed.js';
 import { createFirstRunSetup } from './setup/first-run.js';
 import { createRecovery, type Recovery } from './setup/recovery.js';
 import { setupRouter } from './setup/routes.js';
@@ -71,6 +72,7 @@ type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' |
       | 'MAIL_RELAY_SECRET'
       | 'MAIL_FROM'
       | 'SMTP_URL'
+      | 'SEED_FILE'
     >
   >;
 
@@ -100,6 +102,9 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const throttle = createThrottle(db);
   const audit = createAuditWriter(db, logger);
   const adapterFactory = createAdapterFactory(db);
+
+  // Before anything reads the App table: a mounted seed file declares what should exist (REQ-057).
+  if (config.SEED_FILE) await seedOnBoot(db, config.SEED_FILE, { logger, audit });
 
   const keys = await loadSigningKeys(db, kek);
   const provider = createProvider({

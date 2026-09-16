@@ -8,6 +8,7 @@ import { People } from './People';
 import { PersonDetail } from './PersonDetail';
 import { RegisterApp } from './RegisterApp';
 import { Settings } from './Settings';
+import { Transfer } from './Transfer';
 
 // The operator console. Audit, keys and settings arrive with the rest of Phase 4.
 //
@@ -21,6 +22,7 @@ const SECTIONS = [
   { path: 'keys', label: 'Keys' },
   { path: 'audit', label: 'Audit' },
   { path: 'settings', label: 'Settings' },
+  { path: 'transfer', label: 'Export & import' },
 ] as const;
 
 function Nav({ current }: { current: string }) {
@@ -46,7 +48,7 @@ export default function AdminShell() {
 
   return (
     <>
-      <Nav current={['apps', 'groups', 'keys', 'audit', 'settings'].includes(section) ? section : 'people'} />
+      <Nav current={['apps', 'groups', 'keys', 'audit', 'settings', 'transfer'].includes(section) ? section : 'people'} />
       {section === 'apps' ? (
         id === 'new' ? (
           <RegisterApp />
@@ -61,6 +63,8 @@ export default function AdminShell() {
         <Audit />
       ) : section === 'settings' ? (
         <Settings />
+      ) : section === 'transfer' ? (
+        <Transfer />
       ) : section === 'groups' ? (
         id ? (
           <GroupDetail id={id} />

@@ -10,6 +10,7 @@ import { GrantError, type Grants } from '../authz/grants.js';
 import { AppError, type Apps } from './apps.js';
 import { knownEvents, searchAudit, toCsv, type AuditFilter } from './audit-query.js';
 import { alertSettingsSchema, lifetimeSettingsSchema, mailSettingsSchema, type Settings } from './settings.js';
+import { exportState, importState, stateSchema } from './state.js';
 import { GroupError, type Groups } from './groups.js';
 import type { MailAdapter } from '../mail/adapter.js';
 import type { Invites } from './invites.js';
@@ -873,6 +874,60 @@ export function adminRouter({ db, apps, grants, groups, settings, mail, operator
       }
     })();
   });
+
+  // Export and import (REQ-072). Owner-only, and the import is behind a fresh proof: a file can
+  // hand somebody access to everything, so it is treated like rotating a secret.
+  router.get(`${ADMIN_API}/state/export`, auth.requireOwner, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user } = consoleUserOf(res);
+        const state = await exportState(db);
+        await audit.write({
+          event: AUDIT_EVENTS.stateExported,
+          actorUserId: user.id,
+          targetType: 'app',
+          ip: clientIp(req),
+          detail: { apps: state.apps.length, people: state.people.length, groups: state.groups.length },
+        });
+        const stamp = new Date().toISOString().slice(0, 10);
+        res
+          .set('Cache-Control', 'no-store')
+          .set('Content-Disposition', `attachment; filename="d3auth-state-${stamp}.json"`)
+          .json(state);
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  const importRoute =
+    (dryRun: boolean): RequestHandler =>
+    (req, res, next) => {
+      void (async () => {
+        try {
+          const { user } = consoleUserOf(res);
+          const parsed = stateSchema.safeParse((req.body as { state?: unknown }).state);
+          if (!parsed.success) {
+            res.status(400).json({
+              error: 'invalid',
+              problems: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+            });
+            return;
+          }
+          const result = await importState(db, parsed.data, { dryRun, actorUserId: user.id, audit });
+          res.json(result);
+        } catch (err) {
+          next(err);
+        }
+      })();
+    };
+
+  // A state file is the one body here that is legitimately large; 8kb would refuse a real one.
+  const stateBody = express.json({ limit: '2mb' });
+
+  /** What it would do. Nothing is written; the console shows this before offering to apply it. */
+  router.post(`${ADMIN_API}/state/import/preview`, auth.requireOwner, stateBody, importRoute(true));
+  router.post(`${ADMIN_API}/state/import`, auth.requireFreshOwner, stateBody, importRoute(false));
 
   return router;
 }

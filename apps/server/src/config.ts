@@ -61,6 +61,8 @@ const schema = z
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
     OPERATOR_DISPLAY_NAME: z.string().default('the operator'),
     CONSOLE_DIST: z.string().optional(),
+    /** A mounted state file applied on every boot, idempotently (REQ-057). */
+    SEED_FILE: z.string().optional(),
     /** Where the pre-migration dump and, later, backup bundles are written. */
     BACKUP_DIR: z.string().default('/backups'),
     /** Conformance-suite clients only: the OpenID Basic plan does not send PKCE. Refused on real issuers. */

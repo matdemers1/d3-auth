@@ -189,7 +189,55 @@ docker compose exec server pg_restore --clean --if-exists --no-owner \
 A rollback that skips step 2 after a schema change will fail readiness rather than serve half a
 schema — which is the intended behaviour, not a bug.
 
-## 10. If sign-in is down
+## 10. Moving an instance's shape (REQ-072, REQ-057)
+
+The state file describes what this instance *is* — apps, roles, groups, members and who may reach
+what. It is not a backup: no client secrets, no password hashes, no passkeys, no signing keys are
+in it. That is what makes it safe to keep in version control, and it is also why an instance built
+from one is not yet usable until two things are fixed.
+
+```bash
+# take one
+docker compose exec server node dist/cli/state.js --export > d3auth-state.json
+
+# see what it would do somewhere else — writes nothing
+docker compose exec -T server node dist/cli/state.js --import - --dry-run < d3auth-state.json
+
+# do it
+docker compose exec -T server node dist/cli/state.js --import - < d3auth-state.json
+```
+
+The console does the same three steps under **Export & import**, and the apply is behind a
+step-up prompt.
+
+After an import:
+
+1. **Every confidential app is secret pending** (R-11). It has no client secret, so nothing can
+   sign in to it. Rotate one on the app's page and give it to the app.
+2. **Nobody can sign in yet.** Imported people have no credentials. Invite or reset them — or, if
+   the owner is among them, use break-glass (`docs/runbooks/break-glass.md`).
+
+An import only creates and updates. It never deletes, so importing a file that omits an app leaves
+that app alone; removing things is done deliberately in the console.
+
+### The seed file
+
+Set `SEED_FILE` to a mounted state file and it is applied on every boot, idempotently. Useful when
+the apps an instance should have are part of its configuration rather than something somebody
+clicks:
+
+```yaml
+# docker-compose.tunnel.yml
+    environment:
+      SEED_FILE: /config/d3auth.seed.json
+    volumes:
+      - /DATA/d3auth/d3auth.seed.json:/config/d3auth.seed.json:ro
+```
+
+A missing or malformed seed file is logged and the service starts anyway — a seed is a
+convenience, not a precondition for serving.
+
+## 11. If sign-in is down
 
 1. `curl https://auth.d3cloud.io/readyz` — the JSON names which check failed (database, signingKeys, migrations).
 2. Red database: `docker compose ps`, then `docker compose logs postgres`.
