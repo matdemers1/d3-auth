@@ -9,6 +9,7 @@ import type { Db } from '../db.js';
 // proves nothing about you. And it is never issued to an account that cannot sign in (REQ-041),
 // because a suspension has to take effect everywhere at once, not just where a factor is asked.
 
+/** The default when nothing is configured; the console can change it (REQ-071). */
 export const TRUSTED_DEVICE_DAYS = 30;
 const TOKEN_BYTES = 32;
 
@@ -41,14 +42,15 @@ export interface TrustedDevices {
   revokeAll(userId: string): Promise<number>;
 }
 
-export function createTrustedDevices(db: Db): TrustedDevices {
+export function createTrustedDevices(db: Db, lifetimeDays?: () => Promise<number>): TrustedDevices {
   return {
     async issue({ userId, userAgent, now = new Date() }) {
       const user = await db.user.findUnique({ where: { id: userId }, select: { status: true } });
       if (user?.status !== 'active') return undefined;
 
+      const days = (await lifetimeDays?.()) ?? TRUSTED_DEVICE_DAYS;
       const token = randomBytes(TOKEN_BYTES).toString('base64url');
-      const expiresAt = new Date(now.getTime() + TRUSTED_DEVICE_DAYS * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
       await db.trustedDevice.create({
         data: { userId, tokenHash: hashOf(token), userAgent: userAgent ?? null, expiresAt },
       });

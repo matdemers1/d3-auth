@@ -184,7 +184,10 @@ describe('what gets written (REQ-110)', () => {
 
     // And a refusal by the grant check, which is the invariant this project is built on.
     const denied = await eventsFrom(async () => {
+      // Every route in: a group grant is access too, and leaving one would make this pass for
+      // the wrong reason.
       await h.service.db.grant.deleteMany({ where: { userId: ownerId } });
+      await h.service.db.groupMember.deleteMany({ where: { userId: ownerId } });
       await authorize(h, config, {}, new Browser(h.opFetch)).catch(() => undefined);
     });
     expect(denied).toContain(AUDIT_EVENTS.accessDenied);

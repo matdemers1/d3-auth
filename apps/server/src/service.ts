@@ -23,10 +23,9 @@ import { keysRouter } from './oidc/keys-routes.js';
 import { createProvider, deviceCookieNameFor } from './oidc/provider.js';
 import { createSecretHasher } from './security/hash.js';
 import { createKekCrypto } from './security/kek.js';
-import { createMailAdapter, type MailAdapter } from './mail/adapter.js';
-import { logDriver } from './mail/log-driver.js';
-import { smtpDriver } from './mail/smtp.js';
-import { workerRelayDriver } from './mail/worker-relay.js';
+import type { MailAdapter } from './mail/adapter.js';
+import { mailFromSettings } from './mail/from-settings.js';
+import { createSettings, type Settings } from './admin/settings.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
 import { createThrottle } from './security/throttle.js';
 import { createTotp, type Totp } from './security/totp.js';
@@ -49,6 +48,7 @@ export interface Service {
   apps: Apps;
   grants: Grants;
   groups: Groups;
+  settings: Settings;
   totp: Totp;
   webauthn: WebAuthn;
   trustedDevices: TrustedDevices;
@@ -59,23 +59,6 @@ export interface Service {
 }
 
 /** Picks the mail driver from configuration, falling back to the log so nothing silently fails. */
-function buildMail(config: ServiceConfig, logger: Logger): MailAdapter {
-  const from: string = config.MAIL_FROM ?? 'no-reply@localhost';
-  const relayUrl = config.MAIL_RELAY_URL;
-  const relaySecret = config.MAIL_RELAY_SECRET;
-  const smtpUrl = config.SMTP_URL;
-  if (config.MAIL_DRIVER === 'worker' && relayUrl && relaySecret) {
-    return createMailAdapter(workerRelayDriver({ url: relayUrl, secret: relaySecret, from }), logger);
-  }
-  if (config.MAIL_DRIVER === 'smtp' && smtpUrl) {
-    return createMailAdapter(smtpDriver({ url: smtpUrl, from }), logger);
-  }
-  if (config.MAIL_DRIVER !== 'log') {
-    logger.warn({ driver: config.MAIL_DRIVER }, 'mail is not configured; invites will show a link to copy instead');
-  }
-  return createMailAdapter(logDriver(logger), logger);
-}
-
 type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' | 'COOKIE_KEYS'> &
   Partial<
     Pick<
@@ -155,7 +138,20 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   logger.info({ kids: keys.map((k) => k.kid), clients: clients.served.length }, 'provider ready');
 
   const operatorDisplayName = config.OPERATOR_DISPLAY_NAME ?? 'the operator';
-  const mail = buildMail(config, logger);
+  const settings = createSettings({
+    db,
+    kek,
+    audit,
+    environment: {
+      mailDriver: config.MAIL_DRIVER,
+      from: config.MAIL_FROM,
+      relayUrl: config.MAIL_RELAY_URL,
+      relaySecret: config.MAIL_RELAY_SECRET,
+      smtpUrl: config.SMTP_URL,
+    },
+  });
+  // Resolved per send, so changing it in the console takes effect without a deploy (REQ-071).
+  const mail = mailFromSettings(settings, logger);
   const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'));
   const issuerUrl = new URL(config.ISSUER);
   const totp = createTotp(db, kek, operatorDisplayName === 'the operator' ? issuerUrl.host : `${operatorDisplayName} (D3 Auth)`);
@@ -166,7 +162,9 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     origin: issuerUrl.origin,
   });
   const secureCookies = config.ISSUER.startsWith('https://');
-  const trustedDevices = createTrustedDevices(db);
+  // The lifetime is read when a device is trusted, so changing it in the console applies next
+  // time somebody says "don't ask again" rather than needing a deploy.
+  const trustedDevices = createTrustedDevices(db, async () => (await settings.lifetimes()).trustedDeviceDays);
   const issuerHost = new URL(config.ISSUER).hostname;
   const backchannel = createBackchannel({
     provider,
@@ -249,7 +247,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
       accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
-      adminRouter({ db, apps, grants, groups, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
+      adminRouter({ db, apps, grants, groups, settings, mail, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
     ],
@@ -269,6 +267,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     apps,
     grants,
     groups,
+    settings,
     totp,
     webauthn,
     trustedDevices,

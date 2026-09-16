@@ -275,6 +275,21 @@ model Group {
   @@map("group")
 }
 
+/// Operator settings, one row per key.
+///
+/// Anything secret (a relay token, an SMTP URL with a password in it) is sealed under the KEK in
+/// `secretEncrypted` and never in `value`, so a settings export and a stray `select *` are both
+/// safe to look at.
+model Setting {
+  key             String   @id
+  value           Json     @default("{}")
+  secretEncrypted Bytes?   @map("secret_encrypted")
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedById     String?  @map("updated_by") @db.Uuid
+
+  @@map("setting")
+}
+
 /// When somebody first and last signed in to an app.
 ///
 /// Separate from Grant because access can come from a group, which has no grant row of its own —

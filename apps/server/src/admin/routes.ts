@@ -9,7 +9,9 @@ import type { TrustedDevices } from '../security/trusted-device.js';
 import { GrantError, type Grants } from '../authz/grants.js';
 import { AppError, type Apps } from './apps.js';
 import { knownEvents, searchAudit, toCsv, type AuditFilter } from './audit-query.js';
+import { alertSettingsSchema, lifetimeSettingsSchema, mailSettingsSchema, type Settings } from './settings.js';
 import { GroupError, type Groups } from './groups.js';
+import type { MailAdapter } from '../mail/adapter.js';
 import type { Invites } from './invites.js';
 import { parseManifest, type Manifest } from './manifest.js';
 
@@ -23,6 +25,8 @@ export interface AdminDeps {
   apps: Apps;
   grants: Grants;
   groups: Groups;
+  settings: Settings;
+  mail: MailAdapter;
   /** Used in copy the console shows to people, e.g. "Ask Matthew" (REQ-087). */
   operatorDisplayName: string;
   auth: ConsoleAuth;
@@ -32,7 +36,7 @@ export interface AdminDeps {
   audit: AuditWriter;
 }
 
-export function adminRouter({ db, apps, grants, groups, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
+export function adminRouter({ db, apps, grants, groups, settings, mail, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '8kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -760,6 +764,110 @@ export function adminRouter({ db, apps, grants, groups, operatorDisplayName, aut
           .type('text/csv')
           .set('Content-Disposition', `attachment; filename="audit-${stamp}.csv"`)
           .send(toCsv(page));
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  // Settings (C-10, REQ-071). Owner-only: these decide how the system reaches people and how
+  // long it trusts them.
+  router.get(`${ADMIN_API}/settings`, auth.requireOwner, (_req, res, next) => {
+    void (async () => {
+      try {
+        res.set('Cache-Control', 'no-store').json(await settings.view());
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  router.post(`${ADMIN_API}/settings/mail`, auth.requireFreshOwner, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user } = consoleUserOf(res);
+        const input = req.body as { settings?: unknown; secret?: unknown };
+        const parsed = mailSettingsSchema.safeParse(input.settings);
+        if (!parsed.success) {
+          res.status(400).json({ error: 'invalid', problems: parsed.error.issues.map((issue) => issue.message) });
+          return;
+        }
+        await settings.setMail({
+          settings: parsed.data,
+          // Absent leaves the stored secret alone; empty clears it.
+          ...(typeof input.secret === 'string' ? { secret: input.secret } : {}),
+          actorUserId: user.id,
+          ip: clientIp(req),
+        });
+        res.json(await settings.view());
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  router.post(`${ADMIN_API}/settings/alerts`, auth.requireOwner, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user } = consoleUserOf(res);
+        const parsed = alertSettingsSchema.safeParse((req.body as { settings?: unknown }).settings);
+        if (!parsed.success) {
+          res.status(400).json({ error: 'invalid', problems: parsed.error.issues.map((issue) => issue.message) });
+          return;
+        }
+        await settings.setAlerts({ settings: parsed.data, actorUserId: user.id, ip: clientIp(req) });
+        res.json(await settings.view());
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  router.post(`${ADMIN_API}/settings/lifetimes`, auth.requireOwner, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user } = consoleUserOf(res);
+        const parsed = lifetimeSettingsSchema.safeParse((req.body as { settings?: unknown }).settings);
+        if (!parsed.success) {
+          res.status(400).json({ error: 'invalid', problems: parsed.error.issues.map((issue) => issue.message) });
+          return;
+        }
+        await settings.setLifetimes({ settings: parsed.data, actorUserId: user.id, ip: clientIp(req) });
+        res.json(await settings.view());
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  /**
+   * Send one real message with the configuration as it stands (REQ-109).
+   *
+   * The driver's own error comes back word for word. A paraphrase would be worse than useless
+   * here: "could not send" tells an operator nothing, while "relay answered 401" tells them
+   * exactly which thing to fix.
+   */
+  router.post(`${ADMIN_API}/settings/mail/test`, auth.requireOwner, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user } = consoleUserOf(res);
+        const to = (req.body as { to?: unknown }).to;
+        const recipient = typeof to === 'string' && to.includes('@') ? to : user.email;
+
+        const result = await mail.send({
+          to: recipient,
+          subject: `Test message from ${operatorDisplayName}`,
+          text: `This is a test message sent from the ${operatorDisplayName} console. If it arrived, mail works.`,
+        });
+        await audit.write({
+          event: AUDIT_EVENTS.mailTested,
+          actorUserId: user.id,
+          targetType: 'user',
+          targetId: user.id,
+          ip: clientIp(req),
+          detail: { to: recipient, delivered: result.delivered, driver: result.driver },
+        });
+        res.status(result.delivered ? 200 : 502).json(result);
       } catch (err) {
         next(err);
       }

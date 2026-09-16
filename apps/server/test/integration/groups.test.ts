@@ -45,6 +45,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Leave nothing behind: a group grant is access, and another file asserting "no access" would
+  // be quietly wrong.
+  await h.service.db.group.deleteMany({});
   await h.close();
 });
 
