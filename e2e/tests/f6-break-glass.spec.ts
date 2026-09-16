@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { continueIfAsked } from './interstitial';
 import { expect, test, type Page } from '@playwright/test';
 
 // F6 — the owner is locked out. Their only factor is on a phone that is gone; they still know
@@ -32,6 +33,12 @@ async function startSignIn(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Sign in' }).click();
 }
 
+/** Signs in and goes all the way through, interstitial included. */
+async function signInFully(page: Page): Promise<void> {
+  await startSignIn(page);
+  await continueIfAsked(page);
+}
+
 async function signOut(page: Page): Promise<void> {
   await page.goto('/logout');
   await page.getByRole('button', { name: 'Yes, sign me out' }).click();
@@ -49,7 +56,7 @@ test.describe('F6 break-glass', () => {
       options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true },
     });
 
-    await startSignIn(page);
+    await signInFully(page);
     await expect(page.locator('#signed-in')).toBeVisible();
     await page.goto(`${AUTH}/account/security`);
     await page.getByRole('button', { name: 'Add a passkey' }).click();
@@ -72,14 +79,14 @@ test.describe('F6 break-glass', () => {
     await expect(page.locator('#signed-in')).toBeHidden();
 
     // The password alone now works, and the factor that could not be used is gone.
-    await startSignIn(page);
+    await signInFully(page);
     await expect(page.locator('#signed-in')).toBeVisible();
     await page.goto(`${AUTH}/account/security`);
     await expect(page.getByText('Your account is protected by a password only')).toBeVisible();
 
     // The window is spent: the next sign-in is an ordinary one, and the link is dead.
     await signOut(page);
-    await startSignIn(page);
+    await signInFully(page);
     await expect(page.locator('#signed-in')).toBeVisible();
     await page.goto(url);
     await expect(page.getByRole('heading', { name: 'This recovery link has expired' })).toBeVisible();

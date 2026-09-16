@@ -1,3 +1,4 @@
+import { continueIfAsked } from './interstitial';
 import { expect, test } from '@playwright/test';
 
 // F1 — sign in to an app with D3 Auth, then sign out again.
@@ -19,6 +20,7 @@ test.describe('F1 sign in with D3 Auth', () => {
     await expect(page.getByText(/Signing in as/)).toBeVisible();
     await page.getByLabel('Password', { exact: true }).fill(USER.password);
     await page.getByRole('button', { name: 'Sign in' }).click();
+    await continueIfAsked(page);
 
     // Back at the app, signed in.
     await expect(page.locator('#signed-in')).toBeVisible();

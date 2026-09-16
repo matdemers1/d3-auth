@@ -58,9 +58,11 @@ describe('granting access', () => {
     expect(granted.status).toBe(200);
     expect(await granted.json()).toMatchObject({ userId: personId, roles: ['member'], grantedBy: 'Dev Person' });
 
-    expect(await effectiveAccess(h.service.db, { userId: personId, clientId: 'web-app' })).toEqual({
+    expect(await effectiveAccess(h.service.db, { userId: personId, clientId: 'web-app' })).toMatchObject({
       hasGrant: true,
       roles: ['member'],
+      // Nobody has signed in on this grant yet, which is what shows them the interstitial once.
+      firstSignInAt: null,
     });
 
     const event = await h.service.db.auditEvent.findFirstOrThrow({ where: { event: 'grant.created' }, orderBy: { id: 'desc' } });
@@ -90,7 +92,7 @@ describe('granting access', () => {
   it('keeps a grant with no roles, because the app decides what that means', async () => {
     const call = await consoleSession();
     await call(`/api/admin/people/${personId}/access`, { clientId: 'web-app', roles: [] });
-    expect(await effectiveAccess(h.service.db, { userId: personId, clientId: 'web-app' })).toEqual({ hasGrant: true, roles: [] });
+    expect(await effectiveAccess(h.service.db, { userId: personId, clientId: 'web-app' })).toMatchObject({ hasGrant: true, roles: [] });
   });
 
   it('lists who has access to an app, and what one person can reach', async () => {

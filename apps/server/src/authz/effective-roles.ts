@@ -15,9 +15,11 @@ export interface EffectiveAccess {
   hasGrant: boolean;
   /** Role keys, highest first by the app's manifest order. */
   roles: string[];
+  /** Null until their first completed sign-in to this app — the continue-as cue (REQ-059). */
+  firstSignInAt: Date | null;
 }
 
-export const NO_ACCESS: EffectiveAccess = { hasGrant: false, roles: [] };
+export const NO_ACCESS: EffectiveAccess = { hasGrant: false, roles: [], firstSignInAt: null };
 
 /**
  * What this person may do in this app, right now.
@@ -28,7 +30,7 @@ export const NO_ACCESS: EffectiveAccess = { hasGrant: false, roles: [] };
 export async function effectiveAccess(db: Db, input: { userId: string; clientId: string }): Promise<EffectiveAccess> {
   const grant = await db.grant.findFirst({
     where: { userId: input.userId, app: { clientId: input.clientId, enabled: true } },
-    select: { roles: { select: { role: { select: { key: true, sortOrder: true } } } } },
+    select: { firstSignInAt: true, roles: { select: { role: { select: { key: true, sortOrder: true } } } } },
   });
   if (!grant) return NO_ACCESS;
 
@@ -37,5 +39,5 @@ export async function effectiveAccess(db: Db, input: { userId: string; clientId:
     .sort((a, b) => b.sortOrder - a.sortOrder)
     .map((role) => role.key);
   // A grant with no roles is still a grant: the app decides what an unroled person may see.
-  return { hasGrant: true, roles };
+  return { hasGrant: true, roles, firstSignInAt: grant.firstSignInAt };
 }

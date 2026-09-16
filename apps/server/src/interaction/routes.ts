@@ -9,12 +9,13 @@ import type { Logger } from '../log.js';
 import { readCookie } from '../security/cookies.js';
 import { csrfMatches, csrfToken } from '../security/csrf.js';
 import type { PasswordVerifier } from '../security/password.js';
+import type { SessionControl } from '../security/sessions.js';
 import type { Throttle } from '../security/throttle.js';
 import { TRUSTED_DEVICE_DAYS, type TrustedDevices } from '../security/trusted-device.js';
 import type { Totp } from '../security/totp.js';
 import type { WebAuthn } from '../security/webauthn.js';
 import type { Recovery } from '../setup/recovery.js';
-import { renderLoginPage, renderRecoveryPage } from './fallback.js';
+import { renderContinueAsPage, renderLoginPage, renderRecoveryPage } from './fallback.js';
 import { createFlowStore, type FlowStore, type LoginFlow } from './flow-store.js';
 import { advance, isComplete, start, type Identity, type LoginState } from './machine.js';
 
@@ -23,6 +24,8 @@ import { advance, isComplete, start, type Identity, type LoginState } from './ma
 // and only `complete` calls the provider's interactionResult.
 
 export const INTERACTION_API = '/api/interaction';
+/** Must match `ROUTES.authorization` in the provider. */
+const ROUTE_AUTHORIZATION = '/oidc/auth';
 /** Where the provider sends a browser that needs to sign in. */
 export const loginPath = (uid: string): string => `/login/${uid}`;
 
@@ -42,11 +45,14 @@ export interface InteractionDeps {
   webauthn: WebAuthn;
   trustedDevices: TrustedDevices;
   recovery: Recovery;
+  sessions: SessionControl;
   /** Cookie name for the trusted-device token; `__Host-` prefixed on an https issuer. */
   deviceCookieName: string;
   /** False only for a local http issuer, where a Secure cookie would never be sent back. */
   secureCookies: boolean;
   operatorDisplayName: string;
+  /** Our own issuer, for rebuilding an authorization request from its parameters. */
+  issuer: string;
   /** Where the console build lives; the sign-in form is rendered into its shell. */
   consoleDist: string;
 }
@@ -174,6 +180,15 @@ export function interactionRouter(deps: InteractionDeps): Router {
     return redirectTo;
   }
 
+  /** True when this person has never completed a sign-in to this app before (REQ-059). */
+  async function firstTimeHere(accountId: string, clientId: string): Promise<boolean> {
+    const grant = await db.grant.findFirst({
+      where: { userId: accountId, app: { clientId } },
+      select: { firstSignInAt: true },
+    });
+    return (grant?.firstSignInAt ?? null) === null;
+  }
+
   async function finish(
     req: Request,
     res: Response,
@@ -196,7 +211,12 @@ export function interactionRouter(deps: InteractionDeps): Router {
       { mergeWithLastSubmission: false },
     );
     await flows.clear(uid);
-    await db.user.update({ where: { id: accountId }, data: { lastLoginAt: new Date() } });
+    const now = new Date();
+    await db.user.update({ where: { id: accountId }, data: { lastLoginAt: now } });
+    // Per app, so the Access tab can say when somebody last used this one. `firstSignInAt` is
+    // deliberately not set here: it is what decides whether the continue-as interstitial is still
+    // due, and that screen comes *after* this point in the flow (REQ-059).
+    await db.grant.updateMany({ where: { userId: accountId, app: { clientId } }, data: { lastSignInAt: now } });
     if (amr.includes('recovery')) {
       // One window, one sign-in. What is left is an account with no second factor, which the
       // account area nags about until they enrol one.
@@ -256,6 +276,35 @@ export function interactionRouter(deps: InteractionDeps): Router {
       try {
         const details = await provider.interactionDetails(req, res);
         if (details.prompt.name === 'consent') {
+          const accountId = details.session?.accountId ?? '';
+          const clientId = String(details.params.client_id);
+
+          // Deny first, so somebody without access never sees the app's name on a screen.
+          const denied = await denyWithoutGrant(req, res, details.uid, accountId, clientId);
+          if (denied) {
+            res.redirect(303, denied);
+            return;
+          }
+
+          // First time in this app: say which account is about to be used, and offer a way out
+          // (REQ-059). Every later sign-in resolves silently — there is no consent to give
+          // (REQ-060), only an identity worth confirming once.
+          if (await firstTimeHere(accountId, clientId)) {
+            const person = await db.user.findUnique({ where: { id: accountId }, select: { username: true, displayName: true } });
+            const client = await provider.Client.find(clientId);
+            res.set('Cache-Control', 'no-store').type('html').send(
+              renderContinueAsPage(deps.consoleDist, {
+                uid: details.uid,
+                csrf: (await flows.load(details.uid))?.csrf ?? csrfToken(),
+                clientName: client?.clientName ?? clientId,
+                username: person?.username ?? '',
+                displayName: person?.displayName ?? '',
+                operatorDisplayName: deps.operatorDisplayName,
+              }),
+            );
+            return;
+          }
+
           res.redirect(303, await grantAndFinish(req, res, details));
           return;
         }
@@ -305,6 +354,25 @@ export function interactionRouter(deps: InteractionDeps): Router {
       respondNoStore(res);
       const ctx = await context(req, res);
       if (!ctx) return;
+
+      // Already signed in and standing on the continue-as interstitial (REQ-059): the screen
+      // needs a different answer from "type your email".
+      const details = await provider.interactionDetails(req, res);
+      if (details.prompt.name === 'consent') {
+        const person = await db.user.findUnique({
+          where: { id: details.session?.accountId ?? '' },
+          select: { username: true, displayName: true },
+        });
+        res.json({
+          step: 'continue',
+          csrf: ctx.flow.csrf,
+          clientName: ctx.clientName,
+          operatorDisplayName: deps.operatorDisplayName,
+          username: person?.username ?? person?.displayName ?? '',
+        });
+        return;
+      }
+
       res.json({
         step: stepFor(ctx.flow.state),
         csrf: ctx.flow.csrf,
@@ -581,6 +649,65 @@ export function interactionRouter(deps: InteractionDeps): Router {
       const state = advance(ctx.flow.state, { type: 'trusted_device_answered', trust });
       if (!isComplete(state)) throw new Error('the trusted-device answer must complete the login');
       await finish(req, res, ctx.uid, state.accountId, state.amr, ctx.clientId, state.trustDevice);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // The two answers to the continue-as interstitial (REQ-059).
+  router.post(`${INTERACTION_API}/:uid/continue`, body, async (req, res, next) => {
+    try {
+      respondNoStore(res);
+      const details = await provider.interactionDetails(req, res);
+      const flow = await flows.load(details.uid);
+      const input = req.body as { csrf?: unknown };
+      // The flow is gone once the login completed, so a missing one means there is nothing to
+      // check against and the interaction itself is the proof.
+      if (flow && !csrfMatches(flow.csrf, input.csrf)) {
+        reply(req, res, details.uid, 403, { error: 'csrf' });
+        return;
+      }
+
+      const accountId = details.session?.accountId ?? '';
+      const clientId = String(details.params.client_id);
+      const denied = await denyWithoutGrant(req, res, details.uid, accountId, clientId);
+      if (denied) {
+        reply(req, res, details.uid, 200, { step: 'done', redirectTo: denied });
+        return;
+      }
+
+      const now = new Date();
+      await db.grant.updateMany({
+        where: { userId: accountId, app: { clientId } },
+        data: { firstSignInAt: now, lastSignInAt: now },
+      });
+      reply(req, res, details.uid, 200, { step: 'done', redirectTo: await grantAndFinish(req, res, details) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * "Not you?" — end the session and start the app's authorization request again from the top.
+   *
+   * The interaction cannot simply be resumed: it is bound to the session that created it, and
+   * the provider refuses the pair as a mismatch. So the request the app made is rebuilt from its
+   * own parameters, which lands the person on the sign-in screen with the app none the wiser.
+   */
+  router.post(`${INTERACTION_API}/:uid/switch`, body, async (req, res, next) => {
+    try {
+      respondNoStore(res);
+      const details = await provider.interactionDetails(req, res);
+      const sessionUid = details.session?.uid;
+      if (sessionUid) await deps.sessions.end(sessionUid);
+      await db.session.updateMany({ where: { oidcSessionUid: sessionUid ?? '', revokedAt: null }, data: { revokedAt: new Date() } });
+      await flows.clear(details.uid);
+
+      const again = new URLSearchParams();
+      for (const [key, value] of Object.entries(details.params)) {
+        if (typeof value === 'string') again.set(key, value);
+      }
+      reply(req, res, details.uid, 200, { step: 'identify', redirectTo: `${deps.issuer}${ROUTE_AUTHORIZATION}?${again.toString()}` });
     } catch (err) {
       next(err);
     }

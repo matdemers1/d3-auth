@@ -1,7 +1,7 @@
 // The interaction API (server: apps/server/src/interaction/routes.ts). The screens never decide
 // anything; they render what the server says the current step is.
 
-export type Step = 'identify' | 'password' | 'factor' | 'trust' | 'done';
+export type Step = 'identify' | 'password' | 'factor' | 'trust' | 'continue' | 'done';
 
 export interface InteractionView {
   step: Step;
@@ -11,6 +11,8 @@ export interface InteractionView {
   /** Which second factors this person has, so the screen can lead with the passkey. */
   factors?: ('totp' | 'passkey')[];
   email?: string;
+  /** Who the continue-as interstitial is about (REQ-059). */
+  username?: string;
 }
 
 export interface StepResult {
@@ -47,6 +49,10 @@ export const submitEmail = (uid: string, csrf: string, email: string): Promise<S
 
 export const submitPassword = (uid: string, csrf: string, password: string): Promise<StepResult> =>
   post(uid, '/password', { csrf, password });
+
+/** The two answers to the continue-as interstitial (REQ-059). */
+export const answerContinue = (uid: string, csrf: string): Promise<StepResult> => post(uid, '/continue', { csrf });
+export const switchAccount = (uid: string, csrf: string): Promise<StepResult> => post(uid, '/switch', { csrf });
 
 /** The trusted-device offer (REQ-036). Either answer finishes the login. */
 export const answerTrust = (uid: string, csrf: string, trust: boolean): Promise<StepResult> => post(uid, '/trust', { csrf, trust });

@@ -207,6 +207,19 @@ export class Browser {
       return { response: password, status: password.status, body };
     }
     const followed = await this.navigate(body.redirectTo);
+    // First sign-in to an app stops on the continue-as interstitial (REQ-059). A person clicks
+    // *Continue*; so does this.
+    if (!followed.leftTo && (await followed.response.clone().text()).includes('/continue')) {
+      const html = await followed.response.text();
+      const csrf = /name="csrf" value="([^"]*)"/.exec(html)?.[1] ?? '';
+      const interstitialUid = new URL(this.lastUrl).pathname.split('/')[2] ?? uid;
+      const continued = await this.api(interstitialUid, '/continue', { csrf });
+      const answer = (await continued.json()) as Record<string, unknown>;
+      if (typeof answer.redirectTo === 'string') {
+        return { ...(await this.navigate(answer.redirectTo)), status: continued.status, body: answer };
+      }
+      return { response: continued, status: continued.status, body: answer };
+    }
     return { ...followed, status: password.status, body };
   }
 

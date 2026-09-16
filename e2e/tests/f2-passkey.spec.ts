@@ -1,3 +1,4 @@
+import { continueIfAsked } from './interstitial';
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
 
 // REQ-034, REQ-032: enrol a passkey and sign in with it.
@@ -34,6 +35,7 @@ async function signInWithPassword(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Password', { exact: true }).fill(USER.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await continueIfAsked(page);
   await expect(page.locator('#signed-in')).toBeVisible();
 }
 

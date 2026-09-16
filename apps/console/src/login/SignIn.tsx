@@ -1,4 +1,5 @@
 import { Alert, Button, Card, FormField, Input, PasswordInput } from '@d3cloud/ui';
+import { ContinueAs } from './ContinueAs';
 import { useEffect, useRef, useState } from 'react';
 import { answerTrust, loadInteraction, signInWithPasskey, submitCode, submitEmail, submitPassword, type InteractionView, type StepResult } from './api';
 
@@ -108,6 +109,9 @@ export function SignIn({ uid }: Props) {
   if (!view) {
     return <main className="shell shell--narrow" aria-busy="true" />;
   }
+
+  // Signed in already, first time at this app: a different screen entirely.
+  if (view.step === 'continue') return <ContinueAs uid={uid} view={view} apply={apply} />;
 
   const throttled = retryAfter > 0;
   const step =

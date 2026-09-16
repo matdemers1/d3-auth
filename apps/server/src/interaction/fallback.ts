@@ -76,6 +76,37 @@ export function fallbackForm(view: FallbackView): string {
 }
 
 /**
+ * *Continue to {app} as {username}* (REQ-059). Shown once per app, on the first sign-in to it.
+ *
+ * It is not a consent screen — there is nothing to agree to, and no scopes to argue about
+ * (REQ-060). It exists because somebody arriving at a new app from a shared or long-lived
+ * session deserves to be told which account is about to be used, and offered a way out.
+ */
+export function renderContinueAsPage(
+  consoleDist: string,
+  view: { uid: string; csrf: string; clientName: string; username: string; displayName: string; operatorDisplayName: string },
+): string {
+  const action = `/api/interaction/${encodeURIComponent(view.uid)}`;
+  const who = view.username || view.displayName;
+  return intoShell(
+    consoleDist,
+    `<main class="shell shell--narrow">
+      <h1 class="signin-title">Continue to ${escape(view.clientName)}</h1>
+      <p class="signin-identity">You are signed in as <strong>${escape(who)}</strong>.</p>
+      <form class="signin-form signin-form--fallback" method="post" action="${action}/continue">
+        <input type="hidden" name="csrf" value="${escape(view.csrf)}">
+        <button class="signin-button" type="submit">Continue as ${escape(who)}</button>
+      </form>
+      <form class="signin-form signin-form--fallback" method="post" action="${action}/switch">
+        <input type="hidden" name="csrf" value="${escape(view.csrf)}">
+        <button class="signin-button signin-button--quiet" type="submit">Not you? Sign in as someone else</button>
+      </form>
+      <p class="signin-footnote">Trouble signing in? Ask ${escape(view.operatorDisplayName)}.</p>
+    </main>`,
+  );
+}
+
+/**
  * The page the break-glass link lands on (REQ-122). Server-rendered, because it must work on a
  * browser the owner has never used, and it says what just happened rather than signing anybody in.
  */

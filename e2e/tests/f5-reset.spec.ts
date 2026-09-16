@@ -1,3 +1,4 @@
+import { continueIfAsked } from './interstitial';
 import { expect, test, type Page } from '@playwright/test';
 
 // F5 — lost phone. A guest tells the owner; the owner resets their account; the guest sets it up
@@ -16,6 +17,7 @@ async function signIn(page: Page, who: { email: string; password: string }): Pro
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Password', { exact: true }).fill(who.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await continueIfAsked(page);
   await expect(page.locator('#signed-in')).toBeVisible();
 }
 
@@ -73,6 +75,7 @@ test.describe('F5 lost phone', () => {
 
     await page.getByLabel('Password', { exact: true }).fill(NEW_PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
+    await continueIfAsked(page);
     await expect(page.locator('#signed-in')).toBeVisible();
     // Same account, so the same subject: the reset did not make a new person.
     expect(await subjectOf(page)).toBe(before);

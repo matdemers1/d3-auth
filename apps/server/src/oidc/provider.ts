@@ -96,6 +96,9 @@ export function createProvider(options: ProviderOptions): Provider {
 
       const access = await effectiveAccess(options.db, { userId: accountId, clientId: client.clientId });
       if (!access.hasGrant) return undefined;
+      // First time in this app: no grant is returned, so the provider raises an interaction and
+      // the continue-as interstitial gets its one chance to be seen (REQ-059).
+      if (access.firstSignInAt === null) return undefined;
 
       const grantId = ctx.oidc.result?.consent?.grantId ?? ctx.oidc.session?.grantIdFor(client.clientId);
       if (grantId) {

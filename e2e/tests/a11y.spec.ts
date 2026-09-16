@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { continueIfAsked } from './interstitial';
 import { expect, test, type Page } from '@playwright/test';
 
 // REQ-085, REQ-076: every screen a person meets has to be usable by keyboard alone, at AA
@@ -26,6 +27,7 @@ async function signIn(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Password', { exact: true }).fill(USER.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await continueIfAsked(page);
   await expect(page.locator('#signed-in')).toBeVisible();
 }
 

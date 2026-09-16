@@ -232,11 +232,15 @@ model Role {
 }
 
 model Grant {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  userId      String   @map("user_id") @db.Uuid
-  appId       String   @map("app_id") @db.Uuid
-  grantedById String?  @map("granted_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id          String    @id @default(uuid(7)) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  appId       String    @map("app_id") @db.Uuid
+  grantedById String?   @map("granted_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  /// First successful sign-in to this app. Null means the continue-as interstitial is still due.
+  firstSignInAt DateTime? @map("first_sign_in_at") @db.Timestamptz
+  /// Most recent sign-in to this app, for the Access tab.
+  lastSignInAt  DateTime? @map("last_sign_in_at") @db.Timestamptz
 
   user      User        @relation("GrantUser", fields: [userId], references: [id], onDelete: Cascade)
   app       App         @relation(fields: [appId], references: [id], onDelete: Cascade)
