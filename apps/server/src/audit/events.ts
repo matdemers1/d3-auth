@@ -11,6 +11,9 @@ export const AUDIT_EVENTS = {
   sessionRevoked: 'session.revoked',
   keyGenerated: 'key.generated',
   ownerClaimed: 'owner.claimed',
+  inviteCreated: 'invite.created',
+  inviteAccepted: 'invite.accepted',
+  inviteRevoked: 'invite.revoked',
   devSeedUser: 'dev.seed.user',
   devSeedApp: 'dev.seed.app',
 } as const;

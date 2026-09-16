@@ -1,10 +1,14 @@
 import type { Express } from 'express';
 import type Provider from 'oidc-provider';
 import { createApp } from './app.js';
+import { createInvites, type Invites } from './admin/invites.js';
+import { adminRouter } from './admin/routes.js';
 import { createAuditWriter } from './audit/writer.js';
+import { createConsoleAuth } from './console/auth.js';
 import type { Config } from './config.js';
 import { createDb, type Db } from './db.js';
 import { cached, databaseReadiness, type ReadinessProbe } from './health.js';
+import { inviteRouter } from './interaction/invite-routes.js';
 import { interactionRouter, loginPath } from './interaction/routes.js';
 import { recordSessions } from './interaction/sessions.js';
 import type { Logger } from './log.js';
@@ -14,6 +18,10 @@ import { loadSigningKeys } from './oidc/keys.js';
 import { createProvider } from './oidc/provider.js';
 import { createSecretHasher } from './security/hash.js';
 import { createKekCrypto } from './security/kek.js';
+import { createMailAdapter, type MailAdapter } from './mail/adapter.js';
+import { logDriver } from './mail/log-driver.js';
+import { smtpDriver } from './mail/smtp.js';
+import { workerRelayDriver } from './mail/worker-relay.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
 import { createThrottle } from './security/throttle.js';
 import { createFirstRunSetup } from './setup/first-run.js';
@@ -25,11 +33,43 @@ export interface Service {
   db: Db;
   provider: Provider;
   readiness: ReadinessProbe;
+  mail: MailAdapter;
+  invites: Invites;
   close(): Promise<void>;
 }
 
+/** Picks the mail driver from configuration, falling back to the log so nothing silently fails. */
+function buildMail(config: ServiceConfig, logger: Logger): MailAdapter {
+  const from: string = config.MAIL_FROM ?? 'no-reply@localhost';
+  const relayUrl = config.MAIL_RELAY_URL;
+  const relaySecret = config.MAIL_RELAY_SECRET;
+  const smtpUrl = config.SMTP_URL;
+  if (config.MAIL_DRIVER === 'worker' && relayUrl && relaySecret) {
+    return createMailAdapter(workerRelayDriver({ url: relayUrl, secret: relaySecret, from }), logger);
+  }
+  if (config.MAIL_DRIVER === 'smtp' && smtpUrl) {
+    return createMailAdapter(smtpDriver({ url: smtpUrl, from }), logger);
+  }
+  if (config.MAIL_DRIVER !== 'log') {
+    logger.warn({ driver: config.MAIL_DRIVER }, 'mail is not configured; invites will show a link to copy instead');
+  }
+  return createMailAdapter(logDriver(logger), logger);
+}
+
 type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' | 'COOKIE_KEYS'> &
-  Partial<Pick<Config, 'CONSOLE_DIST' | 'CONFORMANCE_PKCE_EXEMPT_CLIENTS' | 'OPERATOR_DISPLAY_NAME'>>;
+  Partial<
+    Pick<
+      Config,
+      | 'CONSOLE_DIST'
+      | 'CONFORMANCE_PKCE_EXEMPT_CLIENTS'
+      | 'OPERATOR_DISPLAY_NAME'
+      | 'MAIL_DRIVER'
+      | 'MAIL_RELAY_URL'
+      | 'MAIL_RELAY_SECRET'
+      | 'MAIL_FROM'
+      | 'SMTP_URL'
+    >
+  >;
 
 const PROVIDER_ERROR_EVENTS = [
   'authorization.error',
@@ -95,6 +135,17 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   for (const skipped of clients.skipped) logger.warn(skipped, 'app not loaded');
   logger.info({ kids: keys.map((k) => k.kid), clients: clients.metadata.length }, 'provider ready');
 
+  const operatorDisplayName = config.OPERATOR_DISPLAY_NAME ?? 'the operator';
+  const mail = buildMail(config, logger);
+  const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'));
+  const invites = createInvites({
+    db,
+    mail,
+    hasher,
+    audit,
+    template: { operatorDisplayName, issuer: config.ISSUER },
+  });
+
   // An instance with no accounts can be claimed once, from the browser, with the code logged here.
   const setup = createFirstRunSetup(db, adapterFactory, hasher, audit, logger);
   await setup.prepare();
@@ -111,10 +162,12 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         throttle,
         audit,
         logger,
-        operatorDisplayName: config.OPERATOR_DISPLAY_NAME ?? 'the operator',
+        operatorDisplayName,
         consoleDist,
       }),
-      setupRouter({ setup, consoleDist, operatorDisplayName: config.OPERATOR_DISPLAY_NAME ?? 'the operator' }),
+      inviteRouter({ invites, consoleDist, operatorDisplayName }),
+      adminRouter({ db, auth: consoleAuth, invites, audit }),
+      setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
     ],
     beforeRouters: [unavailableGate(readiness)],
@@ -128,6 +181,8 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     db,
     provider,
     readiness,
+    mail,
+    invites,
     close: () => db.$disconnect(),
   };
 }

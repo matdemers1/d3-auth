@@ -13,7 +13,9 @@ export function logDriver(logger: Logger): MailDriver {
         { to: message.to, subject: message.subject, body: message.text },
         'no mail driver configured — the message was written here instead of sent',
       );
-      return Promise.resolve();
+      // Reported as a failure on purpose. Nothing was sent, so the console must show the link to
+      // copy rather than tell an operator an email is on its way (REQ-108).
+      return Promise.reject(new Error('Mail is not configured, so nothing was sent. Copy the link instead.'));
     },
   };
 }

@@ -68,7 +68,11 @@ const schema = z
       .string()
       .optional()
       .transform((v) => (v ?? '').split(',').map((c) => c.trim()).filter(Boolean)),
+    MAIL_DRIVER: z.enum(['worker', 'smtp', 'log']).default('log'),
+    MAIL_FROM: z.string().optional(),
+    MAIL_RELAY_SECRET: z.string().optional(),
     MAIL_RELAY_URL: z.url().optional().or(z.literal('')),
+    SMTP_URL: z.string().optional(),
     S3_ENDPOINT: z.url().optional().or(z.literal('')),
     S3_REGION: z.string().optional(),
   })

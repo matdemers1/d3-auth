@@ -80,12 +80,24 @@ describe('smtp driver', () => {
 });
 
 describe('log driver', () => {
-  it('writes the message where an operator can find it', async () => {
+  it('writes the message where an operator can find it, and says it did not send', async () => {
     const { lines, logger } = capture();
-    await logDriver(logger).send({ to: 'guest@example.com', subject: 'Invite', text: 'https://auth.d3cloud.io/login/invite/abc' });
+    const send = logDriver(logger).send({
+      to: 'guest@example.com',
+      subject: 'Invite',
+      text: 'https://auth.d3cloud.io/login/invite/abc',
+    });
+
+    await expect(send).rejects.toThrow(/not configured/);
     const written = lines.join('');
     expect(written).toMatch(/written here instead of sent/);
     expect(written).toContain('guest@example.com');
+  });
+
+  it('makes the adapter report a failure, so the console offers the link to copy', async () => {
+    const { logger } = capture();
+    const result = await createMailAdapter(logDriver(logger), logger).send({ to: 'a@b.test', subject: 's', text: 't' });
+    expect(result).toMatchObject({ delivered: false, driver: 'log' });
   });
 });
 
