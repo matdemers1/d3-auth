@@ -4,6 +4,7 @@ import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simp
 import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import { consoleUserOf, isAdmin, type ConsoleAuth } from '../console/auth.js';
+import type { Grants } from '../authz/grants.js';
 import type { Db } from '../db.js';
 import { readCookie } from '../security/cookies.js';
 import { verifiedFactorCount } from '../security/factors.js';
@@ -34,6 +35,7 @@ const stepUpKey = (sessionId: string): string => `stepup:${createHash('sha256').
 
 export interface AccountDeps {
   db: Db;
+  grants: Grants;
   sessions: SessionControl;
   auth: ConsoleAuth;
   hasher: SecretHasher;
@@ -48,6 +50,7 @@ export interface AccountDeps {
 
 export function accountRouter({
   db,
+  grants,
   sessions,
   auth,
   hasher,
@@ -241,6 +244,19 @@ export function accountRouter({
           detail: { factor: 'totp' },
         });
         res.json({ removed: true });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  // A-1: the launcher (REQ-079). Everything this person can sign in to, which is the one screen
+  // that answers "what is this account even for?".
+  router.get(`${ACCOUNT_API}/apps`, auth.requireUser, (_req, res, next) => {
+    void (async () => {
+      try {
+        const { user } = consoleUserOf(res);
+        res.set('Cache-Control', 'no-store').json({ apps: await grants.forUser(user.id) });
       } catch (err) {
         next(err);
       }

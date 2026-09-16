@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Card, EmptyState, FormField, Input, PageHeader, Skeleton } from '@d3cloud/ui';
+import { Alert, Badge, Button, Card, EmptyState, FormField, Input, Link, PageHeader, Skeleton } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import { api, ApiError, type InviteCreated, type Me, type PendingInvite, type Person } from '../api';
 
@@ -161,7 +161,10 @@ export function People() {
               {directory.people.map((person) => (
                 <li key={person.id} className="row">
                   <div>
-                    <strong>{person.displayName}</strong> <span className="muted">@{person.username}</span>
+                    <strong>
+                      <Link href={`/admin/people/${encodeURIComponent(person.id)}`}>{person.displayName}</Link>
+                    </strong>{' '}
+                    <span className="muted">@{person.username}</span>
                     <div className="muted">{person.email}</div>
                   </div>
                   <div className="row-meta">

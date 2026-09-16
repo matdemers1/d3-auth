@@ -228,7 +228,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         consoleDist,
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
-      accountRouter({ db, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
+      accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
       adminRouter({ db, apps, grants, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),

@@ -55,6 +55,62 @@ export interface PendingInvite {
   expiresAt: string;
 }
 
+export interface AppRole {
+  key: string;
+  displayName: string;
+  description: string;
+  sortOrder: number;
+  isDefault: boolean;
+  granted: number;
+}
+
+export interface App {
+  id: string;
+  clientId: string;
+  name: string;
+  description: string;
+  clientType: 'confidential_web' | 'public_native';
+  enabled: boolean;
+  backchannelLogoutUri: string | null;
+  redirectUris: string[];
+  postLogoutRedirectUris: string[];
+  roles: AppRole[];
+  people: number;
+  createdAt: string;
+}
+
+export interface AccessRow {
+  userId: string;
+  displayName: string;
+  email: string;
+  roles: string[];
+  grantedAt: string;
+  grantedBy: string | null;
+  lastSignIn: string | null;
+}
+
+export interface PersonAccess {
+  clientId: string;
+  name: string;
+  roles: string[];
+  grantedAt: string;
+}
+
+export interface PersonDetail extends Person {
+  emailVerified: boolean;
+  factors: { passkeys: number; authenticatorApps: number; trustedDevices: number };
+  sessions: { id: string; ip: string | null; userAgent: string | null; lastSeenAt: string }[];
+  access: PersonAccess[];
+}
+
+export interface ManifestDiff {
+  isNew: boolean;
+  changed: { field: string; from: string; to: string }[];
+  redirectUris: { added: string[]; removed: string[] };
+  roles: { added: { key: string }[]; removed: { key: string; granted?: number }[]; changed: { key: string }[] };
+  blocking: { key: string; granted?: number }[];
+}
+
 export interface InviteCreated {
   id: string;
   email: string;

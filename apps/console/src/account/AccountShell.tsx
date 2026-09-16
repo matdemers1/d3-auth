@@ -1,4 +1,6 @@
-import { EmptyState, PageHeader } from '@d3cloud/ui';
+import { Card, EmptyState, PageHeader, Skeleton } from '@d3cloud/ui';
+import { useEffect, useState } from 'react';
+import { api } from '../api';
 import { Password } from './Password';
 import { Profile } from './Profile';
 import { Security } from './Security';
@@ -32,14 +34,45 @@ function Nav({ current }: { current: string }) {
   );
 }
 
-/** A-1. The launcher fills in when apps and grants land in Phase 3. */
+/** A-1: the launcher (REQ-079). Access is deny-by-default, so this list is the whole answer. */
 function Apps() {
+  const [apps, setApps] = useState<{ clientId: string; name: string; roles: string[] }[] | undefined>();
+
+  useEffect(() => {
+    api
+      .get<{ apps: { clientId: string; name: string; roles: string[] }[] }>('/api/account/apps')
+      .then((answer) => {
+        setApps(answer.apps);
+      })
+      .catch(() => {
+        setApps([]);
+      });
+  }, []);
+
   return (
     <main className="shell">
       <PageHeader title="Your apps" description="Everything you can sign in to." />
-      <EmptyState kind="empty" size="page" headingLevel={2} heading="No apps yet">
-        When you are given access to an app, it appears here.
-      </EmptyState>
+      {!apps ? (
+        <Skeleton height="8rem" />
+      ) : apps.length === 0 ? (
+        <EmptyState kind="empty" size="page" headingLevel={2} heading="No apps yet">
+          When somebody gives you access to an app, it appears here.
+        </EmptyState>
+      ) : (
+        <Card padding="lg">
+          <ul className="rows">
+            {apps.map((app) => (
+              <li key={app.clientId} className="row">
+                <div>
+                  <strong>{app.name}</strong>
+                  <div className="muted">{app.roles.length > 0 ? app.roles.join(', ') : 'no roles'}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="signin-footnote">Open one of these and choose &ldquo;Sign in with D3 Auth&rdquo;.</p>
+        </Card>
+      )}
     </main>
   );
 }

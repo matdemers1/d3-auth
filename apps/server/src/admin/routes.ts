@@ -88,6 +88,59 @@ export function adminRouter({ db, apps, grants, operatorDisplayName, auth, invit
   // Making somebody an admin (REQ-035). The factor rule is enforced here, at grant time, because
   // this is the moment an account gains the power that makes a second factor non-negotiable —
   // checking it later, at sign-in, would already be too late.
+  /** One person, everything an admin needs to decide about them (C-2, REQ-064). */
+  router.get<{ id: string }>(`${ADMIN_API}/people/:id`, auth.requireAdmin, (req, res, next) => {
+    void (async () => {
+      try {
+        const person = await db.user.findUnique({
+          where: { id: req.params.id },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            displayName: true,
+            kind: true,
+            status: true,
+            emailVerified: true,
+            lastLoginAt: true,
+            createdAt: true,
+            webauthnCredentials: { select: { label: true, createdAt: true, lastUsedAt: true } },
+            totpCredentials: { where: { confirmedAt: { not: null } }, select: { label: true, confirmedAt: true } },
+          },
+        });
+        if (!person) {
+          res.status(404).json({ error: 'not_found' });
+          return;
+        }
+
+        const [sessions, devices, access] = await Promise.all([
+          db.session.findMany({
+            where: { userId: person.id, revokedAt: null, expiresAt: { gt: new Date() } },
+            orderBy: { lastSeenAt: 'desc' },
+            select: { id: true, ip: true, userAgent: true, lastSeenAt: true },
+          }),
+          db.trustedDevice.count({ where: { userId: person.id, revokedAt: null, expiresAt: { gt: new Date() } } }),
+          grants.forUser(person.id),
+        ]);
+
+        const { webauthnCredentials, totpCredentials, ...profile } = person;
+        res.set('Cache-Control', 'no-store').json({
+          ...profile,
+          // Enough to answer "can this person prove it is them?" without exposing a credential.
+          factors: {
+            passkeys: webauthnCredentials.length,
+            authenticatorApps: totpCredentials.length,
+            trustedDevices: devices,
+          },
+          sessions,
+          access,
+        });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
   router.post<{ id: string }>(`${ADMIN_API}/people/:id/kind`, auth.requireOwner, body, (req, res, next) => {
     void (async () => {
       try {
