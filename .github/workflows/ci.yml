@@ -100,7 +100,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: OpenID Conformance Suite — Basic and Config OP plans (REQ-126)
+      - name: OpenID Conformance Suite — Basic, Config, RP-Initiated and Back-Channel Logout (REQ-126, REQ-127)
         run: ./conformance/run.sh
       - name: Upload suite results and stack logs
         if: always()

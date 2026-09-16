@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Runs the OpenID Conformance Suite Basic and Config OP plans against a throwaway D3 Auth stack.
+# Runs the OpenID Conformance Suite OP plans — Basic, Config, RP-Initiated Logout and Back-Channel
+# Logout — against a throwaway D3 Auth stack.
 #
 #   ./conformance/run.sh                          both plans
 #   ./conformance/run.sh <plan-spec> [...]        specific plans (run-test-plan.py syntax)
@@ -42,6 +43,9 @@ trap cleanup EXIT
 
 # Always start from nothing: keys from an earlier run are sealed under a different random KEK.
 compose down -v --remove-orphans > /dev/null 2>&1 || true
+# A file must exist before it is bind-mounted, or Docker makes a directory. The real certificate is
+# copied in once the TLS bridge has minted its CA.
+: > "$HERE/.op-tls-root.crt"
 
 echo "==> Building"
 compose build server
@@ -53,6 +57,13 @@ compose exec -T server node dist/cli/dev-seed.js /conformance/seed.json
 compose up -d --wait --no-deps --force-recreate server
 echo "==> Starting the TLS proxy and the suite"
 compose up -d --wait op-tls mongodb suite suite-nginx
+echo "==> Teaching the provider to trust the bridge's CA (back-channel logout)"
+for attempt in $(seq 1 30); do
+  compose cp op-tls:/data/caddy/pki/authorities/local/root.crt "$HERE/.op-tls-root.crt" > /dev/null 2>&1 && [ -s "$HERE/.op-tls-root.crt" ] && break
+  [ "$attempt" = "30" ] && { echo "The TLS bridge never minted its CA" >&2; exit 1; }
+  sleep 1
+done
+compose up -d --wait --no-deps --force-recreate server
 
 echo "==> Waiting for the suite to accept API calls"
 for attempt in $(seq 1 120); do
@@ -70,7 +81,9 @@ done
 if [ "$#" -eq 0 ]; then
   set -- \
     "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client]" /conformance/plans/d3auth.json \
-    "oidcc-config-certification-test-plan" /conformance/plans/d3auth.json
+    "oidcc-config-certification-test-plan" /conformance/plans/d3auth.json \
+    "oidcc-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]" /conformance/plans/d3auth-logout.json \
+    "oidcc-backchannel-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]" /conformance/plans/d3auth-backchannel.json
 fi
 
 echo "==> Running: $*"

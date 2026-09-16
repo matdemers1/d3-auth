@@ -1,0 +1,103 @@
+{
+  "alias": "d3auth-backchannel",
+  "description": "D3 Auth \u2014 Back-Channel Logout (T-5.2, REQ-127): its own clients, so the RP-Initiated plan never receives a logout token it did not ask for",
+  "server": {
+    "discoveryUrl": "https://op.d3auth.test/.well-known/openid-configuration"
+  },
+  "client": {
+    "client_id": "conformance-3",
+    "client_secret": "conformance-client-3-secret-ephemeral-stack-only"
+  },
+  "client2": {
+    "client_id": "conformance-4",
+    "client_secret": "conformance-client-4-secret-ephemeral-stack-only"
+  },
+  "browser": [
+    {
+      "match": "https://op.d3auth.test/oidc/auth*",
+      "tasks": [
+        {
+          "task": "Email",
+          "match": "https://op.d3auth.test/login/*",
+          "commands": [
+            [
+              "text",
+              "name",
+              "email",
+              "conformance@d3auth.test"
+            ],
+            [
+              "click",
+              "css",
+              "button[type=submit]"
+            ]
+          ],
+          "optional": true
+        },
+        {
+          "task": "Password",
+          "match": "https://op.d3auth.test/login/*",
+          "commands": [
+            [
+              "text",
+              "name",
+              "password",
+              "conformance-suite-password-only"
+            ],
+            [
+              "click",
+              "css",
+              "button[type=submit]"
+            ]
+          ],
+          "optional": true
+        },
+        {
+          "task": "Verify Complete",
+          "match": "*/test/*/callback*",
+          "commands": [
+            [
+              "wait",
+              "id",
+              "submission_complete",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "match": "https://op.d3auth.test/oidc/session/end*",
+      "tasks": [
+        {
+          "task": "Choose logout option",
+          "match": "https://op.d3auth.test/oidc/session/end*",
+          "commands": [
+            [
+              "click",
+              "css",
+              "button[autofocus]"
+            ]
+          ]
+        },
+        {
+          "task": "process user choice, wait for redirect back",
+          "optional": true,
+          "match": "https://op.d3auth.test/oidc/session/end/confirm*",
+          "commands": [
+            [
+              "wait",
+              "contains",
+              "/test/*/post",
+              10
+            ]
+          ]
+        },
+        {
+          "task": "Verify Complete",
+          "match": "*/test/*/post*"
+        }
+      ]
+    }
+  ]
+}

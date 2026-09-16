@@ -19,6 +19,20 @@
             "member"
           ],
           "seen": true
+        },
+        {
+          "clientId": "conformance-3",
+          "roles": [
+            "member"
+          ],
+          "seen": true
+        },
+        {
+          "clientId": "conformance-4",
+          "roles": [
+            "member"
+          ],
+          "seen": true
         }
       ]
     }
@@ -61,6 +75,46 @@
           "default": true
         }
       ]
+    },
+    {
+      "clientId": "conformance-3",
+      "name": "OpenID conformance suite client 3 (back-channel logout)",
+      "type": "confidential_web",
+      "secret": "conformance-client-3-secret-ephemeral-stack-only",
+      "redirectUris": [
+        "https://localhost.emobix.co.uk:8443/test/a/d3auth-backchannel/callback"
+      ],
+      "postLogoutRedirectUris": [
+        "https://localhost.emobix.co.uk:8443/test/a/d3auth-backchannel/post_logout_redirect"
+      ],
+      "roles": [
+        {
+          "key": "member",
+          "display": "Member",
+          "default": true
+        }
+      ],
+      "backchannelLogoutUri": "https://localhost.emobix.co.uk:8443/test/a/d3auth-backchannel/backchannel_logout"
+    },
+    {
+      "clientId": "conformance-4",
+      "name": "OpenID conformance suite client 4 (back-channel logout)",
+      "type": "confidential_web",
+      "secret": "conformance-client-4-secret-ephemeral-stack-only",
+      "redirectUris": [
+        "https://localhost.emobix.co.uk:8443/test/a/d3auth-backchannel/callback"
+      ],
+      "postLogoutRedirectUris": [
+        "https://localhost.emobix.co.uk:8443/test/a/d3auth-backchannel/post_logout_redirect"
+      ],
+      "roles": [
+        {
+          "key": "member",
+          "display": "Member",
+          "default": true
+        }
+      ],
+      "backchannelLogoutUri": "https://localhost.emobix.co.uk:8443/test/a/d3auth-backchannel/backchannel_logout"
     }
   ]
 }

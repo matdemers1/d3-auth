@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as client from 'openid-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { authorize, Browser, discover, grantAccess, markVisited, startHarness, USER, type Harness } from './oidc-harness.js';
+import { authorize, Browser, discover, grantAccess, ISSUER, markVisited, startHarness, USER, type Harness } from './oidc-harness.js';
 
 // REQ-011, REQ-012, REQ-056.
 //
@@ -99,9 +99,10 @@ beforeEach(async () => {
 });
 
 /** Signs in to the listening app and returns the session it created. */
-async function signIn(): Promise<{ sid: string; sessionUid: string }> {
+async function signIn(): Promise<{ sid: string; sessionUid: string; browser: Browser; idToken: string }> {
   const config = await discover(h, APP.clientId, client.ClientSecretBasic(APP.secret));
-  const code = await authorize(h, config, { redirect_uri: APP.callback, scope: 'openid' }, new Browser(h.opFetch));
+  const browser = new Browser(h.opFetch);
+  const code = await authorize(h, config, { redirect_uri: APP.callback, scope: 'openid' }, browser);
   const tokens = await client.authorizationCodeGrant(config, code.callback, {
     pkceCodeVerifier: code.verifier,
     expectedState: code.state,
@@ -109,7 +110,7 @@ async function signIn(): Promise<{ sid: string; sessionUid: string }> {
   });
   const sid = tokens.claims()?.sid;
   const row = await h.service.db.session.findFirstOrThrow({ where: { userId, revokedAt: null }, orderBy: { createdAt: 'desc' } });
-  return { sid: typeof sid === 'string' ? sid : '', sessionUid: row.oidcSessionUid ?? '' };
+  return { sid: typeof sid === 'string' ? sid : '', sessionUid: row.oidcSessionUid ?? '', browser, idToken: tokens.id_token ?? '' };
 }
 
 describe('the logout token', () => {
@@ -143,6 +144,20 @@ describe('the logout token', () => {
     await signIn();
     await h.service.grants.set({ userId, clientId: APP.clientId, roles: [], actorUserId: userId });
     expect(listener.received).toHaveLength(1);
+  });
+
+  it('arrives when the person signs out at the provider themselves', async () => {
+    // The provider sends this one, not the console. On a test issuer it is routed through the same
+    // delivery as everything else; before T-5.2 it was refused as a private address and never sent.
+    const { sid, browser, idToken } = await signIn();
+    const shown = await browser.navigate(`${ISSUER}/oidc/session/end?id_token_hint=${encodeURIComponent(idToken)}`);
+    const xsrf = /name="xsrf" value="([^"]+)"/.exec(await shown.response.text())?.[1] ?? '';
+    await browser.navigate(`${ISSUER}/oidc/session/end/confirm`, { form: { xsrf, logout: 'yes' } });
+
+    expect(listener.received).toHaveLength(1);
+    expect(listener.received[0]?.claims).toMatchObject({ sub: userId, sid });
+    const audited = await h.service.db.auditEvent.findFirstOrThrow({ where: { event: 'logout.delivered' }, orderBy: { id: 'desc' } });
+    expect(audited.detail).toMatchObject({ clientId: APP.clientId, reason: 'signed_out' });
   });
 
   it('arrives when the session is ended from the console', async () => {

@@ -15,13 +15,16 @@ services:
       ISSUER: https://op.d3auth.test
       INSECURE_HTTP_ISSUER: "false"
       # ADR-002: the Basic plan does not send PKCE; only these suite clients skip it, only on a .test issuer.
-      CONFORMANCE_PKCE_EXEMPT_CLIENTS: conformance-1,conformance-2
+      CONFORMANCE_PKCE_EXEMPT_CLIENTS: conformance-1,conformance-2,conformance-3,conformance-4
       KEK: ${CONFORMANCE_KEK:?run via conformance/run.sh}
       PEPPER: ${CONFORMANCE_PEPPER:?run via conformance/run.sh}
       COOKIE_KEYS: ${CONFORMANCE_COOKIE_KEYS:?run via conformance/run.sh}
       LOG_LEVEL: debug
+      # Trust the bridge's internal CA, so back-channel logout tokens reach the suite over TLS.
+      NODE_EXTRA_CA_CERTS: /conformance/op-tls-root.crt
     volumes:
       - ./conformance/seed.json:/conformance/seed.json:ro
+      - ./conformance/.op-tls-root.crt:/conformance/op-tls-root.crt:ro
     networks:
       default:
         aliases: [d3auth-server]
@@ -34,7 +37,9 @@ services:
       server:
         condition: service_healthy
     networks:
-      default: {}
+      default:
+        # So the provider reaches the suite's back-channel endpoint through this bridge (T-5.2).
+        aliases: [localhost.emobix.co.uk]
       suite:
         aliases: [op.d3auth.test]
 

@@ -29,7 +29,7 @@ import { createSettings, type Settings } from './admin/settings.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
 import { createThrottle } from './security/throttle.js';
 import { createTotp, type Totp } from './security/totp.js';
-import { createBackchannel, type Backchannel } from './oidc/backchannel.js';
+import { createBackchannel, installSignOutDelivery, type Backchannel } from './oidc/backchannel.js';
 import { revokeTokens, revokeTokensIfNoAccess } from './oidc/revoke-tokens.js';
 import { createSessionControl, type SessionControl } from './security/sessions.js';
 import { createTrustedDevices, type TrustedDevices } from './security/trusted-device.js';
@@ -172,14 +172,16 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   // time somebody says "don't ask again" rather than needing a deploy.
   const trustedDevices = createTrustedDevices(db, async () => (await settings.lifetimes()).trustedDeviceDays);
   const issuerHost = new URL(config.ISSUER).hostname;
+  const testIssuer = issuerHost === 'localhost' || issuerHost.endsWith('.test');
   const backchannel = createBackchannel({
     provider,
     audit,
     logger,
     // `.test` is reserved for testing (RFC 6761) and localhost is not the internet: an issuer on
     // either is a development or test instance, where the apps live on loopback.
-    allowPrivateEndpoints: issuerHost === 'localhost' || issuerHost.endsWith('.test'),
+    allowPrivateEndpoints: testIssuer,
   });
+  installSignOutDelivery(provider, backchannel, audit, testIssuer);
   const sessionControl = createSessionControl(db, provider, backchannel);
   const deviceCookieName = deviceCookieNameFor(secureCookies);
   const apps = createApps({ db, hasher, audit });

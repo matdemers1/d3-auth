@@ -9,3 +9,16 @@ https://op.d3auth.test {
 	tls internal
 	reverse_proxy d3auth-server:3000
 }
+
+# Back-channel logout (T-5.2): the suite is the relying party, and D3 Auth must be able to POST
+# logout tokens to it. The suite's own hostname lives on its network, where our `server` cannot
+# join without colliding with the suite's alias of the same name. So this bridge answers for it
+# on our side too, with a certificate from the same internal CA the server is told to trust.
+https://localhost.emobix.co.uk:8443 {
+	tls internal
+	reverse_proxy https://nginx:8443 {
+		transport http {
+			tls_insecure_skip_verify
+		}
+	}
+}

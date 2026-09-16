@@ -216,10 +216,19 @@ ${form}
 </main>
 </body></html>`;
         },
-        // Nothing registered to return to, so land on the console's logged-out screen (I-8).
+        // Nothing registered to return to (I-8). Plain HTML like the question before it, so the
+        // answer to "am I signed out?" does not depend on JavaScript loading (REQ-010).
         postLogoutSuccessSource(ctx) {
-          ctx.status = 303;
-          ctx.redirect('/login/logged-out');
+          ctx.type = 'html';
+          ctx.body = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signed out</title></head>
+<body>
+<main>
+<h1>You are signed out</h1>
+<p>You can close this tab, or sign in again from the app you were using.</p>
+</main>
+</body></html>`;
         },
       },
       registration: { enabled: false },

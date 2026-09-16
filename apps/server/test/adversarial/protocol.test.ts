@@ -186,6 +186,32 @@ describe('a mutated redirect_uri', () => {
   });
 });
 
+describe('a logout request with nothing to validate its redirect against', () => {
+  /** Signs in, then asks to sign out with the given parameters and confirms. Returns where it went. */
+  async function logoutAndConfirm(params: Record<string, string>): Promise<{ status: number; location: string; body: string }> {
+    const { browser } = await authorize(h, config);
+    const url = new URL(`${ISSUER}/oidc/session/end`);
+    url.search = new URLSearchParams(params).toString();
+    const shown = await browser.request(url.toString());
+    const page = await shown.text();
+    const xsrf = /name="xsrf" value="([^"]+)"/.exec(page)?.[1];
+    if (!xsrf) return { status: shown.status, location: shown.headers.get('location') ?? '', body: page };
+    const confirmed = await browser.request(`${ISSUER}/oidc/session/end/confirm`, { form: { xsrf, logout: 'yes' } });
+    return { status: confirmed.status, location: confirmed.headers.get('location') ?? '', body: await confirmed.text() };
+  }
+
+  it('without an id_token_hint, refuses a post_logout_redirect_uri rather than follow it', async () => {
+    const outcome = await logoutAndConfirm({ post_logout_redirect_uri: 'https://evil.test/after', state: 'x' });
+    expect(outcome.location).not.toContain('evil.test');
+    expect(outcome.body).not.toContain('evil.test');
+  });
+
+  it('without an id_token_hint, refuses even a registered one — there is no client to say it is registered for', async () => {
+    const outcome = await logoutAndConfirm({ post_logout_redirect_uri: RP_CALLBACK, state: 'x' });
+    expect(outcome.location.startsWith(RP_CALLBACK)).toBe(false);
+  });
+});
+
 describe('a stolen refresh token', () => {
   it('reused after rotation takes the whole family down with it', async () => {
     const { refresh } = await tokensFor();
