@@ -109,5 +109,5 @@ Delete the sessions.
 
 Apps are not told by back-channel logout this way — their own sessions end the next time they need
 a token, within ten minutes for an access token. If that is too slow for the incident, disable the
-app in the console too. Afterwards, write down why in the audit trail's absence: this is a
-database operation, so it leaves no audit row of its own.
+app in the console too. This is a database operation, so it leaves no audit row of its own: note
+in the incident record when it was done and why.
