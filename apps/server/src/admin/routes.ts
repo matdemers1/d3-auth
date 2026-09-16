@@ -1,4 +1,4 @@
-import express, { Router, type RequestHandler, type Response } from 'express';
+import express, { Router, type Request, type RequestHandler, type Response } from 'express';
 import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import { consoleUserOf, type ConsoleAuth } from '../console/auth.js';
@@ -6,7 +6,9 @@ import type { Db } from '../db.js';
 import { mustHoldFactor, verifiedFactorCount } from '../security/factors.js';
 import type { SessionControl } from '../security/sessions.js';
 import type { TrustedDevices } from '../security/trusted-device.js';
+import { AppError, type Apps } from './apps.js';
 import type { Invites } from './invites.js';
+import { parseManifest, type Manifest } from './manifest.js';
 
 // The console's API for the people side of the house (C-1, C-3). Phase 3 adds apps, grants and
 // groups here; this is the part Phase 2 needs to put a real person on the system.
@@ -15,6 +17,7 @@ export const ADMIN_API = '/api/admin';
 
 export interface AdminDeps {
   db: Db;
+  apps: Apps;
   /** Used in copy the console shows to people, e.g. "Ask Matthew" (REQ-087). */
   operatorDisplayName: string;
   auth: ConsoleAuth;
@@ -24,7 +27,7 @@ export interface AdminDeps {
   audit: AuditWriter;
 }
 
-export function adminRouter({ db, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
+export function adminRouter({ db, apps, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '8kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -291,6 +294,157 @@ export function adminRouter({ db, operatorDisplayName, auth, invites, sessions, 
       }
     })();
   });
+
+  // Apps (C-4, C-5, C-6). Owner-only: registering an app decides who can ask for tokens at all,
+  // which is a different kind of power from managing the people who already have accounts.
+  const withManifest =
+    (act: (manifest: Manifest, req: Request, res: Response) => Promise<void>): RequestHandler =>
+    (req, res, next) => {
+      void (async () => {
+        try {
+          const input = req.body as { manifest?: unknown };
+          // The manifest may be pasted as JSON text or sent as an object; both arrive here.
+          const raw: unknown = typeof input.manifest === 'string' ? JSON.parse(input.manifest) : (input.manifest ?? req.body);
+          const parsed = parseManifest(raw);
+          if (!parsed.ok) {
+            res.status(400).json({ error: 'invalid_manifest', problems: parsed.problems });
+            return;
+          }
+          await act(parsed.manifest, req, res);
+        } catch (err) {
+          if (err instanceof SyntaxError) {
+            res.status(400).json({ error: 'invalid_manifest', problems: [{ field: 'manifest', message: 'That is not valid JSON.' }] });
+            return;
+          }
+          if (err instanceof AppError) {
+            res.status(err.code === 'already_exists' || err.code === 'roles_in_use' ? 409 : 404).json({
+              error: err.code,
+              message: err.message,
+              ...(err.detail ? { detail: err.detail } : {}),
+            });
+            return;
+          }
+          next(err);
+        }
+      })();
+    };
+
+  router.get(`${ADMIN_API}/apps`, auth.requireOwner, (_req, res, next) => {
+    void (async () => {
+      try {
+        res.set('Cache-Control', 'no-store').json({ apps: await apps.list() });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  router.get<{ clientId: string }>(`${ADMIN_API}/apps/:clientId`, auth.requireOwner, (req, res, next) => {
+    void (async () => {
+      try {
+        const app = await apps.get(req.params.clientId);
+        if (!app) {
+          res.status(404).json({ error: 'not_found' });
+          return;
+        }
+        res.set('Cache-Control', 'no-store').json(app);
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  // What this manifest would do, before anybody commits to it (REQ-048, REQ-067).
+  router.post(
+    `${ADMIN_API}/apps/preview`,
+    auth.requireOwner,
+    body,
+    withManifest(async (manifest, _req, res) => {
+      res.json({ diff: await apps.preview(manifest) });
+    }),
+  );
+
+  router.post(
+    `${ADMIN_API}/apps`,
+    auth.requireOwner,
+    body,
+    withManifest(async (manifest, req, res) => {
+      const { user } = consoleUserOf(res);
+      const created = await apps.register({
+        manifest,
+        actorUserId: user.id,
+        ip: clientIp(req),
+        userAgent: req.get('user-agent'),
+      });
+      // The secret is in this response and nowhere else, ever again.
+      res.status(201).json(created);
+    }),
+  );
+
+  router.post<{ clientId: string }>(
+    `${ADMIN_API}/apps/:clientId/manifest`,
+    auth.requireOwner,
+    body,
+    withManifest(async (manifest, req, res) => {
+      const { user } = consoleUserOf(res);
+      const input = req.body as { confirmRoleRemoval?: unknown };
+      if (manifest.client_id !== req.params.clientId) {
+        res.status(400).json({
+          error: 'client_id_mismatch',
+          message: 'The manifest is for a different app. A client id cannot be changed by re-registering.',
+        });
+        return;
+      }
+      res.json(
+        await apps.update({
+          manifest,
+          actorUserId: user.id,
+          confirmRoleRemoval: input.confirmRoleRemoval === true,
+          ip: clientIp(req),
+          userAgent: req.get('user-agent'),
+        }),
+      );
+    }),
+  );
+
+  /** The three actions that do not take a manifest. */
+  const appAction =
+    (act: (clientId: string, req: Request, res: Response, actorUserId: string) => Promise<unknown>): RequestHandler =>
+    (req, res, next) => {
+      void (async () => {
+        try {
+          const { user } = consoleUserOf(res);
+          res.json(await act((req.params as { clientId: string }).clientId, req, res, user.id));
+        } catch (err) {
+          if (err instanceof AppError) {
+            res.status(err.code === 'not_found' ? 404 : 409).json({ error: err.code, message: err.message });
+            return;
+          }
+          next(err);
+        }
+      })();
+    };
+
+  router.post<{ clientId: string }>(
+    `${ADMIN_API}/apps/:clientId/secret`,
+    auth.requireOwner,
+    appAction((clientId, req, _res, actorUserId) => apps.rotateSecret({ clientId, actorUserId, ip: clientIp(req) })),
+  );
+
+  router.post<{ clientId: string }>(
+    `${ADMIN_API}/apps/:clientId/enabled`,
+    auth.requireOwner,
+    body,
+    appAction((clientId, req, _res, actorUserId) =>
+      apps.setEnabled({ clientId, enabled: (req.body as { enabled?: unknown }).enabled !== false, actorUserId, ip: clientIp(req) }),
+    ),
+  );
+
+  router.post<{ clientId: string }>(
+    `${ADMIN_API}/apps/:clientId/remove`,
+    auth.requireOwner,
+    appAction((clientId, req, _res, actorUserId) => apps.remove({ clientId, actorUserId, ip: clientIp(req) })),
+  );
 
   return router;
 }

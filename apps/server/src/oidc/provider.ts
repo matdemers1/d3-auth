@@ -1,9 +1,9 @@
-import Provider, { type ClientMetadata, type Configuration } from 'oidc-provider';
+import Provider, { type AdapterFactory, type Configuration } from 'oidc-provider';
 import type { Db } from '../db.js';
 import type { SecretHasher } from '../security/hash.js';
 import { createFindAccount } from './account.js';
 import { createAdapterFactory } from './adapter.js';
-import { installHashedClientSecrets } from './clients.js';
+import { createClientAdapter, installHashedClientSecrets } from './clients.js';
 import type { PrivateJwk } from './keys.js';
 
 // Provider configuration per ADR-001 and T-0.7. Every value here narrows the library's
@@ -48,8 +48,6 @@ export interface ProviderOptions {
   issuer: string;
   db: Db;
   keys: PrivateJwk[];
-  clients: ClientMetadata[];
-  clientSecretHashes: ReadonlyMap<string, string>;
   hasher: SecretHasher;
   cookieKeys: string[];
   interactionPath: (uid: string) => string;
@@ -61,6 +59,13 @@ export interface ProviderOptions {
   pkceExemptClientIds?: readonly string[];
 }
 
+/** Everything goes to the payload table except `Client`, which is served from the App table. */
+function clientBackedAdapters(db: Db): AdapterFactory {
+  const payloads = createAdapterFactory(db);
+  const clients = createClientAdapter(db);
+  return (kind: string) => (kind === 'Client' ? clients : payloads(kind));
+}
+
 const escapeHtml = (value: unknown): string =>
   String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -68,8 +73,9 @@ export function createProvider(options: ProviderOptions): Provider {
   const pkceExempt = new Set(options.pkceExemptClientIds ?? []);
   const operatorDisplayName = options.operatorDisplayName ?? 'D3 Auth';
   const configuration: Configuration = {
-    adapter: createAdapterFactory(options.db),
-    clients: options.clients,
+    // Clients come from the App table through the adapter (T-3.1), so registering an app takes
+    // effect without a restart. There are deliberately no static clients.
+    adapter: clientBackedAdapters(options.db),
     findAccount: createFindAccount(options.db),
     jwks: { keys: options.keys },
     routes: ROUTES,
@@ -187,6 +193,6 @@ ${form}
 
   const provider = new Provider(options.issuer, configuration);
   provider.proxy = true;
-  installHashedClientSecrets(provider, options.clientSecretHashes, options.hasher);
+  installHashedClientSecrets(provider, options.db, options.hasher);
   return provider;
 }

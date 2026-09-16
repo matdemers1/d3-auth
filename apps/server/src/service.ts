@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import type Provider from 'oidc-provider';
 import { createApp } from './app.js';
 import { createInvites, type Invites } from './admin/invites.js';
+import { createApps, type Apps } from './admin/apps.js';
 import { adminRouter } from './admin/routes.js';
 import { createAuditWriter } from './audit/writer.js';
 import { accountRouter } from './account/routes.js';
@@ -14,7 +15,7 @@ import { interactionRouter, loginPath } from './interaction/routes.js';
 import { recordSessions } from './interaction/sessions.js';
 import type { Logger } from './log.js';
 import { createAdapterFactory } from './oidc/adapter.js';
-import { loadClients } from './oidc/clients.js';
+import { describeClients } from './oidc/clients.js';
 import { loadSigningKeys } from './oidc/keys.js';
 import { createProvider, deviceCookieNameFor } from './oidc/provider.js';
 import { createSecretHasher } from './security/hash.js';
@@ -41,6 +42,7 @@ export interface Service {
   readiness: ReadinessProbe;
   mail: MailAdapter;
   invites: Invites;
+  apps: Apps;
   totp: Totp;
   webauthn: WebAuthn;
   trustedDevices: TrustedDevices;
@@ -109,13 +111,10 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const adapterFactory = createAdapterFactory(db);
 
   const keys = await loadSigningKeys(db, kek);
-  const clients = await loadClients(db);
   const provider = createProvider({
     issuer: config.ISSUER,
     db,
     keys,
-    clients: clients.metadata,
-    clientSecretHashes: clients.secretHashes,
     hasher,
     cookieKeys: config.COOKIE_KEYS,
     interactionPath: loginPath,
@@ -142,8 +141,10 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   if (config.CONFORMANCE_PKCE_EXEMPT_CLIENTS?.length) {
     logger.warn({ clients: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS }, 'PKCE exemption active for conformance clients — test issuers only');
   }
-  for (const skipped of clients.skipped) logger.warn(skipped, 'app not loaded');
-  logger.info({ kids: keys.map((k) => k.kid), clients: clients.metadata.length }, 'provider ready');
+  // Apps are served from the table per request; this is a boot-time report, not a load.
+  const clients = await describeClients(db);
+  for (const skipped of clients.skipped) logger.warn(skipped, 'app cannot be served');
+  logger.info({ kids: keys.map((k) => k.kid), clients: clients.served.length }, 'provider ready');
 
   const operatorDisplayName = config.OPERATOR_DISPLAY_NAME ?? 'the operator';
   const mail = buildMail(config, logger);
@@ -160,6 +161,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const trustedDevices = createTrustedDevices(db);
   const sessionControl = createSessionControl(db, provider);
   const deviceCookieName = deviceCookieNameFor(secureCookies);
+  const apps = createApps({ db, hasher, audit });
   const invites = createInvites({
     db,
     mail,
@@ -204,7 +206,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
       accountRouter({ db, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
-      adminRouter({ db, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
+      adminRouter({ db, apps, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
     ],
@@ -221,6 +223,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     readiness,
     mail,
     invites,
+    apps,
     totp,
     webauthn,
     trustedDevices,
