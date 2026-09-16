@@ -4,7 +4,6 @@ import { createInvites, INVITE_TTL_HOURS, type Invites } from '../../src/admin/i
 import { createAuditWriter } from '../../src/audit/writer.js';
 import { createLogger } from '../../src/log.js';
 import { createMailAdapter, type MailDriver, type MailMessage } from '../../src/mail/adapter.js';
-import { createAdapterFactory } from '../../src/oidc/adapter.js';
 import { createSecretHasher } from '../../src/security/hash.js';
 import { testDb, unique } from './helpers.js';
 

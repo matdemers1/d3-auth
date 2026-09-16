@@ -26,10 +26,12 @@
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@simplewebauthn/server": "^14.0.2",
     "argon2": "^0.45.1",
     "express": "^5.2.1",
     "nodemailer": "^10.0.10",
     "oidc-provider": "^9.12.2",
+    "otpauth": "^9.5.2",
     "pino": "^10.3.1",
     "prisma": "7.10.0",
     "zod": "^4.6.5"
