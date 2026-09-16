@@ -30,6 +30,7 @@ import { createSessionControl } from './security/sessions.js';
 import { createTrustedDevices, type TrustedDevices } from './security/trusted-device.js';
 import { createWebAuthn, type WebAuthn } from './security/webauthn.js';
 import { createFirstRunSetup } from './setup/first-run.js';
+import { createRecovery, type Recovery } from './setup/recovery.js';
 import { setupRouter } from './setup/routes.js';
 import { consoleBuilt, consoleRouter, defaultConsoleDist, unavailableGate } from './static.js';
 
@@ -43,6 +44,7 @@ export interface Service {
   totp: Totp;
   webauthn: WebAuthn;
   trustedDevices: TrustedDevices;
+  recovery: Recovery;
   close(): Promise<void>;
 }
 
@@ -166,6 +168,15 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     template: { operatorDisplayName, issuer: config.ISSUER },
   });
 
+  const recovery = createRecovery({
+    db,
+    adapterFactory,
+    audit,
+    sessions: sessionControl,
+    trustedDevices,
+    issuer: config.ISSUER,
+  });
+
   // An instance with no accounts can be claimed once, from the browser, with the code logged here.
   const setup = createFirstRunSetup(db, adapterFactory, hasher, audit, logger);
   await setup.prepare();
@@ -185,6 +196,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         totp,
         webauthn,
         trustedDevices,
+        recovery,
         deviceCookieName,
         secureCookies,
         operatorDisplayName,
@@ -212,6 +224,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     totp,
     webauthn,
     trustedDevices,
+    recovery,
     close: () => db.$disconnect(),
   };
 }

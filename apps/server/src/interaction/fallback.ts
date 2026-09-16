@@ -75,6 +75,32 @@ export function fallbackForm(view: FallbackView): string {
   </main>`;
 }
 
+/**
+ * The page the break-glass link lands on (REQ-122). Server-rendered, because it must work on a
+ * browser the owner has never used, and it says what just happened rather than signing anybody in.
+ */
+export function renderRecoveryPage(
+  consoleDist: string,
+  claimed: { ok: boolean; email?: string; expiresAt?: Date; factorsCleared?: number },
+  operatorDisplayName: string,
+): string {
+  const body = claimed.ok
+    ? `<h1 class="signin-title">Recovery is ready</h1>
+      <p class="signin-identity">Sign in as <strong>${escape(claimed.email ?? '')}</strong> with your password.</p>
+      <p class="signin-footnote">
+        You will not be asked for a passkey or a code until ${escape(claimed.expiresAt?.toUTCString() ?? 'the window closes')}.
+        ${claimed.factorsCleared ? `The ${String(claimed.factorsCleared)} factor(s) on the account were removed, so set up a new one as soon as you are in.` : 'Set up a passkey or an authenticator app as soon as you are in.'}
+      </p>
+      <p class="signin-footnote">Go back to the app you were signing in to and sign in as usual.</p>`
+    : `<h1 class="signin-title">This recovery link has expired</h1>
+      <p class="signin-footnote">
+        Recovery links work once, and only for a few minutes. Ask ${escape(operatorDisplayName)} for another from the host.
+      </p>`;
+
+  const shell = readFileSync(join(consoleDist, 'index.html'), 'utf8');
+  return shell.replace('<div id="root"></div>', `<div id="root"><main class="shell shell--narrow">${body}</main></div>`);
+}
+
 /** Injects the form into the console's built index.html, which carries the CSS and the app. */
 export function renderLoginPage(consoleDist: string, view: FallbackView): string {
   const shell = readFileSync(join(consoleDist, 'index.html'), 'utf8');

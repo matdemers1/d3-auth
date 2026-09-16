@@ -12,7 +12,8 @@ import type { Throttle } from '../security/throttle.js';
 import { TRUSTED_DEVICE_DAYS, type TrustedDevices } from '../security/trusted-device.js';
 import type { Totp } from '../security/totp.js';
 import type { WebAuthn } from '../security/webauthn.js';
-import { renderLoginPage } from './fallback.js';
+import type { Recovery } from '../setup/recovery.js';
+import { renderLoginPage, renderRecoveryPage } from './fallback.js';
 import { createFlowStore, type FlowStore, type LoginFlow } from './flow-store.js';
 import { advance, isComplete, start, type Identity, type LoginState } from './machine.js';
 
@@ -39,6 +40,7 @@ export interface InteractionDeps {
   totp: Totp;
   webauthn: WebAuthn;
   trustedDevices: TrustedDevices;
+  recovery: Recovery;
   /** Cookie name for the trusted-device token; `__Host-` prefixed on an https issuer. */
   deviceCookieName: string;
   /** False only for a local http issuer, where a Secure cookie would never be sent back. */
@@ -160,6 +162,19 @@ export function interactionRouter(deps: InteractionDeps): Router {
     );
     await flows.clear(uid);
     await db.user.update({ where: { id: accountId }, data: { lastLoginAt: new Date() } });
+    if (amr.includes('recovery')) {
+      // One window, one sign-in. What is left is an account with no second factor, which the
+      // account area nags about until they enrol one.
+      await deps.recovery.spend(accountId);
+      await audit.write({
+        event: AUDIT_EVENTS.recoveryUsed,
+        actorUserId: accountId,
+        targetType: 'user',
+        targetId: accountId,
+        ip: clientIp(req),
+        userAgent: req.get('user-agent'),
+      });
+    }
     await audit.write({
       event: AUDIT_EVENTS.loginSuccess,
       actorUserId: accountId,
@@ -224,6 +239,25 @@ export function interactionRouter(deps: InteractionDeps): Router {
     })();
   });
 
+  /**
+   * Break-glass (REQ-122). Opening the link clears the factors and arms the account; it does not
+   * sign anybody in on its own — the password is still required. ADR-003 says why.
+   */
+  router.get<{ token: string }>('/login/recover/:token', (req, res, next) => {
+    void (async () => {
+      try {
+        respondNoStore(res);
+        const claimed = await deps.recovery.claim(req.params.token);
+        res
+          .status(claimed.ok ? 200 : 410)
+          .type('html')
+          .send(renderRecoveryPage(deps.consoleDist, claimed, deps.operatorDisplayName));
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
   // What the sign-in screen needs to render itself.
   router.get(`${INTERACTION_API}/:uid`, async (req, res, next) => {
     try {
@@ -274,6 +308,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
         user && user.status === 'active'
           ? await deps.trustedDevices.verify({ userId: user.id, token: readCookie(req, deps.deviceCookieName) })
           : false;
+      const recovering = user && user.status === 'active' ? await deps.recovery.armed(user.id) : false;
 
       const identity: Identity | undefined =
         user && user.status === 'active'
@@ -284,6 +319,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
                 ...(user.webauthnCredentials.length > 0 ? (['passkey'] as const) : []),
               ],
               deviceTrusted,
+              recovering,
             }
           : undefined;
 

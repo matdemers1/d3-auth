@@ -17,6 +17,8 @@ export interface Identity {
   factors: readonly FactorKind[];
   /** A valid trusted-device cookie for this account was presented with the request. */
   deviceTrusted: boolean;
+  /** Break-glass is armed for this account: the password alone signs in (REQ-122). */
+  recovering?: boolean;
 }
 
 export type LoginState =
@@ -51,7 +53,10 @@ export class InvalidTransitionError extends Error {
 const AMR_FOR_FACTOR: Record<FactorKind, AuthMethod> = { totp: 'otp', passkey: 'hwk' };
 
 /** Where to go once a credential has been accepted: another factor, a device offer, or done. */
-function afterCredential(identity: Identity, amr: readonly AuthMethod[], factorUsed: boolean): LoginState {
+function afterCredential(identity: Identity, credentials: readonly AuthMethod[], factorUsed: boolean): LoginState {
+  // Recovery is an authentication method in its own right, so it shows up in `amr` and therefore
+  // in the id_token and the audit row: a door was opened, and the trail says so.
+  const amr: readonly AuthMethod[] = identity.recovering ? [...credentials, 'recovery'] : credentials;
   if (!factorUsed && identity.factors.length > 0 && !identity.deviceTrusted) {
     return { name: 'awaiting_factor', identity, amr };
   }
