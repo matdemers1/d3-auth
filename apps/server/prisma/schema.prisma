@@ -34,6 +34,11 @@ enum WebauthnDeviceType {
   multi_device
 }
 
+enum ThrottleScope {
+  account
+  ip
+}
+
 enum SigningKeyStatus {
   next
   current
@@ -302,6 +307,22 @@ model GroupGrantRole {
   @@id([groupGrantId, roleId])
   @@index([roleId])
   @@map("group_grant_role")
+}
+
+/// Failed sign-in counters (REQ-027, REQ-028). Soft backoff, never a lockout: a row only ever
+/// delays the next attempt. Cleared on success; pruned after 90 days (Data Model: Retention).
+model ThrottleCounter {
+  scope          ThrottleScope
+  /// Lower-cased email for `account`, CF-Connecting-IP for `ip`.
+  key            String
+  failures       Int           @default(0)
+  firstFailureAt DateTime      @default(now()) @map("first_failure_at") @db.Timestamptz
+  lastFailureAt  DateTime      @default(now()) @map("last_failure_at") @db.Timestamptz
+  blockedUntil   DateTime?     @map("blocked_until") @db.Timestamptz
+
+  @@id([scope, key])
+  @@index([lastFailureAt])
+  @@map("throttle_counter")
 }
 
 // ─── Keys and audit ────────────────────────────────────────────────────────
