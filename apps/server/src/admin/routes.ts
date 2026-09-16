@@ -1,4 +1,4 @@
-import express, { Router, type Request, type RequestHandler, type Response } from 'express';
+import express, { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import { consoleUserOf, type ConsoleAuth } from '../console/auth.js';
@@ -6,6 +6,7 @@ import type { Db } from '../db.js';
 import { mustHoldFactor, verifiedFactorCount } from '../security/factors.js';
 import type { SessionControl } from '../security/sessions.js';
 import type { TrustedDevices } from '../security/trusted-device.js';
+import { GrantError, type Grants } from '../authz/grants.js';
 import { AppError, type Apps } from './apps.js';
 import type { Invites } from './invites.js';
 import { parseManifest, type Manifest } from './manifest.js';
@@ -18,6 +19,7 @@ export const ADMIN_API = '/api/admin';
 export interface AdminDeps {
   db: Db;
   apps: Apps;
+  grants: Grants;
   /** Used in copy the console shows to people, e.g. "Ask Matthew" (REQ-087). */
   operatorDisplayName: string;
   auth: ConsoleAuth;
@@ -27,7 +29,7 @@ export interface AdminDeps {
   audit: AuditWriter;
 }
 
-export function adminRouter({ db, apps, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
+export function adminRouter({ db, apps, grants, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '8kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -445,6 +447,76 @@ export function adminRouter({ db, apps, operatorDisplayName, auth, invites, sess
     auth.requireOwner,
     appAction((clientId, req, _res, actorUserId) => apps.remove({ clientId, actorUserId, ip: clientIp(req) })),
   );
+
+  // Grants (REQ-049). Admins hand out access; apps themselves are owner-only above.
+  const onGrantError = (err: unknown, res: Response, next: NextFunction): void => {
+    if (err instanceof GrantError) {
+      res.status(err.code === 'unknown_roles' ? 400 : 404).json({ error: err.code, message: err.message, ...(err.detail ? { detail: err.detail } : {}) });
+      return;
+    }
+    next(err);
+  };
+
+  /** Who can sign in to this app, and as what — the Access tab (REQ-066). */
+  router.get<{ clientId: string }>(`${ADMIN_API}/apps/:clientId/access`, auth.requireAdmin, (req, res, next) => {
+    void (async () => {
+      try {
+        res.set('Cache-Control', 'no-store').json({ access: await grants.forApp(req.params.clientId) });
+      } catch (err) {
+        onGrantError(err, res, next);
+      }
+    })();
+  });
+
+  /** Everything one person can reach, for their detail page (REQ-064). */
+  router.get<{ id: string }>(`${ADMIN_API}/people/:id/access`, auth.requireAdmin, (req, res, next) => {
+    void (async () => {
+      try {
+        res.set('Cache-Control', 'no-store').json({ access: await grants.forUser(req.params.id) });
+      } catch (err) {
+        onGrantError(err, res, next);
+      }
+    })();
+  });
+
+  router.post<{ id: string }>(`${ADMIN_API}/people/:id/access`, auth.requireAdmin, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user: actor } = consoleUserOf(res);
+        const input = req.body as { clientId?: unknown; roles?: unknown };
+        const clientId = typeof input.clientId === 'string' ? input.clientId : '';
+        const roles = Array.isArray(input.roles) ? input.roles.filter((role): role is string => typeof role === 'string') : [];
+        if (!clientId) {
+          res.status(400).json({ error: 'invalid', message: 'Say which app this is for.' });
+          return;
+        }
+        res.json(await grants.set({ userId: req.params.id, clientId, roles, actorUserId: actor.id, ip: clientIp(req) }));
+      } catch (err) {
+        onGrantError(err, res, next);
+      }
+    })();
+  });
+
+  router.post<{ id: string }>(`${ADMIN_API}/people/:id/access/revoke`, auth.requireAdmin, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user: actor } = consoleUserOf(res);
+        const clientId = (req.body as { clientId?: unknown }).clientId;
+        if (typeof clientId !== 'string') {
+          res.status(400).json({ error: 'invalid', message: 'Say which app this is for.' });
+          return;
+        }
+        const revoked = await grants.revoke({ userId: req.params.id, clientId, actorUserId: actor.id, ip: clientIp(req) });
+        if (!revoked) {
+          res.status(404).json({ error: 'not_found', message: 'They did not have access to that app.' });
+          return;
+        }
+        res.json({ revoked: true });
+      } catch (err) {
+        onGrantError(err, res, next);
+      }
+    })();
+  });
 
   return router;
 }

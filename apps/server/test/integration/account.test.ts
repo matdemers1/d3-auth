@@ -1,7 +1,7 @@
 import { TOTP, Secret } from 'otpauth';
 import * as client from 'openid-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { authorize, Browser, ISSUER, startHarness, webClientConfig, type Harness } from './oidc-harness.js';
+import { authorize, Browser, grantAccess, ISSUER, startHarness, webClientConfig, type Harness } from './oidc-harness.js';
 
 // The account area (REQ-080, REQ-081, REQ-083).
 //
@@ -49,6 +49,7 @@ beforeAll(async () => {
   userId = person.id;
   await h.service.db.passwordCredential.deleteMany({ where: { userId } });
   await h.service.db.passwordCredential.create({ data: { userId, argon2idHash: await h.hasher.hash(PERSON.password) } });
+  await grantAccess(h, userId);
 });
 
 afterAll(async () => {

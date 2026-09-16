@@ -16,6 +16,8 @@ const clientSchema = z.object({
   secret: z.string().min(32, 'client secrets must be at least 32 characters').optional(),
   redirectUris: z.array(z.url()).min(1),
   postLogoutRedirectUris: z.array(z.url()).default([]),
+  /** Roles the fixture app declares. Real apps declare them in a manifest (REQ-047). */
+  roles: z.array(z.object({ key: z.string().min(1), display: z.string().min(1), default: z.boolean().default(false) })).default([]),
 });
 
 export const devSeedSchema = z.object({
@@ -28,6 +30,8 @@ export const devSeedSchema = z.object({
         password: z.string().min(12),
         /** Development fixtures need an owner to open the admin screens with. */
         kind: z.enum(['owner', 'admin', 'guest']).default('guest'),
+        /** Access is deny-by-default (REQ-051), so a fixture user needs grants to sign in at all. */
+        grants: z.array(z.object({ clientId: z.string().min(1), roles: z.array(z.string()).default([]) })).default([]),
       }),
     )
     .default([]),
@@ -54,6 +58,7 @@ export async function applyDevSeed(db: Db, hasher: SecretHasher, input: DevSeed)
     await db.auditEvent.create({ data: { event: 'dev.seed.user', targetType: 'user', targetId: user.id } });
   }
 
+  // Clients first: a grant needs the app and its roles to exist.
   for (const c of seed.clients) {
     if (c.type === 'confidential_web' && !c.secret) throw new Error(`${c.clientId}: confidential clients need a secret`);
     const clientSecretHash = c.type === 'confidential_web' && c.secret ? await hasher.hash(c.secret) : null;
@@ -71,7 +76,35 @@ export async function applyDevSeed(db: Db, hasher: SecretHasher, input: DevSeed)
     });
     await db.redirectUri.deleteMany({ where: { appId: app.id } });
     await db.redirectUri.createMany({ data: c.redirectUris.map((uri) => ({ appId: app.id, uri })) });
+
+    const keys = c.roles.map((role) => role.key);
+    await db.role.deleteMany({ where: { appId: app.id, ...(keys.length > 0 ? { key: { notIn: keys } } : {}) } });
+    for (const [index, role] of c.roles.entries()) {
+      const roleData = { displayName: role.display, description: '', sortOrder: c.roles.length - index, isDefault: role.default };
+      await db.role.upsert({
+        where: { appId_key: { appId: app.id, key: role.key } },
+        create: { appId: app.id, key: role.key, ...roleData },
+        update: roleData,
+      });
+    }
     await db.auditEvent.create({ data: { event: 'dev.seed.app', targetType: 'app', targetId: app.id } });
+  }
+
+  // Then the grants, because without one a seeded user cannot sign in to a seeded app at all.
+  for (const u of seed.users) {
+    const user = await db.user.findUniqueOrThrow({ where: { email: u.email } });
+    await db.grant.deleteMany({ where: { userId: user.id } });
+    for (const wanted of u.grants) {
+      const app = await db.app.findUnique({ where: { clientId: wanted.clientId }, include: { roles: true } });
+      if (!app) throw new Error(`${u.email}: no app with the client id "${wanted.clientId}"`);
+      const roleIds = wanted.roles.map((key) => {
+        const role = app.roles.find((candidate) => candidate.key === key);
+        if (!role) throw new Error(`${u.email}: ${wanted.clientId} has no role "${key}"`);
+        return role.id;
+      });
+      const grant = await db.grant.create({ data: { userId: user.id, appId: app.id } });
+      await db.grantRole.createMany({ data: roleIds.map((roleId) => ({ grantId: grant.id, roleId })) });
+    }
   }
 }
 

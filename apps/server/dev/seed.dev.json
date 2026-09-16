@@ -5,20 +5,44 @@
       "username": "dev",
       "displayName": "Dev Person",
       "password": "correct horse battery staple",
-      "kind": "owner"
+      "kind": "owner",
+      "grants": [
+        {
+          "clientId": "dev-web",
+          "roles": [
+            "admin"
+          ]
+        }
+      ]
     },
     {
       "email": "passkey@example.com",
       "username": "passkeyperson",
       "displayName": "Passkey Person",
-      "password": "willow ember quartz 12"
+      "password": "willow ember quartz 12",
+      "grants": [
+        {
+          "clientId": "dev-web",
+          "roles": [
+            "member"
+          ]
+        }
+      ]
     },
     {
       "email": "resetme@example.com",
       "username": "resetme",
       "displayName": "Reset Me",
       "password": "cardamom trellis window",
-      "kind": "guest"
+      "kind": "guest",
+      "grants": [
+        {
+          "clientId": "dev-web",
+          "roles": [
+            "member"
+          ]
+        }
+      ]
     }
   ],
   "clients": [
@@ -32,6 +56,17 @@
       ],
       "postLogoutRedirectUris": [
         "http://localhost:4000/"
+      ],
+      "roles": [
+        {
+          "key": "admin",
+          "display": "Administrator"
+        },
+        {
+          "key": "member",
+          "display": "Member",
+          "default": true
+        }
       ]
     }
   ]

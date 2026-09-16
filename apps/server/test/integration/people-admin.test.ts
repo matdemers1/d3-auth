@@ -1,6 +1,6 @@
 import * as client from 'openid-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { authorize, Browser, ISSUER, startHarness, USER, webClientConfig, type Harness } from './oidc-harness.js';
+import { authorize, Browser, grantAccess, ISSUER, startHarness, USER, webClientConfig, type Harness } from './oidc-harness.js';
 
 // REQ-038 (states) and REQ-039 (admin reset).
 //
@@ -41,6 +41,7 @@ async function aPerson(): Promise<{ id: string; email: string; password: string 
   await h.service.db.passwordCredential.create({
     data: { userId: person.id, argon2idHash: await h.hasher.hash(PERSON_PASSWORD) },
   });
+  await grantAccess(h, person.id);
   return { id: person.id, email, password: PERSON_PASSWORD };
 }
 

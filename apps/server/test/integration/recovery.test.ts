@@ -1,7 +1,7 @@
 import * as client from 'openid-client';
 import { TOTP, Secret } from 'otpauth';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { authorize, Browser, ISSUER, startHarness, webClientConfig, type Harness } from './oidc-harness.js';
+import { authorize, Browser, grantAccess, ISSUER, startHarness, webClientConfig, type Harness } from './oidc-harness.js';
 
 // Break-glass (REQ-122).
 //
@@ -53,6 +53,7 @@ beforeAll(async () => {
   ownerId = owner.id;
   await h.service.db.passwordCredential.deleteMany({ where: { userId: ownerId } });
   await h.service.db.passwordCredential.create({ data: { userId: ownerId, argon2idHash: await h.hasher.hash(OWNER.password) } });
+  await grantAccess(h, ownerId);
 });
 
 afterAll(async () => {

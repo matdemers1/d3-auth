@@ -41,9 +41,28 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
   await seedDb.signingKey.deleteMany();
   await seedDb.oidcPayload.deleteMany();
   await applyDevSeed(seedDb, createSecretHasher(pepper), {
-    users: [USER],
+    users: [
+      {
+        ...USER,
+        // Access is deny-by-default (REQ-051): without these the fixture user cannot sign in.
+        grants: [
+          { clientId: WEB_CLIENT.clientId, roles: ['member'] },
+          { clientId: NATIVE_CLIENT.clientId, roles: [] },
+        ],
+      },
+    ],
     clients: [
-      { clientId: WEB_CLIENT.clientId, name: 'Web App', type: 'confidential_web', secret: WEB_CLIENT.secret, redirectUris: [RP_CALLBACK] },
+      {
+        clientId: WEB_CLIENT.clientId,
+        name: 'Web App',
+        type: 'confidential_web',
+        secret: WEB_CLIENT.secret,
+        redirectUris: [RP_CALLBACK],
+        roles: [
+          { key: 'admin', display: 'Administrator' },
+          { key: 'member', display: 'Member', default: true },
+        ],
+      },
       { clientId: NATIVE_CLIENT.clientId, name: 'Native App', type: 'public_native', redirectUris: [NATIVE_CALLBACK] },
     ],
   });
@@ -99,6 +118,22 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
       await service.close();
     },
   };
+}
+
+/**
+ * Access is deny-by-default (REQ-051), so a test that creates a person has to give them a grant
+ * before they can sign in to anything — exactly as an admin would in the console.
+ */
+export async function grantAccess(h: Harness, userId: string, clientId: string = WEB_CLIENT.clientId, roles: string[] = []): Promise<void> {
+  const app = await h.service.db.app.findUniqueOrThrow({ where: { clientId }, include: { roles: true } });
+  const grant = await h.service.db.grant.upsert({
+    where: { userId_appId: { userId, appId: app.id } },
+    create: { userId, appId: app.id },
+    update: {},
+  });
+  const wanted = app.roles.filter((role) => roles.includes(role.key));
+  await h.service.db.grantRole.deleteMany({ where: { grantId: grant.id } });
+  await h.service.db.grantRole.createMany({ data: wanted.map((role) => ({ grantId: grant.id, roleId: role.id })) });
 }
 
 /** A user agent with a cookie jar that follows redirects until it leaves the OP. */

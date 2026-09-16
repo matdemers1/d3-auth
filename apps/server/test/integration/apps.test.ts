@@ -1,7 +1,7 @@
 import * as client from 'openid-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { parseManifest, type Manifest } from '../../src/admin/manifest.js';
-import { authorize, Browser, discover, ISSUER, startHarness, USER, webClientConfig, type Harness } from './oidc-harness.js';
+import { authorize, Browser, discover, grantAccess, ISSUER, startHarness, USER, webClientConfig, type Harness } from './oidc-harness.js';
 
 // REQ-046, REQ-048, REQ-054, REQ-055, REQ-015.
 //
@@ -205,6 +205,8 @@ describe('disabling an app (REQ-054)', () => {
 
     // Sign in properly, so there is something to revoke.
     const appConfig = await discover(h, clientId, client.ClientSecretBasic(created.secret));
+    // Deny-by-default applies to a brand new app too: somebody has to be given access first.
+    await grantAccess(h, ownerId, clientId, ['member']);
     // Its own redirect URI, not the shared fixture's: this app has never heard of that one.
     const code = await authorize(h, appConfig, { redirect_uri: `https://${clientId}.d3auth.test/cb` }, new Browser(h.opFetch));
     const tokens = await client.authorizationCodeGrant(appConfig, code.callback, {

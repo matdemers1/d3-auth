@@ -2,6 +2,7 @@ import express, { Router, type Request, type RequestHandler, type Response } fro
 import type Provider from 'oidc-provider';
 import type { AdapterFactory } from 'oidc-provider';
 import { AUDIT_EVENTS } from '../audit/events.js';
+import { effectiveAccess } from '../authz/effective-roles.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import type { Db } from '../db.js';
 import type { Logger } from '../log.js';
@@ -111,13 +112,14 @@ export function interactionRouter(deps: InteractionDeps): Router {
   };
 
   /** Loads the interaction and its flow, minting the flow on first sight. */
-  async function context(req: Request, res: Response): Promise<{ uid: string; flow: LoginFlow; clientName: string } | undefined> {
+  async function context(req: Request, res: Response): Promise<{ uid: string; flow: LoginFlow; clientName: string; clientId: string } | undefined> {
     const details = await provider.interactionDetails(req, res);
     const existing = await flows.load(details.uid);
     const flow: LoginFlow = existing ?? { state: start(), csrf: csrfToken() };
     if (!existing) await flows.save(details.uid, flow, FLOW_TTL_SECONDS);
     const client = await provider.Client.find(String(details.params.client_id));
-    return { uid: details.uid, flow, clientName: client?.clientName ?? String(details.params.client_id) };
+    const clientId = String(details.params.client_id);
+    return { uid: details.uid, flow, clientName: client?.clientName ?? clientId, clientId };
   }
 
   /**
@@ -145,14 +147,47 @@ export function interactionRouter(deps: InteractionDeps): Router {
     });
   }
 
+  /**
+   * Deny by default (REQ-051). An account with no grant for this client cannot sign in to it,
+   * and finds that out before any interstitial — there is nothing to consent to, and nothing to
+   * tell an attacker apart from a person who simply has not been given access.
+   *
+   * Returns the redirect back to the app when access is refused, or undefined to carry on.
+   */
+  async function denyWithoutGrant(req: Request, res: Response, uid: string, accountId: string, clientId: string): Promise<string | undefined> {
+    const access = await effectiveAccess(db, { userId: accountId, clientId });
+    if (access.hasGrant) return undefined;
+
+    const redirectTo = await provider.interactionResult(req, res, {
+      error: 'access_denied',
+      error_description: 'You do not have access to this app.',
+    });
+    await flows.clear(uid);
+    await audit.write({
+      event: AUDIT_EVENTS.accessDenied,
+      actorUserId: accountId,
+      targetType: 'app',
+      ip: clientIp(req),
+      userAgent: req.get('user-agent'),
+      detail: { clientId },
+    });
+    return redirectTo;
+  }
+
   async function finish(
     req: Request,
     res: Response,
     uid: string,
     accountId: string,
     amr: readonly string[],
+    clientId: string,
     trustDevice = false,
   ): Promise<void> {
+    const denied = await denyWithoutGrant(req, res, uid, accountId, clientId);
+    if (denied) {
+      reply(req, res, uid, 200, { step: 'done', redirectTo: denied });
+      return;
+    }
     if (trustDevice) await rememberDevice(req, res, accountId);
     const redirectTo = await provider.interactionResult(
       req,
@@ -190,13 +225,19 @@ export function interactionRouter(deps: InteractionDeps): Router {
   const router = Router();
 
   /**
-   * D3 Auth shows no scope-consent screen (REQ-060): a registered app's access is decided by the
-   * grant an admin gave the person, which Phase 3 enforces here. For now the missing scopes and
-   * claims are recorded and the interaction continues.
+   * D3 Auth shows no scope-consent screen (REQ-060): what a registered app may see is decided by
+   * the grant an admin gave the person, not by a dialog nobody reads. The scopes are recorded and
+   * the interaction continues — unless there is no grant, in which case nothing is recorded and
+   * the answer is access_denied (REQ-051).
    */
   async function grantAndFinish(req: Request, res: Response, details: Awaited<ReturnType<Provider['interactionDetails']>>): Promise<string> {
     const accountId = details.session?.accountId ?? '';
     const clientId = String(details.params.client_id);
+
+    // Already signed in, asking for a second app: the grant decides, before any screen.
+    const denied = await denyWithoutGrant(req, res, details.uid, accountId, clientId);
+    if (denied) return denied;
+
     const grant = details.grantId
       ? ((await provider.Grant.find(details.grantId)) ?? new provider.Grant({ accountId, clientId }))
       : new provider.Grant({ accountId, clientId });
@@ -401,7 +442,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
         reply(req, res, ctx.uid, 200, { step: stepFor(state), csrf: ctx.flow.csrf, factors: factorsOf(state) });
         return;
       }
-      await finish(req, res, ctx.uid, state.accountId, state.amr);
+      await finish(req, res, ctx.uid, state.accountId, state.amr, ctx.clientId);
     } catch (err) {
       next(err);
     }
@@ -452,7 +493,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
       await throttle.clear(keys);
       const state = advance(ctx.flow.state, { type: 'factor_verified', method: 'totp' });
       if (isComplete(state)) {
-        await finish(req, res, ctx.uid, state.accountId, state.amr);
+        await finish(req, res, ctx.uid, state.accountId, state.amr, ctx.clientId);
         return;
       }
       await flows.save(ctx.uid, { ...ctx.flow, state }, FLOW_TTL_SECONDS);
@@ -509,7 +550,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
           : advance(start(), { type: 'passkey_authenticated', identity });
 
       if (isComplete(state)) {
-        await finish(req, res, ctx.uid, state.accountId, state.amr);
+        await finish(req, res, ctx.uid, state.accountId, state.amr, ctx.clientId);
         return;
       }
       await flows.save(ctx.uid, { ...ctx.flow, state }, FLOW_TTL_SECONDS);
@@ -539,7 +580,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
       const trust = input.trust === true || input.trust === 'true';
       const state = advance(ctx.flow.state, { type: 'trusted_device_answered', trust });
       if (!isComplete(state)) throw new Error('the trusted-device answer must complete the login');
-      await finish(req, res, ctx.uid, state.accountId, state.amr, state.trustDevice);
+      await finish(req, res, ctx.uid, state.accountId, state.amr, ctx.clientId, state.trustDevice);
     } catch (err) {
       next(err);
     }

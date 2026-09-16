@@ -4,7 +4,21 @@
       "email": "conformance@d3auth.test",
       "username": "conformance",
       "displayName": "Conformance Tester",
-      "password": "conformance-suite-password-only"
+      "password": "conformance-suite-password-only",
+      "grants": [
+        {
+          "clientId": "conformance-1",
+          "roles": [
+            "member"
+          ]
+        },
+        {
+          "clientId": "conformance-2",
+          "roles": [
+            "member"
+          ]
+        }
+      ]
     }
   ],
   "clients": [
@@ -13,16 +27,38 @@
       "name": "OpenID conformance suite client 1",
       "type": "confidential_web",
       "secret": "conformance-client-1-secret-ephemeral-stack-only",
-      "redirectUris": ["https://localhost.emobix.co.uk:8443/test/a/d3auth/callback"],
-      "postLogoutRedirectUris": ["https://localhost.emobix.co.uk:8443/test/a/d3auth/post_logout_redirect"]
+      "redirectUris": [
+        "https://localhost.emobix.co.uk:8443/test/a/d3auth/callback"
+      ],
+      "postLogoutRedirectUris": [
+        "https://localhost.emobix.co.uk:8443/test/a/d3auth/post_logout_redirect"
+      ],
+      "roles": [
+        {
+          "key": "member",
+          "display": "Member",
+          "default": true
+        }
+      ]
     },
     {
       "clientId": "conformance-2",
       "name": "OpenID conformance suite client 2",
       "type": "confidential_web",
       "secret": "conformance-client-2-secret-ephemeral-stack-only",
-      "redirectUris": ["https://localhost.emobix.co.uk:8443/test/a/d3auth/callback"],
-      "postLogoutRedirectUris": ["https://localhost.emobix.co.uk:8443/test/a/d3auth/post_logout_redirect"]
+      "redirectUris": [
+        "https://localhost.emobix.co.uk:8443/test/a/d3auth/callback"
+      ],
+      "postLogoutRedirectUris": [
+        "https://localhost.emobix.co.uk:8443/test/a/d3auth/post_logout_redirect"
+      ],
+      "roles": [
+        {
+          "key": "member",
+          "display": "Member",
+          "default": true
+        }
+      ]
     }
   ]
 }

@@ -3,6 +3,7 @@ import type Provider from 'oidc-provider';
 import { createApp } from './app.js';
 import { createInvites, type Invites } from './admin/invites.js';
 import { createApps, type Apps } from './admin/apps.js';
+import { createGrants, type Grants } from './authz/grants.js';
 import { adminRouter } from './admin/routes.js';
 import { createAuditWriter } from './audit/writer.js';
 import { accountRouter } from './account/routes.js';
@@ -43,6 +44,7 @@ export interface Service {
   mail: MailAdapter;
   invites: Invites;
   apps: Apps;
+  grants: Grants;
   totp: Totp;
   webauthn: WebAuthn;
   trustedDevices: TrustedDevices;
@@ -162,6 +164,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const sessionControl = createSessionControl(db, provider);
   const deviceCookieName = deviceCookieNameFor(secureCookies);
   const apps = createApps({ db, hasher, audit });
+  const grants = createGrants({ db, audit });
   const invites = createInvites({
     db,
     mail,
@@ -206,7 +209,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
       accountRouter({ db, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
-      adminRouter({ db, apps, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
+      adminRouter({ db, apps, grants, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
     ],
@@ -224,6 +227,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     mail,
     invites,
     apps,
+    grants,
     totp,
     webauthn,
     trustedDevices,

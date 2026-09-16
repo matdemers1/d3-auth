@@ -2,6 +2,7 @@ import Provider, { type AdapterFactory, type Configuration } from 'oidc-provider
 import type { Db } from '../db.js';
 import type { SecretHasher } from '../security/hash.js';
 import { createFindAccount } from './account.js';
+import { effectiveAccess } from '../authz/effective-roles.js';
 import { createAdapterFactory } from './adapter.js';
 import { createClientAdapter, installHashedClientSecrets } from './clients.js';
 import type { PrivateJwk } from './keys.js';
@@ -77,6 +78,37 @@ export function createProvider(options: ProviderOptions): Provider {
     // effect without a restart. There are deliberately no static clients.
     adapter: clientBackedAdapters(options.db),
     findAccount: createFindAccount(options.db),
+
+    /**
+     * Called on every authorization request, before any interaction is decided. This is where
+     * deny-by-default actually bites (REQ-051): a person with no grant for this client gets no
+     * existing grant back, so the provider raises an interaction, and the interaction refuses
+     * them. Without this hook a returning user with a stored provider grant would skip the
+     * interaction entirely — and a revocation would not be felt until their tokens expired.
+     *
+     * When they *do* have access, a grant is minted covering what was asked for, which is what
+     * makes the consent screen unnecessary rather than merely hidden (REQ-060).
+     */
+    async loadExistingGrant(ctx) {
+      const accountId = ctx.oidc.session?.accountId;
+      const client = ctx.oidc.client;
+      if (!accountId || !client) return undefined;
+
+      const access = await effectiveAccess(options.db, { userId: accountId, clientId: client.clientId });
+      if (!access.hasGrant) return undefined;
+
+      const grantId = ctx.oidc.result?.consent?.grantId ?? ctx.oidc.session?.grantIdFor(client.clientId);
+      if (grantId) {
+        const existing = await ctx.oidc.provider.Grant.find(grantId);
+        if (existing) return existing;
+      }
+
+      const grant = new ctx.oidc.provider.Grant({ accountId, clientId: client.clientId });
+      const requested = ctx.oidc.params?.scope;
+      grant.addOIDCScope(typeof requested === 'string' && requested !== '' ? requested : 'openid');
+      await grant.save();
+      return grant;
+    },
     jwks: { keys: options.keys },
     routes: ROUTES,
 
