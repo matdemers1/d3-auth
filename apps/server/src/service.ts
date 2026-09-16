@@ -16,6 +16,8 @@ import { createSecretHasher } from './security/hash.js';
 import { createKekCrypto } from './security/kek.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
 import { createThrottle } from './security/throttle.js';
+import { createFirstRunSetup } from './setup/first-run.js';
+import { setupRouter } from './setup/routes.js';
 import { consoleBuilt, consoleRouter, defaultConsoleDist, unavailableGate } from './static.js';
 
 export interface Service {
@@ -93,6 +95,10 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   for (const skipped of clients.skipped) logger.warn(skipped, 'app not loaded');
   logger.info({ kids: keys.map((k) => k.kid), clients: clients.metadata.length }, 'provider ready');
 
+  // An instance with no accounts can be claimed once, from the browser, with the code logged here.
+  const setup = createFirstRunSetup(db, adapterFactory, hasher, audit, logger);
+  await setup.prepare();
+
   const readiness = cached(databaseReadiness(db));
   const app = createApp({
     provider,
@@ -108,6 +114,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         operatorDisplayName: config.OPERATOR_DISPLAY_NAME ?? 'the operator',
         consoleDist,
       }),
+      setupRouter({ setup, consoleDist, operatorDisplayName: config.OPERATOR_DISPLAY_NAME ?? 'the operator' }),
       consoleRouter(consoleDist),
     ],
     beforeRouters: [unavailableGate(readiness)],

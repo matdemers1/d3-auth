@@ -10,6 +10,7 @@ export const AUDIT_EVENTS = {
   sessionStarted: 'session.started',
   sessionRevoked: 'session.revoked',
   keyGenerated: 'key.generated',
+  ownerClaimed: 'owner.claimed',
   devSeedUser: 'dev.seed.user',
   devSeedApp: 'dev.seed.app',
 } as const;

@@ -127,15 +127,26 @@ anyone signs in, because tokens carry the issuer.
 
 ---
 
-## 7. The first account
+## 7. The first account (REQ-141)
 
-There is no public signup (an anti-feature). Until invites land in Phase 2, create the owner with the seed CLI:
+There is no public signup (an anti-feature), so a fresh instance is claimed once, from the browser:
 
 ```bash
-docker compose exec server node dist/cli/dev-seed.js /conformance/seed.json   # Phase 0 shape
+docker compose logs server | grep setupCode
+# {"level":"warn",...,"setupCode":"AAYD-60J3-E9DG-12S5-77G8","msg":"This instance has no accounts yet..."}
 ```
 
-Phase 2 replaces this with `d3auth.seed.json` and the invite flow, and Phase 4 with export/import.
+Open `https://auth.d3cloud.io/login/setup`, enter that code with your email, username, display
+name and a password, and the owner account is created. The screen then refuses for good: the check
+is "does this instance have zero accounts", asked inside the transaction that creates the owner,
+so a second claim cannot race it.
+
+The code is minted at boot only while there are no accounts, and only its hash is stored. If you
+lose it, restart the service and read the new one. **Claim the instance promptly** — between the
+tunnel hostname going live and the claim, anyone who knows the code could claim it, and the code
+is in a log only you can read.
+
+Phase 2 adds invites for everyone after the owner; Phase 4 adds export/import and the seed file.
 
 ---
 
