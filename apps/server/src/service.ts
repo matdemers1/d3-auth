@@ -85,14 +85,13 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     });
   }
   recordSessions(provider, db, audit, logger);
+  const consoleDist = config.CONSOLE_DIST ?? defaultConsoleDist();
+  if (!consoleBuilt(consoleDist)) logger.warn({ consoleDist }, 'console build not found; /login, /account and /admin answer 503');
   if (config.CONFORMANCE_PKCE_EXEMPT_CLIENTS?.length) {
     logger.warn({ clients: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS }, 'PKCE exemption active for conformance clients — test issuers only');
   }
   for (const skipped of clients.skipped) logger.warn(skipped, 'app not loaded');
   logger.info({ kids: keys.map((k) => k.kid), clients: clients.metadata.length }, 'provider ready');
-
-  const consoleDist = config.CONSOLE_DIST ?? defaultConsoleDist();
-  if (!consoleBuilt(consoleDist)) logger.warn({ consoleDist }, 'console build not found; /login, /account and /admin answer 503');
 
   const readiness = cached(databaseReadiness(db));
   const app = createApp({
@@ -107,6 +106,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         audit,
         logger,
         operatorDisplayName: config.OPERATOR_DISPLAY_NAME ?? 'the operator',
+        consoleDist,
       }),
       consoleRouter(consoleDist),
     ],

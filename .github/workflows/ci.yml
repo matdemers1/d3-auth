@@ -93,3 +93,33 @@ jobs:
           name: conformance-results
           path: conformance/logs/
           if-no-files-found: warn
+
+  e2e:
+    needs: conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter e2e exec playwright install --with-deps chromium
+      - name: Start the stack (builds the image, migrates, seeds the dev user)
+        run: pnpm dev:up
+      - name: Playwright flows F1 at phone and desktop (REQ-133, REQ-076)
+        run: pnpm e2e
+      - name: Upload the Playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          if-no-files-found: ignore
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --no-color server
+      - if: always()
+        run: pnpm dev:down

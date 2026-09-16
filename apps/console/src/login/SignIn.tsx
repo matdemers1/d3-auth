@@ -104,12 +104,12 @@ export function SignIn({ uid }: Props) {
     <main className="shell shell--narrow">
       <h1 className="signin-title">Sign in to {view.clientName}</h1>
       {message ? (
-        <Alert tone="danger" title="Check your details">
+        <Alert tone="danger" dynamic title="Check your details">
           {message}
         </Alert>
       ) : null}
       {throttled ? (
-        <Alert tone="warning" title="Too many attempts">
+        <Alert tone="warning" dynamic title="Too many attempts">
           Wait {retryAfter} second{retryAfter === 1 ? '' : 's'} and try again. Nothing is locked — this is just a pause.
         </Alert>
       ) : null}

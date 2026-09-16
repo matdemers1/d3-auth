@@ -61,3 +61,38 @@
   color: var(--color-fg-muted);
   font-size: var(--text-13);
 }
+
+/* The server-rendered sign-in form that arrives in the HTML. React replaces it when it loads,
+   so these rules only ever paint the JavaScript-off path. Tokens only, like everything else. */
+.signin-form--fallback {
+  gap: var(--space-8);
+}
+
+.signin-label {
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-fg);
+}
+
+.signin-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font: inherit;
+}
+
+.signin-button {
+  margin-block-start: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}

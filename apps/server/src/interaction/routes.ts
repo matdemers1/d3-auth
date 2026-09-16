@@ -8,6 +8,7 @@ import type { Logger } from '../log.js';
 import { csrfMatches, csrfToken } from '../security/csrf.js';
 import type { PasswordVerifier } from '../security/password.js';
 import type { Throttle } from '../security/throttle.js';
+import { renderLoginPage } from './fallback.js';
 import { createFlowStore, type FlowStore, type LoginFlow } from './flow-store.js';
 import { advance, isComplete, start, type Identity, type LoginState } from './machine.js';
 
@@ -32,6 +33,8 @@ export interface InteractionDeps {
   audit: AuditWriter;
   logger: Logger;
   operatorDisplayName: string;
+  /** Where the console build lives; the sign-in form is rendered into its shell. */
+  consoleDist: string;
 }
 
 type Step = 'identify' | 'password' | 'done';
@@ -138,18 +141,32 @@ export function interactionRouter(deps: InteractionDeps): Router {
   }
 
   // The page the provider sends the browser to. A consent prompt is resolved here and redirected
-  // straight back, so no screen flashes and nothing depends on JavaScript; anything else falls
-  // through to the console, which renders the sign-in screens.
+  // straight back, so no screen flashes. Otherwise the console shell is served with a working
+  // sign-in form already in the HTML; React takes over when it loads.
   router.get('/login/:uid', (req, res, next) => {
     void (async () => {
       try {
         const details = await provider.interactionDetails(req, res);
-        if (details.prompt.name !== 'consent') {
+        if (details.prompt.name === 'consent') {
+          res.redirect(303, await grantAndFinish(req, res, details));
+          return;
+        }
+        const ctx = await context(req, res);
+        if (!ctx) {
           next();
           return;
         }
-        res.redirect(303, await grantAndFinish(req, res, details));
+        res.set('Cache-Control', 'no-store').type('html').send(
+          renderLoginPage(deps.consoleDist, {
+            uid: ctx.uid,
+            flow: ctx.flow,
+            clientName: ctx.clientName,
+            operatorDisplayName: deps.operatorDisplayName,
+          }),
+        );
       } catch {
+        // No interaction for this uid (expired, or someone else's): let the console render its
+        // own error screen.
         next();
       }
     })();

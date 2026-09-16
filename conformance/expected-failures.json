@@ -70,5 +70,23 @@
     "condition": "EnsureUserInfoContainsName",
     "expected-result": "warning",
     "comment": "The claims request parameter is disabled; name is only released with the profile scope."
+  },
+  {
+    "test-name": "oidcc-scope-email",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "Verify authorization endpoint response",
+    "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+    "expected-result": "warning",
+    "comment": "REQ-017 and the API Contract put email, preferred_username and name in the ID token, so an app has a display name without a second call. OIDC Core only says they SHOULD be left to userinfo when an access token is issued, so this is a deliberate warning (conformIdTokenClaims=false)."
+  },
+  {
+    "test-name": "oidcc-alternate-happy-flow",
+    "variant": "*",
+    "configuration-filename": "/conformance/plans/d3auth.json",
+    "current-block": "Verify authorization endpoint response",
+    "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+    "expected-result": "warning",
+    "comment": "REQ-017 and the API Contract put email, preferred_username and name in the ID token, so an app has a display name without a second call. OIDC Core only says they SHOULD be left to userinfo when an access token is issued, so this is a deliberate warning (conformIdTokenClaims=false)."
   }
 ]

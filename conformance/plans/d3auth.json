@@ -17,9 +17,8 @@
       "match": "https://op.d3auth.test/oidc/auth*",
       "tasks": [
         {
-          "task": "Login",
-          "optional": true,
-          "match": "https://op.d3auth.test/interaction/*",
+          "task": "Email",
+          "match": "https://op.d3auth.test/login/*",
           "commands": [
             [
               "text",
@@ -27,6 +26,18 @@
               "email",
               "conformance@d3auth.test"
             ],
+            [
+              "click",
+              "css",
+              "button[type=submit]"
+            ]
+          ],
+          "optional": true
+        },
+        {
+          "task": "Password",
+          "match": "https://op.d3auth.test/login/*",
+          "commands": [
             [
               "text",
               "name",
@@ -38,7 +49,8 @@
               "css",
               "button[type=submit]"
             ]
-          ]
+          ],
+          "optional": true
         },
         {
           "task": "Verify Complete",
@@ -63,9 +75,8 @@
           "match": "https://op.d3auth.test/oidc/auth*",
           "tasks": [
             {
-              "task": "Login",
-              "optional": true,
-              "match": "https://op.d3auth.test/interaction/*",
+              "task": "Email",
+              "match": "https://op.d3auth.test/login/*",
               "commands": [
                 [
                   "wait",
@@ -82,6 +93,18 @@
                   "conformance@d3auth.test"
                 ],
                 [
+                  "click",
+                  "css",
+                  "button[type=submit]"
+                ]
+              ],
+              "optional": true
+            },
+            {
+              "task": "Password",
+              "match": "https://op.d3auth.test/login/*",
+              "commands": [
+                [
                   "text",
                   "name",
                   "password",
@@ -92,7 +115,8 @@
                   "css",
                   "button[type=submit]"
                 ]
-              ]
+              ],
+              "optional": true
             },
             {
               "task": "Verify Complete",
@@ -117,9 +141,8 @@
           "match": "https://op.d3auth.test/oidc/auth*",
           "tasks": [
             {
-              "task": "Login",
-              "optional": true,
-              "match": "https://op.d3auth.test/interaction/*",
+              "task": "Email",
+              "match": "https://op.d3auth.test/login/*",
               "commands": [
                 [
                   "wait",
@@ -136,6 +159,18 @@
                   "conformance@d3auth.test"
                 ],
                 [
+                  "click",
+                  "css",
+                  "button[type=submit]"
+                ]
+              ],
+              "optional": true
+            },
+            {
+              "task": "Password",
+              "match": "https://op.d3auth.test/login/*",
+              "commands": [
+                [
                   "text",
                   "name",
                   "password",
@@ -146,7 +181,8 @@
                   "css",
                   "button[type=submit]"
                 ]
-              ]
+              ],
+              "optional": true
             },
             {
               "task": "Verify Complete",

@@ -20,3 +20,5 @@ __pycache__/
 playwright-report/
 test-results/
 apps/server/src/generated/
+e2e/playwright-report/
+e2e/test-results/

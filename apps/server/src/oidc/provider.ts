@@ -92,6 +92,10 @@ export function createProvider(options: ProviderOptions): Provider {
       dPoPSigningAlgValues: ['ES256'],
     },
 
+    // The ID token carries the claims the app asked for (REQ-017), rather than making every
+    // consumer call userinfo for a display name. Roles join them in Phase 3.
+    conformIdTokenClaims: false,
+
     // PKCE S256 on every client, confidential ones included (REQ-003). v9 has no `plain`.
     pkce: { required: (_ctx, client) => !pkceExempt.has(client.clientId) },
     allowOmittingSingleRegisteredRedirectUri: false,

@@ -1,0 +1,16 @@
+{
+  "name": "e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright flows against the running stack (REQ-133)",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

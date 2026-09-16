@@ -3,3 +3,4 @@ packages:
   - packages/*
   - workers/*
   - examples/express
+  - e2e
