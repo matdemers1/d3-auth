@@ -1,0 +1,17 @@
+# The mail relay Worker (REQ-106).
+#
+#   wrangler secret put RELAY_SECRET      # the same value as MAIL_RELAY_SECRET on the server
+#   wrangler deploy
+#
+# Email Sending requires a paid Workers plan, and the destination address must be verified in
+# Cloudflare (Email → Email Routing → Destination addresses) before anything will send.
+name = "d3auth-mail-relay"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+DEFAULT_FROM = "no-reply@no-reply.d3cloud.io"
+
+[[send_email]]
+name = "EMAIL"
