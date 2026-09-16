@@ -106,6 +106,7 @@ export async function applyDevSeed(db: Db, hasher: SecretHasher, input: DevSeed)
   for (const u of seed.users) {
     const user = await db.user.findUniqueOrThrow({ where: { email: u.email } });
     await db.grant.deleteMany({ where: { userId: user.id } });
+    await db.appVisit.deleteMany({ where: { userId: user.id } });
     for (const wanted of u.grants) {
       const app = await db.app.findUnique({ where: { clientId: wanted.clientId }, include: { roles: true } });
       if (!app) throw new Error(`${u.email}: no app with the client id "${wanted.clientId}"`);
@@ -114,9 +115,14 @@ export async function applyDevSeed(db: Db, hasher: SecretHasher, input: DevSeed)
         if (!role) throw new Error(`${u.email}: ${wanted.clientId} has no role "${key}"`);
         return role.id;
       });
-      const grant = await db.grant.create({
-        data: { userId: user.id, appId: app.id, ...(wanted.seen ? { firstSignInAt: new Date() } : {}) },
-      });
+      const grant = await db.grant.create({ data: { userId: user.id, appId: app.id } });
+      if (wanted.seen) {
+        await db.appVisit.upsert({
+          where: { userId_appId: { userId: user.id, appId: app.id } },
+          create: { userId: user.id, appId: app.id },
+          update: {},
+        });
+      }
       await db.grantRole.createMany({ data: roleIds.map((roleId) => ({ grantId: grant.id, roleId })) });
     }
   }

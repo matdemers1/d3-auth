@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { createAuthClient, createBackchannelHandler, identityKey, SsoUnavailable } from '@d3cloud/auth-client';
 import { createLocalJWKSet, type JSONWebKeySet } from 'jose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Browser, grantAccess, ISSUER, RP_CALLBACK, startHarness, USER, WEB_CLIENT, type Harness } from './oidc-harness.js';
+import { Browser, grantAccess, ISSUER, markVisited, RP_CALLBACK, startHarness, USER, WEB_CLIENT, type Harness } from './oidc-harness.js';
 
 // The SDK against the real provider (REQ-088, REQ-094, REQ-097, REQ-098).
 //
@@ -55,7 +55,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await h.service.db.throttleCounter.deleteMany();
   await grantAccess(h, userId, WEB_CLIENT.clientId, ['member']);
-  await h.service.db.grant.updateMany({ where: { userId }, data: { firstSignInAt: new Date() } });
+  await markVisited(h, userId, WEB_CLIENT.clientId);
 });
 
 describe('an app using the SDK', () => {

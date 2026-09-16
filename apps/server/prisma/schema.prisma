@@ -70,6 +70,7 @@ model User {
   grantsGiven         Grant[]              @relation("GrantGrantedBy")
   groupMemberships    GroupMember[]
   invitesSent         Invite[]
+  visits              AppVisit[]
 
   @@map("user")
 }
@@ -196,6 +197,7 @@ model App {
   roles        Role[]
   grants       Grant[]
   groupGrants  GroupGrant[]
+  visits       AppVisit[]
 
   @@map("app")
 }
@@ -237,10 +239,6 @@ model Grant {
   appId       String    @map("app_id") @db.Uuid
   grantedById String?   @map("granted_by") @db.Uuid
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  /// First successful sign-in to this app. Null means the continue-as interstitial is still due.
-  firstSignInAt DateTime? @map("first_sign_in_at") @db.Timestamptz
-  /// Most recent sign-in to this app, for the Access tab.
-  lastSignInAt  DateTime? @map("last_sign_in_at") @db.Timestamptz
 
   user      User        @relation("GrantUser", fields: [userId], references: [id], onDelete: Cascade)
   app       App         @relation(fields: [appId], references: [id], onDelete: Cascade)
@@ -273,6 +271,25 @@ model Group {
   grants  GroupGrant[]
 
   @@map("group")
+}
+
+/// When somebody first and last signed in to an app.
+///
+/// Separate from Grant because access can come from a group, which has no grant row of its own —
+/// and because "have they been here before" is a fact about the person and the app, not about the
+/// permission that let them in. It is what decides whether the continue-as interstitial is due.
+model AppVisit {
+  userId      String   @map("user_id") @db.Uuid
+  appId       String   @map("app_id") @db.Uuid
+  firstSignInAt DateTime @default(now()) @map("first_sign_in_at") @db.Timestamptz
+  lastSignInAt  DateTime @default(now()) @map("last_sign_in_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  app  App  @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@id([userId, appId])
+  @@index([appId])
+  @@map("app_visit")
 }
 
 model GroupMember {

@@ -1,16 +1,19 @@
 import { AppDetail } from './AppDetail';
 import { Apps } from './Apps';
+import { GroupDetail } from './GroupDetail';
+import { Groups } from './Groups';
 import { People } from './People';
 import { PersonDetail } from './PersonDetail';
 import { RegisterApp } from './RegisterApp';
 
-// The operator console. Groups, audit and keys arrive in Phase 4.
+// The operator console. Audit, keys and settings arrive with the rest of Phase 4.
 //
 // Plain links again, not a router: each screen is its own page, so the back button does what a
 // back button should and nothing has to remember where it came from.
 
 const SECTIONS = [
   { path: 'people', label: 'People' },
+  { path: 'groups', label: 'Groups' },
   { path: 'apps', label: 'Apps' },
 ] as const;
 
@@ -37,7 +40,7 @@ export default function AdminShell() {
 
   return (
     <>
-      <Nav current={section === 'apps' ? 'apps' : 'people'} />
+      <Nav current={section === 'apps' || section === 'groups' ? section : 'people'} />
       {section === 'apps' ? (
         id === 'new' ? (
           <RegisterApp />
@@ -45,6 +48,12 @@ export default function AdminShell() {
           <AppDetail clientId={id} />
         ) : (
           <Apps />
+        )
+      ) : section === 'groups' ? (
+        id ? (
+          <GroupDetail id={id} />
+        ) : (
+          <Groups />
         )
       ) : id ? (
         <PersonDetail id={id} />

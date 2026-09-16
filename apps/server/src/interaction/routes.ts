@@ -182,11 +182,20 @@ export function interactionRouter(deps: InteractionDeps): Router {
 
   /** True when this person has never completed a sign-in to this app before (REQ-059). */
   async function firstTimeHere(accountId: string, clientId: string): Promise<boolean> {
-    const grant = await db.grant.findFirst({
-      where: { userId: accountId, app: { clientId } },
-      select: { firstSignInAt: true },
+    const visit = await db.appVisit.findFirst({ where: { userId: accountId, app: { clientId } }, select: { userId: true } });
+    return visit === null;
+  }
+
+  /** Records that this person has now been here, which is what retires the interstitial. */
+  async function recordVisit(accountId: string, clientId: string): Promise<void> {
+    const app = await db.app.findUnique({ where: { clientId }, select: { id: true } });
+    if (!app) return;
+    const now = new Date();
+    await db.appVisit.upsert({
+      where: { userId_appId: { userId: accountId, appId: app.id } },
+      create: { userId: accountId, appId: app.id, firstSignInAt: now, lastSignInAt: now },
+      update: { lastSignInAt: now },
     });
-    return (grant?.firstSignInAt ?? null) === null;
   }
 
   async function finish(
@@ -213,10 +222,10 @@ export function interactionRouter(deps: InteractionDeps): Router {
     await flows.clear(uid);
     const now = new Date();
     await db.user.update({ where: { id: accountId }, data: { lastLoginAt: now } });
-    // Per app, so the Access tab can say when somebody last used this one. `firstSignInAt` is
-    // deliberately not set here: it is what decides whether the continue-as interstitial is still
-    // due, and that screen comes *after* this point in the flow (REQ-059).
-    await db.grant.updateMany({ where: { userId: accountId, app: { clientId } }, data: { lastSignInAt: now } });
+    // A visit is *created* only by the continue-as step, which comes after this point in the
+    // flow — creating one here would make that screen unreachable (REQ-059). Updating an
+    // existing one is what keeps "last signed in" true for everybody who has been before.
+    await db.appVisit.updateMany({ where: { userId: accountId, app: { clientId } }, data: { lastSignInAt: now } });
     if (amr.includes('recovery')) {
       // One window, one sign-in. What is left is an account with no second factor, which the
       // account area nags about until they enrol one.
@@ -676,11 +685,7 @@ export function interactionRouter(deps: InteractionDeps): Router {
         return;
       }
 
-      const now = new Date();
-      await db.grant.updateMany({
-        where: { userId: accountId, app: { clientId } },
-        data: { firstSignInAt: now, lastSignInAt: now },
-      });
+      await recordVisit(accountId, clientId);
       reply(req, res, details.uid, 200, { step: 'done', redirectTo: await grantAndFinish(req, res, details) });
     } catch (err) {
       next(err);

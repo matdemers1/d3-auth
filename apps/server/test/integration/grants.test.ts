@@ -61,7 +61,7 @@ describe('granting access', () => {
     expect(await effectiveAccess(h.service.db, { userId: personId, clientId: 'web-app' })).toMatchObject({
       hasGrant: true,
       roles: ['member'],
-      // Nobody has signed in on this grant yet, which is what shows them the interstitial once.
+      // Nobody has signed in to this app yet, which is what shows them the interstitial once.
       firstSignInAt: null,
     });
 

@@ -8,6 +8,7 @@ import type { SessionControl } from '../security/sessions.js';
 import type { TrustedDevices } from '../security/trusted-device.js';
 import { GrantError, type Grants } from '../authz/grants.js';
 import { AppError, type Apps } from './apps.js';
+import { GroupError, type Groups } from './groups.js';
 import type { Invites } from './invites.js';
 import { parseManifest, type Manifest } from './manifest.js';
 
@@ -20,6 +21,7 @@ export interface AdminDeps {
   db: Db;
   apps: Apps;
   grants: Grants;
+  groups: Groups;
   /** Used in copy the console shows to people, e.g. "Ask Matthew" (REQ-087). */
   operatorDisplayName: string;
   auth: ConsoleAuth;
@@ -29,7 +31,7 @@ export interface AdminDeps {
   audit: AuditWriter;
 }
 
-export function adminRouter({ db, apps, grants, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
+export function adminRouter({ db, apps, grants, groups, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '8kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -570,6 +572,137 @@ export function adminRouter({ db, apps, grants, operatorDisplayName, auth, invit
       }
     })();
   });
+
+  // Groups (C-7, REQ-068). Admin-level: a group hands out access, and access is an admin's job.
+  const onGroupError = (err: unknown, res: Response, next: NextFunction): void => {
+    if (err instanceof GroupError) {
+      const status = err.code === 'not_found' ? 404 : err.code === 'name_taken' ? 409 : 400;
+      res.status(status).json({ error: err.code, message: err.message, ...(err.detail ? { detail: err.detail } : {}) });
+      return;
+    }
+    next(err);
+  };
+
+  const groupRoute =
+    (act: (req: Request & { params: { id: string } }, res: Response, actorUserId: string) => Promise<unknown>): RequestHandler =>
+    (req, res, next) => {
+      void (async () => {
+        try {
+          const { user } = consoleUserOf(res);
+          const answer = await act(req as Request & { params: { id: string } }, res, user.id);
+          if (answer !== undefined) res.set('Cache-Control', 'no-store').json(answer);
+        } catch (err) {
+          onGroupError(err, res, next);
+        }
+      })();
+    };
+
+  router.get(`${ADMIN_API}/groups`, auth.requireAdmin, groupRoute(async () => ({ groups: await groups.list() })));
+
+  router.get<{ id: string }>(
+    `${ADMIN_API}/groups/:id`,
+    auth.requireAdmin,
+    groupRoute(async (req, res) => {
+      const group = await groups.get(req.params.id);
+      if (!group) {
+        res.status(404).json({ error: 'not_found' });
+        return undefined;
+      }
+      return group;
+    }),
+  );
+
+  router.post(
+    `${ADMIN_API}/groups`,
+    auth.requireAdmin,
+    body,
+    groupRoute((req, _res, actorUserId) => {
+      const input = req.body as { name?: unknown; description?: unknown };
+      return groups.create({
+        name: typeof input.name === 'string' ? input.name : '',
+        description: typeof input.description === 'string' ? input.description : '',
+        actorUserId,
+        ip: clientIp(req),
+      });
+    }),
+  );
+
+  router.post<{ id: string }>(
+    `${ADMIN_API}/groups/:id`,
+    auth.requireAdmin,
+    body,
+    groupRoute((req, _res, actorUserId) => {
+      const input = req.body as { name?: unknown; description?: unknown };
+      return groups.rename({
+        id: req.params.id,
+        name: typeof input.name === 'string' ? input.name : '',
+        ...(typeof input.description === 'string' ? { description: input.description } : {}),
+        actorUserId,
+        ip: clientIp(req),
+      });
+    }),
+  );
+
+  router.post<{ id: string }>(
+    `${ADMIN_API}/groups/:id/members`,
+    auth.requireAdmin,
+    body,
+    groupRoute((req, _res, actorUserId) => {
+      const input = req.body as { userIds?: unknown };
+      const userIds = Array.isArray(input.userIds) ? input.userIds.filter((id): id is string => typeof id === 'string') : [];
+      return groups.setMembers({ id: req.params.id, userIds, actorUserId, ip: clientIp(req) });
+    }),
+  );
+
+  router.post<{ id: string }>(
+    `${ADMIN_API}/groups/:id/access`,
+    auth.requireAdmin,
+    body,
+    groupRoute((req, _res, actorUserId) => {
+      const input = req.body as { clientId?: unknown; roles?: unknown };
+      const roles = Array.isArray(input.roles) ? input.roles.filter((role): role is string => typeof role === 'string') : [];
+      return groups.setGrant({
+        id: req.params.id,
+        clientId: typeof input.clientId === 'string' ? input.clientId : '',
+        roles,
+        actorUserId,
+        ip: clientIp(req),
+      });
+    }),
+  );
+
+  router.post<{ id: string }>(
+    `${ADMIN_API}/groups/:id/access/revoke`,
+    auth.requireAdmin,
+    body,
+    groupRoute(async (req, res, actorUserId) => {
+      const clientId = (req.body as { clientId?: unknown }).clientId;
+      const revoked = await groups.revokeGrant({
+        id: req.params.id,
+        clientId: typeof clientId === 'string' ? clientId : '',
+        actorUserId,
+        ip: clientIp(req),
+      });
+      if (!revoked) {
+        res.status(404).json({ error: 'not_found', message: 'That group did not have access to that app.' });
+        return undefined;
+      }
+      return { revoked: true };
+    }),
+  );
+
+  router.post<{ id: string }>(
+    `${ADMIN_API}/groups/:id/remove`,
+    auth.requireAdmin,
+    groupRoute(async (req, res, actorUserId) => {
+      const removed = await groups.remove({ id: req.params.id, actorUserId, ip: clientIp(req) });
+      if (!removed) {
+        res.status(404).json({ error: 'not_found' });
+        return undefined;
+      }
+      return { removed: true };
+    }),
+  );
 
   return router;
 }

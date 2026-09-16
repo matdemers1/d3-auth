@@ -1,6 +1,6 @@
 import * as client from 'openid-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Browser, grantAccess, ISSUER, NATIVE_CALLBACK, NATIVE_CLIENT, RP_CALLBACK, startHarness, USER, webClientConfig, type Harness } from './oidc-harness.js';
+import { Browser, forgetVisits, grantAccess, ISSUER, markVisited, NATIVE_CALLBACK, NATIVE_CLIENT, RP_CALLBACK, startHarness, USER, webClientConfig, type Harness } from './oidc-harness.js';
 
 // REQ-059, REQ-060, REQ-016.
 //
@@ -52,8 +52,8 @@ afterAll(async () => {
 beforeEach(async () => {
   await h.service.db.throttleCounter.deleteMany();
   await grantAccess(h, userId, 'web-app', ['member']);
-  // Nobody has been here before.
-  await h.service.db.grant.updateMany({ where: { userId }, data: { firstSignInAt: null } });
+  // Nobody has been here before, which is what makes the interstitial due.
+  await forgetVisits(h, userId);
 });
 
 describe('the first sign-in to an app', () => {
@@ -65,9 +65,7 @@ describe('the first sign-in to an app', () => {
     expect(html).toContain(USER.username);
     expect(html).toContain('Not you?');
     // Nothing has been issued yet: this is a stop, not a formality after the fact.
-    expect(await h.service.db.grant.findFirstOrThrow({ where: { userId, app: { clientId: 'web-app' } } })).toMatchObject({
-      firstSignInAt: null,
-    });
+    expect(await h.service.db.appVisit.findFirst({ where: { userId, app: { clientId: 'web-app' } } })).toBeNull();
   });
 
   it('never asks about scopes (REQ-060)', async () => {
@@ -85,7 +83,7 @@ describe('the first sign-in to an app', () => {
     };
     const back = await browser.navigate(continued.redirectTo ?? '');
     expect(back.leftTo?.searchParams.get('code')).toBeTruthy();
-    expect(await h.service.db.grant.findFirstOrThrow({ where: { userId, app: { clientId: 'web-app' } } })).toMatchObject({
+    expect(await h.service.db.appVisit.findFirstOrThrow({ where: { userId, app: { clientId: 'web-app' } } })).toMatchObject({
       firstSignInAt: expect.any(Date) as Date,
     });
   });
@@ -128,7 +126,7 @@ describe('the first sign-in to an app', () => {
 describe('a public native client (REQ-016)', () => {
   it('signs in with a custom scheme redirect and no secret', async () => {
     await grantAccess(h, userId, NATIVE_CLIENT.clientId, []);
-    await h.service.db.grant.updateMany({ where: { userId }, data: { firstSignInAt: new Date() } });
+    await markVisited(h, userId, NATIVE_CLIENT.clientId);
 
     const native = await client.discovery(new URL(ISSUER), NATIVE_CLIENT.clientId, undefined, client.None(), {
       [client.customFetch]: (url, options) => h.opFetch(url, options as RequestInit),

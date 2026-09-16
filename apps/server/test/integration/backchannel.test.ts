@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as client from 'openid-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { authorize, Browser, discover, grantAccess, startHarness, USER, type Harness } from './oidc-harness.js';
+import { authorize, Browser, discover, grantAccess, markVisited, startHarness, USER, type Harness } from './oidc-harness.js';
 
 // REQ-011, REQ-012, REQ-056.
 //
@@ -95,7 +95,7 @@ beforeEach(async () => {
   listener.received.length = 0;
   listener.failTimes = 0;
   await grantAccess(h, userId, APP.clientId, ['member']);
-  await h.service.db.grant.updateMany({ where: { userId }, data: { firstSignInAt: new Date() } });
+  await markVisited(h, userId, APP.clientId);
 });
 
 /** Signs in to the listening app and returns the session it created. */

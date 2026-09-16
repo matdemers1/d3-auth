@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { createInvites, type Invites } from './admin/invites.js';
 import { createApps, type Apps } from './admin/apps.js';
 import { createGrants, type Grants } from './authz/grants.js';
+import { createGroups, type Groups } from './admin/groups.js';
 import { adminRouter } from './admin/routes.js';
 import { createAuditWriter } from './audit/writer.js';
 import { accountRouter } from './account/routes.js';
@@ -46,6 +47,7 @@ export interface Service {
   invites: Invites;
   apps: Apps;
   grants: Grants;
+  groups: Groups;
   totp: Totp;
   webauthn: WebAuthn;
   trustedDevices: TrustedDevices;
@@ -176,6 +178,16 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const sessionControl = createSessionControl(db, provider, backchannel);
   const deviceCookieName = deviceCookieNameFor(secureCookies);
   const apps = createApps({ db, hasher, audit });
+  const groups = createGroups({
+    db,
+    audit,
+    // A group that changes is access that changes, for everybody in it (REQ-056).
+    onAccessChanged: async ({ userIds, clientIds, reason }) => {
+      for (const userId of userIds) {
+        for (const clientId of clientIds) await backchannel.notify({ userId, clientId, reason });
+      }
+    },
+  });
   const grants = createGrants({
     db,
     audit,
@@ -229,7 +241,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
       accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
-      adminRouter({ db, apps, grants, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
+      adminRouter({ db, apps, grants, groups, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
     ],
@@ -248,6 +260,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     invites,
     apps,
     grants,
+    groups,
     totp,
     webauthn,
     trustedDevices,

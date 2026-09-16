@@ -65,12 +65,16 @@ export function createGrants({ db, audit, onChanged }: GrantsDeps): Grants {
     return app;
   };
 
-  const view = (row: {
-    user: { id: string; displayName: string; email: string; lastLoginAt: Date | null };
-    roles: { role: { key: string; sortOrder: number } }[];
-    createdAt: Date;
-    grantedBy: { displayName: string } | null;
-  }): GrantView => ({
+  const view = (
+    row: {
+      user: { id: string; displayName: string; email: string; lastLoginAt: Date | null };
+      roles: { role: { key: string; sortOrder: number } }[];
+      createdAt: Date;
+      grantedBy: { displayName: string } | null;
+    },
+    /** Last sign-in *to this app*, which is a more useful answer than "signed in somewhere". */
+    lastSignIn?: Date | null,
+  ): GrantView => ({
     userId: row.user.id,
     displayName: row.user.displayName,
     email: row.user.email,
@@ -80,7 +84,7 @@ export function createGrants({ db, audit, onChanged }: GrantsDeps): Grants {
       .map((role) => role.key),
     grantedAt: row.createdAt,
     grantedBy: row.grantedBy?.displayName ?? null,
-    lastSignIn: row.user.lastLoginAt,
+    lastSignIn: lastSignIn === undefined ? row.user.lastLoginAt : lastSignIn,
   });
 
   const WITH_VIEW = {
@@ -92,8 +96,12 @@ export function createGrants({ db, audit, onChanged }: GrantsDeps): Grants {
   return {
     async forApp(clientId) {
       const app = await appOf(clientId);
-      const grants = await db.grant.findMany({ where: { appId: app.id }, include: WITH_VIEW, orderBy: { createdAt: 'asc' } });
-      return grants.map(view);
+      const [grants, visits] = await Promise.all([
+        db.grant.findMany({ where: { appId: app.id }, include: WITH_VIEW, orderBy: { createdAt: 'asc' } }),
+        db.appVisit.findMany({ where: { appId: app.id }, select: { userId: true, lastSignInAt: true } }),
+      ]);
+      const seen = new Map(visits.map((visit) => [visit.userId, visit.lastSignInAt]));
+      return grants.map((grant) => view(grant, seen.get(grant.userId) ?? null));
     },
 
     async forUser(userId) {

@@ -2,24 +2,36 @@ import type { Db } from '../db.js';
 
 // Who may sign in to what, and as what (REQ-049, REQ-050, REQ-051).
 //
-// Access is a grant: one person, one app, a set of that app's roles. There is no implicit
-// access — an account with no grant for the client cannot sign in to it at all, whatever else is
-// true about the account. That is the invariant the rest of the system is built on, and the one
-// worth being boring about: no caching, no clever fallbacks, one query at the moment of decision.
+// Access is a grant: one person, one app, a set of that app's roles. Access can also come from a
+// group the person belongs to, and the two add up — the union, never the intersection, and never
+// "the group wins". Somebody given `admin` directly and `member` through a group has both.
 //
-// Group grants join the union in P4 (REQ-050). The shape below already answers "and where did
-// this role come from", so adding them does not change any caller.
+// There is no implicit access. An account with neither a direct grant nor a group grant cannot
+// sign in to the app at all, whatever else is true about the account. That is the invariant the
+// rest of the system is built on, and the one worth being boring about: one decision, at the
+// moment it is needed, from the database.
 
 export interface EffectiveAccess {
   /** False means access_denied, before any interstitial (REQ-051). */
   hasGrant: boolean;
-  /** Role keys, highest first by the app's manifest order. */
+  /** Role keys, highest first by the app's manifest order, with duplicates collapsed. */
   roles: string[];
+  /** Where the access came from. The console shows it; a token never does (REQ-053). */
+  from: { direct: boolean; groups: string[] };
   /** Null until their first completed sign-in to this app — the continue-as cue (REQ-059). */
   firstSignInAt: Date | null;
 }
 
-export const NO_ACCESS: EffectiveAccess = { hasGrant: false, roles: [], firstSignInAt: null };
+export const NO_ACCESS: EffectiveAccess = { hasGrant: false, roles: [], from: { direct: false, groups: [] }, firstSignInAt: null };
+
+type RoleRow = { role: { key: string; sortOrder: number } };
+
+/** Highest first by the app's own manifest order, so a caller never has to sort again. */
+const orderedKeys = (rows: RoleRow[]): string[] => {
+  const byKey = new Map<string, number>();
+  for (const { role } of rows) byKey.set(role.key, Math.max(byKey.get(role.key) ?? -Infinity, role.sortOrder));
+  return [...byKey.entries()].sort((a, b) => b[1] - a[1]).map(([key]) => key);
+};
 
 /**
  * What this person may do in this app, right now.
@@ -28,16 +40,32 @@ export const NO_ACCESS: EffectiveAccess = { hasGrant: false, roles: [], firstSig
  * and a caller that only looked at `roles` would otherwise let somebody in with none.
  */
 export async function effectiveAccess(db: Db, input: { userId: string; clientId: string }): Promise<EffectiveAccess> {
-  const grant = await db.grant.findFirst({
-    where: { userId: input.userId, app: { clientId: input.clientId, enabled: true } },
-    select: { firstSignInAt: true, roles: { select: { role: { select: { key: true, sortOrder: true } } } } },
-  });
-  if (!grant) return NO_ACCESS;
+  const [direct, viaGroups, visit] = await Promise.all([
+    db.grant.findFirst({
+      where: { userId: input.userId, app: { clientId: input.clientId, enabled: true } },
+      select: { roles: { select: { role: { select: { key: true, sortOrder: true } } } } },
+    }),
+    db.groupGrant.findMany({
+      where: {
+        app: { clientId: input.clientId, enabled: true },
+        group: { members: { some: { userId: input.userId } } },
+      },
+      select: { group: { select: { name: true } }, roles: { select: { role: { select: { key: true, sortOrder: true } } } } },
+    }),
+    db.appVisit.findFirst({
+      where: { userId: input.userId, app: { clientId: input.clientId } },
+      select: { firstSignInAt: true },
+    }),
+  ]);
 
-  const roles = grant.roles
-    .map((row) => row.role)
-    .sort((a, b) => b.sortOrder - a.sortOrder)
-    .map((role) => role.key);
+  if (!direct && viaGroups.length === 0) return NO_ACCESS;
+
   // A grant with no roles is still a grant: the app decides what an unroled person may see.
-  return { hasGrant: true, roles, firstSignInAt: grant.firstSignInAt };
+  const rows = [...(direct?.roles ?? []), ...viaGroups.flatMap((grant) => grant.roles)];
+  return {
+    hasGrant: true,
+    roles: orderedKeys(rows),
+    from: { direct: direct !== null, groups: viaGroups.map((grant) => grant.group.name) },
+    firstSignInAt: visit?.firstSignInAt ?? null,
+  };
 }

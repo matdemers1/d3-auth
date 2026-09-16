@@ -136,6 +136,24 @@ export async function grantAccess(h: Harness, userId: string, clientId: string =
   await h.service.db.grantRole.createMany({ data: wanted.map((role) => ({ grantId: grant.id, roleId: role.id })) });
 }
 
+/**
+ * Marks an app as already visited, so the continue-as interstitial is not due (REQ-059). Most
+ * tests are about something else and would otherwise have to click through it.
+ */
+export async function markVisited(h: Harness, userId: string, clientId: string = WEB_CLIENT.clientId): Promise<void> {
+  const app = await h.service.db.app.findUniqueOrThrow({ where: { clientId }, select: { id: true } });
+  await h.service.db.appVisit.upsert({
+    where: { userId_appId: { userId, appId: app.id } },
+    create: { userId, appId: app.id },
+    update: {},
+  });
+}
+
+/** The opposite: nobody has been here before, which is what shows the interstitial. */
+export async function forgetVisits(h: Harness, userId: string): Promise<void> {
+  await h.service.db.appVisit.deleteMany({ where: { userId } });
+}
+
 /** A user agent with a cookie jar that follows redirects until it leaves the OP. */
 export class Browser {
   readonly cookies = new Map<string, string>();
