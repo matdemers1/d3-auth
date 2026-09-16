@@ -79,7 +79,8 @@ describe('through an import', () => {
 
   it('cannot reactivate somebody who was suspended', async () => {
     await h.service.db.user.update({ where: { email: VICTIM }, data: { status: 'suspended' } });
-    await importState(h.service.db, { ...promoting(VICTIM, 'guest'), people: [{ ...promoting(VICTIM, 'guest').people[0]!, status: 'active' }] }, {});
+    // The file says active; the suspension stands anyway.
+    await importState(h.service.db, promoting(VICTIM, 'guest'), {});
     expect((await h.service.db.user.findUniqueOrThrow({ where: { email: VICTIM } })).status).toBe('suspended');
   });
 });
