@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Express } from 'express';
-import type * as client from 'openid-client';
+import * as client from 'openid-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ISSUER, startHarness, USER, webClientConfig, type Harness } from '../integration/oidc-harness.js';
+import { authorize, ISSUER, startHarness, USER, webClientConfig, type Harness } from '../integration/oidc-harness.js';
 import { consoleCaller, sessionCookie } from './support.js';
 
 // Attack class: reaching an API you were not given (REQ-062, REQ-037, REQ-031).
@@ -166,5 +166,25 @@ describe('the first-run claim', () => {
     expect(answer.status).toBeGreaterThanOrEqual(400);
     expect(await h.service.db.user.findUnique({ where: { email: 'usurper@example.com' } })).toBeNull();
     expect(await h.service.db.user.count({ where: { kind: 'owner' } })).toBe(1);
+  });
+});
+
+describe('the token-bearing endpoints, from a web page on another origin', () => {
+  it('refuse a cross-origin call even with a valid token', async () => {
+    const flow = await authorize(h, config);
+    const tokens = await client.authorizationCodeGrant(config, flow.callback, {
+      pkceCodeVerifier: flow.verifier,
+      expectedState: flow.state,
+      expectedNonce: flow.nonce,
+    });
+
+    // Same token, no Origin: a server-side app. Works.
+    const server = await h.opFetch(`${ISSUER}/oidc/me`, { headers: { authorization: `Bearer ${tokens.access_token}` } });
+    expect(server.status).toBe(200);
+
+    // Same token, from a page on evil.test: refused, and nothing tells the browser it may read the answer.
+    const page = await h.opFetch(`${ISSUER}/oidc/me`, { headers: { authorization: `Bearer ${tokens.access_token}`, origin: 'https://evil.test' } });
+    expect(page.status).toBeGreaterThanOrEqual(400);
+    expect(page.headers.get('access-control-allow-origin')).toBeNull();
   });
 });

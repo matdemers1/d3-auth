@@ -102,14 +102,17 @@ jobs:
       - ruleId: 10098
         ruleName: Cross-Domain Misconfiguration
         newRisk: False Positive
-        url: ${ZAP_TARGET}/(\.well-known/openid-configuration|oidc/jwks)
+        url: .*/(\.well-known/openid-configuration|oidc/jwks|oidc/me)
         urlRegex: true
-        # Discovery and the key set are public by definition and fetched by browser-based apps
-        # from other origins; `Access-Control-Allow-Origin: *` is what makes that possible.
+        # Discovery and the key set are public by definition and fetched from other origins.
+        # userinfo: the library reflects Origin before it knows the client, so an unauthenticated
+        # probe always sees it; with a real token every cross-origin call is refused
+        # (clientBasedCORS in provider.ts), no credentials header is ever sent, and the endpoint
+        # needs a Bearer token a browser never attaches on its own.
       - ruleId: 10055
         ruleName: "CSP: Failure to Define Directive with No Fallback"
         newRisk: Info
-        url: ${ZAP_TARGET}/oidc/.*
+        url: .*/oidc/.*
         urlRegex: true
         # form-action is omitted on /oidc on purpose: browsers apply it to the redirect after the
         # sign-out confirmation, which goes to the app's exactly-matched post-logout URL (see

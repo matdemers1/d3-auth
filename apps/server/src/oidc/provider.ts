@@ -164,6 +164,12 @@ export function createProvider(options: ProviderOptions): Provider {
     // PKCE S256 on every client, confidential ones included (REQ-003). v9 has no `plain`.
     pkce: { required: (_ctx, client) => !pkceExempt.has(client.clientId) },
     allowOmittingSingleRegisteredRedirectUri: false,
+    // No browser calls the token, userinfo, introspection or revocation endpoints from another
+    // origin: D3 apps keep tokens on their servers (consumer contract, ASVS 10.1.1), and native apps
+    // send no Origin at all. The library's default would allow a public client's redirect origin;
+    // there is no such client, so every cross-origin call with a client is refused. Discovery and the
+    // key set stay open to any origin — they are public by definition (T-5.4).
+    clientBasedCORS: () => false,
     clockTolerance: 60,
 
     ttl: {

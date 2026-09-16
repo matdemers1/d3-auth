@@ -33,4 +33,12 @@ docker run --rm \
   -e ZAP_TARGET -e ZAP_COOKIE \
   -v "$HERE:/zap/wrk:rw" \
   "$ZAP_IMAGE" \
-  zap.sh -Xmx2g -cmd -autorun /zap/wrk/automation.yaml
+  zap.sh -Xmx2g -cmd -autorun /zap/wrk/automation.yaml || status=$?
+
+# ZAP exits 1 for a High (or a broken plan) and 2 when the worst finding is a Medium. The gate is
+# "no High" (REQ-131), so 2 is reported and passes; the report is where Mediums are triaged.
+case "${status:-0}" in
+  0) echo "==> No findings above Informational" ;;
+  2) echo "==> Medium or lower findings only — read security/zap/report/zap-report.html" ;;
+  *) echo "==> ZAP failed the gate (exit ${status})" >&2; exit "${status}" ;;
+esac
