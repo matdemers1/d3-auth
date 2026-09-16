@@ -10,13 +10,15 @@
           "clientId": "conformance-1",
           "roles": [
             "member"
-          ]
+          ],
+          "seen": true
         },
         {
           "clientId": "conformance-2",
           "roles": [
             "member"
-          ]
+          ],
+          "seen": true
         }
       ]
     }

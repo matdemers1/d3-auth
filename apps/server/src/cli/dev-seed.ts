@@ -33,7 +33,16 @@ export const devSeedSchema = z.object({
         /** Development fixtures need an owner to open the admin screens with. */
         kind: z.enum(['owner', 'admin', 'guest']).default('guest'),
         /** Access is deny-by-default (REQ-051), so a fixture user needs grants to sign in at all. */
-        grants: z.array(z.object({ clientId: z.string().min(1), roles: z.array(z.string()).default([]) })).default([]),
+        grants: z
+          .array(
+            z.object({
+              clientId: z.string().min(1),
+              roles: z.array(z.string()).default([]),
+              /** Marks the app as already visited, so the continue-as interstitial is not due. */
+              seen: z.boolean().default(false),
+            }),
+          )
+          .default([]),
       }),
     )
     .default([]),
@@ -105,7 +114,9 @@ export async function applyDevSeed(db: Db, hasher: SecretHasher, input: DevSeed)
         if (!role) throw new Error(`${u.email}: ${wanted.clientId} has no role "${key}"`);
         return role.id;
       });
-      const grant = await db.grant.create({ data: { userId: user.id, appId: app.id } });
+      const grant = await db.grant.create({
+        data: { userId: user.id, appId: app.id, ...(wanted.seen ? { firstSignInAt: new Date() } : {}) },
+      });
       await db.grantRole.createMany({ data: roleIds.map((roleId) => ({ grantId: grant.id, roleId })) });
     }
   }
