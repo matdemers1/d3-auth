@@ -33,8 +33,8 @@ export const alertSettingsSchema = z.object({
 export const lifetimeSettingsSchema = z.object({
   /** How long "don't ask on this browser" lasts (REQ-036). */
   trustedDeviceDays: z.number().int().min(1).max(365).default(30),
-  /** How long an idle SSO session survives. */
-  sessionDays: z.number().int().min(1).max(365).default(30),
+  /** How long an idle SSO session survives. Capped by the absolute limit (session-lifetime.ts). */
+  sessionDays: z.number().int().min(1).max(90).default(30),
 });
 
 export type MailSettings = z.output<typeof mailSettingsSchema>;
@@ -66,11 +66,13 @@ export interface SettingsDeps {
   audit: AuditWriter;
   /** Mail configuration from the container, used when no setting overrides it. */
   environment: { mailDriver?: string | undefined; from?: string | undefined; relayUrl?: string | undefined; relaySecret?: string | undefined; smtpUrl?: string | undefined };
+  /** Told when lifetimes change, so a value read synchronously elsewhere is current at once. */
+  onLifetimesChanged?: () => Promise<void>;
 }
 
 const sealContext = (key: string): string => `setting:${key}`;
 
-export function createSettings({ db, kek, audit, environment }: SettingsDeps): Settings {
+export function createSettings({ db, kek, audit, environment, onLifetimesChanged }: SettingsDeps): Settings {
   const read = async <T>(key: string, schema: z.ZodType<T>): Promise<{ value: T; secret?: string } | null> => {
     const row = await db.setting.findUnique({ where: { key } });
     if (!row) return null;
@@ -147,6 +149,9 @@ export function createSettings({ db, kek, audit, environment }: SettingsDeps): S
 
     setMail: ({ settings, secret, actorUserId, ip }) => write(MAIL_KEY, settings, secret, actorUserId, ip),
     setAlerts: ({ settings, actorUserId, ip }) => write(ALERTS_KEY, settings, undefined, actorUserId, ip),
-    setLifetimes: ({ settings, actorUserId, ip }) => write(LIFETIMES_KEY, settings, undefined, actorUserId, ip),
+    setLifetimes: async ({ settings, actorUserId, ip }) => {
+      await write(LIFETIMES_KEY, settings, undefined, actorUserId, ip);
+      await onLifetimesChanged?.();
+    },
   };
 }

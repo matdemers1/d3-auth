@@ -21,12 +21,14 @@ import { describeClients } from './oidc/clients.js';
 import { loadSigningKeys } from './oidc/keys.js';
 import { keysRouter } from './oidc/keys-routes.js';
 import { createProvider, deviceCookieNameFor } from './oidc/provider.js';
+import { DEFAULT_IDLE_DAYS } from './oidc/session-lifetime.js';
 import { createSecretHasher } from './security/hash.js';
 import { createKekCrypto } from './security/kek.js';
 import type { MailAdapter } from './mail/adapter.js';
 import { mailFromSettings } from './mail/from-settings.js';
 import { createSettings, type Settings } from './admin/settings.js';
 import { createPasswordVerifier, type PasswordVerifier } from './security/password.js';
+import { registerInstanceWords } from './security/policy.js';
 import { createThrottle } from './security/throttle.js';
 import { createTotp, type Totp } from './security/totp.js';
 import { createBackchannel, installSignOutDelivery, type Backchannel } from './oidc/backchannel.js';
@@ -108,7 +110,15 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   if (config.SEED_FILE) await seedOnBoot(db, config.SEED_FILE, { logger, audit });
 
   const keys = await loadSigningKeys(db, kek);
+  // The idle session lifetime comes from Settings, which the provider reads synchronously; this keeps
+  // a current copy (refreshed below, once settings exist) rather than making every save a query.
+  let sessionIdleDays = DEFAULT_IDLE_DAYS;
+  // Hoisted as a function so Settings, created further down, can call it when lifetimes change.
+  async function refreshLifetimes(): Promise<void> {
+    sessionIdleDays = (await settings.lifetimes()).sessionDays;
+  }
   const provider = createProvider({
+    sessionIdleDays: () => sessionIdleDays,
     issuer: config.ISSUER,
     db,
     keys,
@@ -148,6 +158,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     db,
     kek,
     audit,
+    onLifetimesChanged: () => refreshLifetimes(),
     environment: {
       mailDriver: config.MAIL_DRIVER,
       from: config.MAIL_FROM,
@@ -156,10 +167,19 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       smtpUrl: config.SMTP_URL,
     },
   });
+  await refreshLifetimes();
+  const lifetimeTimer = setInterval(() => void refreshLifetimes().catch(() => undefined), 30_000);
+  lifetimeTimer.unref();
   // Resolved per send, so changing it in the console takes effect without a deploy (REQ-071).
   const mail = mailFromSettings(settings, logger);
   const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'), new URL(config.ISSUER).origin);
   const issuerUrl = new URL(config.ISSUER);
+  // A password built on this instance's own names is as guessable as one built on the product's
+  // (ASVS 6.2.11). Short host labels like "auth" are left out: they would refuse "author".
+  registerInstanceWords([
+    operatorDisplayName === 'the operator' ? '' : operatorDisplayName,
+    ...issuerUrl.hostname.split('.').slice(0, -1).filter((label) => label.length >= 6),
+  ]);
   const totp = createTotp(db, kek, operatorDisplayName === 'the operator' ? issuerUrl.host : `${operatorDisplayName} (D3 Auth)`);
   // The RP ID is the bare host and can never change without orphaning every passkey (REQ-034).
   const webauthn = createWebAuthn(db, adapterFactory, {

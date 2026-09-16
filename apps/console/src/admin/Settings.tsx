@@ -29,6 +29,7 @@ export function Settings() {
   const [secret, setSecret] = useState('');
   const [recipients, setRecipients] = useState('');
   const [trustedDeviceDays, setTrustedDeviceDays] = useState(30);
+  const [sessionDays, setSessionDays] = useState(30);
 
   const load = () => {
     api
@@ -40,6 +41,7 @@ export function Settings() {
         setRelayUrl(loaded.mail?.relayUrl ?? '');
         setRecipients(loaded.alerts.recipients.join(', '));
         setTrustedDeviceDays(loaded.lifetimes.trustedDeviceDays);
+        setSessionDays(loaded.lifetimes.sessionDays);
       })
       .catch(() => {
         setFailed(true);
@@ -242,13 +244,28 @@ export function Settings() {
               }}
             />
           </FormField>
+          <FormField
+            label="Sign somebody out after this many idle days"
+            help="However busy a sign-in is, it ends ninety days after the person last proved who they are."
+          >
+            <Input
+              name="sessionDays"
+              type="number"
+              min={1}
+              max={90}
+              value={String(sessionDays)}
+              onChange={(event) => {
+                setSessionDays(Number(event.target.value));
+              }}
+            />
+          </FormField>
           <Button
             variant="secondary"
             loading={busy}
             onClick={() =>
               void save(
                 '/api/admin/settings/lifetimes',
-                { settings: { trustedDeviceDays, sessionDays: view.lifetimes.sessionDays } },
+                { settings: { trustedDeviceDays, sessionDays } },
                 'Lifetimes saved. They apply to new sessions and newly trusted browsers.',
                 'changing how long this system trusts a browser',
               )

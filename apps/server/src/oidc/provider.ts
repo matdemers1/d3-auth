@@ -6,6 +6,7 @@ import { effectiveAccess } from '../authz/effective-roles.js';
 import { createAdapterFactory } from './adapter.js';
 import { createClientAdapter, installHashedClientSecrets } from './clients.js';
 import type { PrivateJwk } from './keys.js';
+import { DEFAULT_IDLE_DAYS, interactionPolicyWithAbsoluteLifetime, sessionTtl } from './session-lifetime.js';
 
 // Provider configuration per ADR-001 and T-0.7. Every value here narrows the library's
 // defaults; none of them bypass its validation (redirect matching, PKCE, alg checks).
@@ -58,6 +59,8 @@ export interface ProviderOptions {
   secureCookies?: boolean;
   /** Conformance-suite clients exempt from PKCE; config refuses this outside *.test issuers. */
   pkceExemptClientIds?: readonly string[];
+  /** Idle session lifetime in days, read when a session is saved (Settings → Lifetimes). */
+  sessionIdleDays?: () => number;
 }
 
 /** Everything goes to the payload table except `Client`, which is served from the App table. */
@@ -168,7 +171,8 @@ export function createProvider(options: ProviderOptions): Provider {
       AuthorizationCode: 60,
       IdToken: 60 * 60,
       Interaction: 60 * 60,
-      Session: REFRESH_TOKEN_ABSOLUTE_TTL,
+      // Idle, capped by the absolute limit (session-lifetime.ts).
+      Session: sessionTtl(options.sessionIdleDays ?? (() => DEFAULT_IDLE_DAYS)),
       Grant: REFRESH_TOKEN_ABSOLUTE_TTL,
       // Absolute lifetime: a rotated token inherits what is left of its predecessor.
       RefreshToken: (ctx) => ctx.oidc.entities.RotatedRefreshToken?.remainingTTL ?? REFRESH_TOKEN_ABSOLUTE_TTL,
@@ -184,7 +188,10 @@ export function createProvider(options: ProviderOptions): Provider {
       short: { httpOnly: true, sameSite: 'lax', path: '/' },
     },
 
-    interactions: { url: (_ctx, interaction) => options.interactionPath(interaction.uid) },
+    interactions: {
+      url: (_ctx, interaction) => options.interactionPath(interaction.uid),
+      policy: interactionPolicyWithAbsoluteLifetime(),
+    },
 
     features: {
       devInteractions: { enabled: false },

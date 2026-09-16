@@ -3,7 +3,10 @@
 import { cpSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-const assets = [['src/security/blocklist.txt', 'dist/security/blocklist.txt']];
+const assets = [
+  ['src/security/blocklist.txt', 'dist/security/blocklist.txt'],
+  ['src/security/breached-passwords.txt.gz', 'dist/security/breached-passwords.txt.gz'],
+];
 
 for (const [from, to] of assets) {
   mkdirSync(dirname(to), { recursive: true });

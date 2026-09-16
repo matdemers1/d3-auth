@@ -5,6 +5,7 @@ import { readCookie } from '../security/cookies.js';
 import { mustHoldFactor } from '../security/factors.js';
 import type { UserModel as User } from '../generated/prisma/models.js';
 import { COOKIE_NAMES, cookieNamesFor } from '../oidc/provider.js';
+import { pastAbsoluteLifetime } from '../oidc/session-lifetime.js';
 
 // Who is asking, for the console and account APIs.
 //
@@ -57,6 +58,8 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
     const payload = (await sessions.find(sessionId)) as { accountId?: string; uid?: string; loginTs?: number } | undefined;
     const accountId = payload?.accountId;
     if (!accountId) return undefined;
+    // The same absolute limit the provider enforces on apps: past it, the console asks for a sign-in too.
+    if (pastAbsoluteLifetime(payload.loginTs)) return undefined;
     const user = await db.user.findUnique({ where: { id: accountId } });
     // A suspended account keeps its session row but loses the console (REQ-041).
     if (!user || user.status !== 'active') return undefined;

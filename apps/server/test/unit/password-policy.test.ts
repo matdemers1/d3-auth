@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SecretHasher } from '../../src/security/hash.js';
 import { createPasswordVerifier } from '../../src/security/password.js';
-import { checkPassword, loadBlocklist, MIN_LENGTH } from '../../src/security/policy.js';
+import { checkPassword, loadBlocklist, loadBreached, MIN_LENGTH, registerInstanceWords } from '../../src/security/policy.js';
 
 describe('password policy (REQ-025)', () => {
   it('accepts a long passphrase', () => {
@@ -29,11 +29,36 @@ describe('password policy (REQ-025)', () => {
     expect(checkPassword('a'.repeat(300)).problems.join()).toMatch(/at most 256/);
   });
 
-  it('ships a blocklist that actually contains long entries', () => {
-    const list = loadBlocklist();
-    expect(list.size).toBeGreaterThan(100);
-    expect([...list].filter((entry) => entry.length >= 12).length).toBeGreaterThan(20);
-    expect(list.has('passwordpassword')).toBe(true);
+  it('checks against a breached corpus far beyond the 3000 ASVS asks for, most of it policy-length (6.2.4, 6.2.12)', () => {
+    const corpus = loadBreached();
+    expect(corpus.size).toBeGreaterThan(250_000);
+    expect([...corpus].filter((entry) => entry.length >= MIN_LENGTH).length).toBeGreaterThan(150_000);
+    expect(corpus.has('passwordpassword')).toBe(true);
+  });
+
+  it('refuses long passwords that are common in real breaches', () => {
+    for (const password of ['saltandpepper', 'sergeysergey', 'iloveyouiloveyou', 'Qwertyuiop123!']) {
+      expect(checkPassword(password).problems.join(), password).toMatch(/attackers try first/);
+    }
+  });
+
+  it('documents its context-specific words and refuses passwords built on them (6.1.2, 6.2.11)', () => {
+    const words = loadBlocklist();
+    expect(words.has('d3auth')).toBe(true);
+    for (const password of ['D3Auth-password-2026', 'my d3 cloud secret key', 'bindery for the win']) {
+      expect(checkPassword(password).problems.join(), password).toMatch(/name of this service/);
+    }
+    // Containment is on words that are distinctive enough not to catch ordinary passphrases.
+    expect(checkPassword('designing orchard gardens').ok).toBe(true);
+  });
+
+  it("refuses the instance's own names once they are registered", () => {
+    registerInstanceWords(['Matthew', 'd3cloud']);
+    try {
+      expect(checkPassword('matthew likes long walks').ok).toBe(false);
+    } finally {
+      registerInstanceWords([]);
+    }
   });
 
   it('says what is wrong without suggesting composition rules', () => {
