@@ -677,7 +677,14 @@ export function interactionRouter(deps: InteractionDeps): Router {
         return;
       }
 
-      const accountId = details.session?.accountId ?? '';
+      // "Continue as" only means something to somebody who is already signed in, on an
+      // interaction that is asking for consent rather than a login. Anything else is a step out of
+      // order — including a stranger posting here in the hope of skipping the password.
+      const accountId = details.session?.accountId;
+      if (!accountId || details.prompt.name !== 'consent') {
+        reply(req, res, details.uid, 409, { error: 'wrong_step' });
+        return;
+      }
       const clientId = String(details.params.client_id);
       const denied = await denyWithoutGrant(req, res, details.uid, accountId, clientId);
       if (denied) {
