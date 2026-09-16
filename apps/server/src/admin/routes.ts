@@ -3,12 +3,14 @@ import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
 import { consoleUserOf, type ConsoleAuth } from '../console/auth.js';
 import type { Db } from '../db.js';
+import type { ReadinessProbe } from '../health.js';
 import { mustHoldFactor, verifiedFactorCount } from '../security/factors.js';
 import type { SessionControl } from '../security/sessions.js';
 import type { TrustedDevices } from '../security/trusted-device.js';
 import { GrantError, type Grants } from '../authz/grants.js';
 import { AppError, type Apps } from './apps.js';
 import { knownEvents, searchAudit, toCsv, type AuditFilter } from './audit-query.js';
+import { overview } from './overview.js';
 import { alertSettingsSchema, lifetimeSettingsSchema, mailSettingsSchema, type Settings } from './settings.js';
 import { exportState, importState, stateSchema } from './state.js';
 import { GroupError, type Groups } from './groups.js';
@@ -35,9 +37,25 @@ export interface AdminDeps {
   sessions: SessionControl;
   trustedDevices: TrustedDevices;
   audit: AuditWriter;
+  /** The same probe /readyz answers with, so the home tiles cannot disagree with it. */
+  readiness: ReadinessProbe;
 }
 
-export function adminRouter({ db, apps, grants, groups, settings, mail, operatorDisplayName, auth, invites, sessions, trustedDevices, audit }: AdminDeps): Router {
+export function adminRouter({
+  db,
+  apps,
+  grants,
+  groups,
+  settings,
+  mail,
+  operatorDisplayName,
+  auth,
+  invites,
+  sessions,
+  trustedDevices,
+  audit,
+  readiness,
+}: AdminDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '8kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -728,6 +746,17 @@ export function adminRouter({ db, apps, grants, groups, settings, mail, operator
       cursor: query.cursor,
     };
   };
+
+  // The console's front page (REQ-073). Admins see it; it is the first thing after signing in.
+  router.get(`${ADMIN_API}/overview`, auth.requireAdmin, (_req, res, next) => {
+    void (async () => {
+      try {
+        res.set('Cache-Control', 'no-store').json(await overview(db, readiness));
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
 
   router.get(`${ADMIN_API}/audit`, auth.requireAdmin, (req, res, next) => {
     void (async () => {

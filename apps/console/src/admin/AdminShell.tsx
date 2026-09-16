@@ -3,6 +3,7 @@ import { Apps } from './Apps';
 import { Audit } from './Audit';
 import { GroupDetail } from './GroupDetail';
 import { Groups } from './Groups';
+import { Home } from './Home';
 import { Keys } from './Keys';
 import { People } from './People';
 import { PersonDetail } from './PersonDetail';
@@ -10,12 +11,13 @@ import { RegisterApp } from './RegisterApp';
 import { Settings } from './Settings';
 import { Transfer } from './Transfer';
 
-// The operator console. Audit, keys and settings arrive with the rest of Phase 4.
+// The operator console: home, people, groups, apps, keys, audit, settings, export/import.
 //
 // Plain links again, not a router: each screen is its own page, so the back button does what a
 // back button should and nothing has to remember where it came from.
 
 const SECTIONS = [
+  { path: '', label: 'Home' },
   { path: 'people', label: 'People' },
   { path: 'groups', label: 'Groups' },
   { path: 'apps', label: 'Apps' },
@@ -44,11 +46,11 @@ function Nav({ current }: { current: string }) {
 
 export default function AdminShell() {
   const segments = window.location.pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean);
-  const [section = 'people', id] = segments;
+  const [section = '', id] = segments;
 
   return (
     <>
-      <Nav current={['apps', 'groups', 'keys', 'audit', 'settings', 'transfer'].includes(section) ? section : 'people'} />
+      <Nav current={['people', 'apps', 'groups', 'keys', 'audit', 'settings', 'transfer'].includes(section) ? section : ''} />
       {section === 'apps' ? (
         id === 'new' ? (
           <RegisterApp />
@@ -71,10 +73,14 @@ export default function AdminShell() {
         ) : (
           <Groups />
         )
-      ) : id ? (
-        <PersonDetail id={id} />
+      ) : section === 'people' ? (
+        id ? (
+          <PersonDetail id={id} />
+        ) : (
+          <People />
+        )
       ) : (
-        <People />
+        <Home />
       )}
     </>
   );

@@ -198,3 +198,10 @@
   border-radius: var(--radius-md);
   background: #fff; /* d3-allow: a QR code must be black on white to scan reliably */
 }
+
+/* Console home: health tiles side by side where there is room, stacked on a phone. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-16);
+}
