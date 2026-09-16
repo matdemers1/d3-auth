@@ -97,12 +97,27 @@ export function renderRecoveryPage(
         Recovery links work once, and only for a few minutes. Ask ${escape(operatorDisplayName)} for another from the host.
       </p>`;
 
-  const shell = readFileSync(join(consoleDist, 'index.html'), 'utf8');
-  return shell.replace('<div id="root"></div>', `<div id="root"><main class="shell shell--narrow">${body}</main></div>`);
+  return intoShell(consoleDist, `<main class="shell shell--narrow">${body}</main>`);
+}
+
+/**
+ * Wraps server-rendered markup in the console's built shell, which carries the stylesheet.
+ *
+ * When there is no console build the markup is served on its own rather than failing. It matters
+ * most for the page this was written for: break-glass is the path somebody reaches *because*
+ * things are already wrong, and "the assets are missing" must not be one more thing in the way.
+ * Unstyled and readable beats a 500.
+ */
+function intoShell(consoleDist: string, markup: string): string {
+  try {
+    const shell = readFileSync(join(consoleDist, 'index.html'), 'utf8');
+    return shell.replace('<div id="root"></div>', `<div id="root">${markup}</div>`);
+  } catch {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>D3 Auth</title></head><body><div id="root">${markup}</div></body></html>`;
+  }
 }
 
 /** Injects the form into the console's built index.html, which carries the CSS and the app. */
 export function renderLoginPage(consoleDist: string, view: FallbackView): string {
-  const shell = readFileSync(join(consoleDist, 'index.html'), 'utf8');
-  return shell.replace('<div id="root"></div>', `<div id="root">${fallbackForm(view)}</div>`);
+  return intoShell(consoleDist, fallbackForm(view));
 }
