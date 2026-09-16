@@ -1,6 +1,7 @@
 import { Alert, Badge, Button, Card, PageHeader, Skeleton } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
+import { StepUp } from './StepUp';
 
 // C-9: the signing keys (REQ-070, REQ-118).
 //
@@ -34,6 +35,8 @@ export function Keys() {
   const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | undefined>();
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** What to do once they have proved it is them, so the click is not lost. */
+  const [pending, setPending] = useState<{ describe: string; retry: () => void } | undefined>();
 
   const load = () => {
     api
@@ -49,14 +52,20 @@ export function Keys() {
 
   useEffect(load, []);
 
-  async function act(path: string, body: unknown, said: string) {
+  async function act(path: string, body: unknown, said: string, describe = 'changing the signing keys') {
     setBusy(true);
     setMessage(undefined);
     try {
       await api.post(path, body);
+      setPending(undefined);
       setMessage({ tone: 'success', text: said });
       load();
     } catch (err) {
+      if (err instanceof ApiError && err.body.error === 'step_up_required') {
+        // Hold the click rather than losing it: they came here to do this.
+        setPending({ describe, retry: () => void act(path, body, said, describe) });
+        return;
+      }
       setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That did not work.' });
     } finally {
       setBusy(false);
@@ -84,6 +93,18 @@ export function Keys() {
         <Alert tone={message.tone} dynamic title={message.tone === 'danger' ? 'That did not work' : 'Done'}>
           {message.text}
         </Alert>
+      ) : null}
+
+      {pending ? (
+        <StepUp
+          action={pending.describe}
+          onProved={() => {
+            pending.retry();
+          }}
+          onCancel={() => {
+            setPending(undefined);
+          }}
+        />
       ) : null}
 
       {restartRequired ? (

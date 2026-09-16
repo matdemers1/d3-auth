@@ -19,13 +19,15 @@ export interface KeysDeps {
   db: Db;
   kek: KekCrypto;
   requireOwner: import('express').RequestHandler;
+  /** Owner *and* freshly proved: changing what signs is the most consequential button here. */
+  requireFreshOwner: import('express').RequestHandler;
   /** The kids this process is actually signing with, from boot. */
   loadedKids: string[];
 }
 
 const isAlg = (value: unknown): value is SigningAlg => typeof value === 'string' && (SIGNING_ALGS as readonly string[]).includes(value);
 
-export function keysRouter({ db, kek, requireOwner, loadedKids }: KeysDeps): Router {
+export function keysRouter({ db, kek, requireOwner, requireFreshOwner, loadedKids }: KeysDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '4kb' });
   const body: RequestHandler = (req, res, next) => {
@@ -80,7 +82,7 @@ export function keysRouter({ db, kek, requireOwner, loadedKids }: KeysDeps): Rou
     })();
   });
 
-  router.post('/api/admin/keys/generate', requireOwner, body, (req, res, next) => {
+  router.post('/api/admin/keys/generate', requireFreshOwner, body, (req, res, next) => {
     void (async () => {
       try {
         const alg = (req.body as { alg?: unknown } | undefined)?.alg;
@@ -91,7 +93,7 @@ export function keysRouter({ db, kek, requireOwner, loadedKids }: KeysDeps): Rou
     })();
   });
 
-  router.post('/api/admin/keys/promote', requireOwner, body, (req, res, next) => {
+  router.post('/api/admin/keys/promote', requireFreshOwner, body, (req, res, next) => {
     void (async () => {
       try {
         const input = (req.body ?? {}) as { alg?: unknown; force?: unknown };
@@ -103,7 +105,7 @@ export function keysRouter({ db, kek, requireOwner, loadedKids }: KeysDeps): Rou
     })();
   });
 
-  router.post('/api/admin/keys/retire', requireOwner, body, (req, res, next) => {
+  router.post('/api/admin/keys/retire', requireFreshOwner, body, (req, res, next) => {
     void (async () => {
       try {
         const input = (req.body ?? {}) as { kid?: unknown; force?: unknown };

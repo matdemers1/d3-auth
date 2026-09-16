@@ -3,7 +3,7 @@ import express, { Router, type RequestHandler } from 'express';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { AUDIT_EVENTS } from '../audit/events.js';
 import { clientIp, type AuditWriter } from '../audit/writer.js';
-import { consoleUserOf, isAdmin, type ConsoleAuth } from '../console/auth.js';
+import { consoleUserOf, isAdmin, STEP_UP_WINDOW_MS, type ConsoleAuth } from '../console/auth.js';
 import type { Grants } from '../authz/grants.js';
 import type { Db } from '../db.js';
 import { readCookie } from '../security/cookies.js';
@@ -450,6 +450,64 @@ export function accountRouter({
           detail: { otherSessionsRevoked: revoked },
         });
         res.json({ ok: true, otherSessionsRevoked: revoked });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  /**
+   * Re-proving it is you, for owner-only actions (REQ-037).
+   *
+   * The password alone is not enough for somebody who holds a factor: a borrowed session plus a
+   * known password is exactly the situation this guard exists for. Same rule as changing a
+   * password, for the same reason.
+   */
+  router.post(`${ACCOUNT_API}/step-up`, auth.requireUser, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user, sessionId, sessionUid } = consoleUserOf(res);
+        const input = req.body as { password?: unknown; code?: unknown; passkey?: unknown };
+        const ip = clientIp(req);
+        const keys = { account: user.email, ip };
+
+        const decision = await throttle.check(keys);
+        if (!decision.allowed) {
+          res.set('Retry-After', String(decision.retryAfterSeconds)).status(429).json({
+            error: 'throttled',
+            retryAfterSeconds: decision.retryAfterSeconds,
+          });
+          return;
+        }
+
+        const credential = await db.passwordCredential.findFirst({ where: { userId: user.id }, orderBy: { setAt: 'desc' } });
+        const password = typeof input.password === 'string' ? input.password : '';
+        if (!(await passwords.verify(credential?.argon2idHash, password))) {
+          await throttle.recordFailure(keys);
+          res.status(401).json({ error: 'wrong_password', message: 'That is not your password.' });
+          return;
+        }
+        await throttle.clear(keys);
+
+        if ((await verifiedFactorCount(db, user.id)) > 0 && !(await steppedUp({ userId: user.id, sessionId, ...input }))) {
+          res.status(401).json({
+            error: 'factor_required',
+            message: 'Confirm it is you with your passkey or a code from your authenticator app.',
+          });
+          return;
+        }
+
+        const now = new Date();
+        if (sessionUid) await db.session.updateMany({ where: { oidcSessionUid: sessionUid }, data: { steppedUpAt: now } });
+        await audit.write({
+          event: AUDIT_EVENTS.stepUp,
+          actorUserId: user.id,
+          targetType: 'user',
+          targetId: user.id,
+          ip,
+          userAgent: req.get('user-agent'),
+        });
+        res.json({ ok: true, until: new Date(now.getTime() + STEP_UP_WINDOW_MS).toISOString() });
       } catch (err) {
         next(err);
       }

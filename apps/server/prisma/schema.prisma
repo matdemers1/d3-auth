@@ -133,6 +133,8 @@ model Session {
   userAgent      String?   @map("user_agent")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
   lastSeenAt     DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz
+  /// When this session last re-proved who it is, for owner-only actions (REQ-037).
+  steppedUpAt    DateTime? @map("stepped_up_at") @db.Timestamptz
   expiresAt      DateTime  @map("expires_at") @db.Timestamptz
   revokedAt      DateTime? @map("revoked_at") @db.Timestamptz
 

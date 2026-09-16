@@ -423,7 +423,7 @@ export function adminRouter({ db, apps, grants, groups, operatorDisplayName, aut
 
   router.post(
     `${ADMIN_API}/apps`,
-    auth.requireOwner,
+    auth.requireFreshOwner,
     body,
     withManifest(async (manifest, req, res) => {
       const { user } = consoleUserOf(res);
@@ -440,7 +440,7 @@ export function adminRouter({ db, apps, grants, groups, operatorDisplayName, aut
 
   router.post<{ clientId: string }>(
     `${ADMIN_API}/apps/:clientId/manifest`,
-    auth.requireOwner,
+    auth.requireFreshOwner,
     body,
     withManifest(async (manifest, req, res) => {
       const { user } = consoleUserOf(res);
@@ -484,13 +484,13 @@ export function adminRouter({ db, apps, grants, groups, operatorDisplayName, aut
 
   router.post<{ clientId: string }>(
     `${ADMIN_API}/apps/:clientId/secret`,
-    auth.requireOwner,
+    auth.requireFreshOwner,
     appAction((clientId, req, _res, actorUserId) => apps.rotateSecret({ clientId, actorUserId, ip: clientIp(req) })),
   );
 
   router.post<{ clientId: string }>(
     `${ADMIN_API}/apps/:clientId/enabled`,
-    auth.requireOwner,
+    auth.requireFreshOwner,
     body,
     appAction((clientId, req, _res, actorUserId) =>
       apps.setEnabled({ clientId, enabled: (req.body as { enabled?: unknown }).enabled !== false, actorUserId, ip: clientIp(req) }),
@@ -499,7 +499,7 @@ export function adminRouter({ db, apps, grants, groups, operatorDisplayName, aut
 
   router.post<{ clientId: string }>(
     `${ADMIN_API}/apps/:clientId/remove`,
-    auth.requireOwner,
+    auth.requireFreshOwner,
     appAction((clientId, req, _res, actorUserId) => apps.remove({ clientId, actorUserId, ip: clientIp(req) })),
   );
 

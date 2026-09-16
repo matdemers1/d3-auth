@@ -46,6 +46,7 @@ export const AUDIT_EVENTS = {
   deviceRevoked: 'device.revoked',
   profileUpdated: 'person.profile_updated',
   passwordChanged: 'password.changed',
+  stepUp: 'auth.step_up',
   factorAdded: 'factor.added',
   factorRemoved: 'factor.removed',
   devSeedUser: 'dev.seed.user',
