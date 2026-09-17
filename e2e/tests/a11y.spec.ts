@@ -58,13 +58,13 @@ test.describe('the screens people meet', () => {
   test('the account screens have no violations', async ({ page }) => {
     await signIn(page);
     for (const [path, heading] of [
-      ['/account/profile', 'Your profile'],
-      ['/account/password', 'Your password'],
-      ['/account/security', 'How you sign in'],
-      ['/account/sessions', 'Sessions and devices'],
+      ['/account/profile', 'Profile'],
+      ['/account/password', 'Password'],
+      ['/account/security', 'Security'],
+      ['/account/sessions', 'Sessions'],
     ] as const) {
       await page.goto(`${AUTH}${path}`);
-      await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1, name: heading, exact: true })).toBeVisible();
       await expectNoViolations(page, path);
     }
   });
@@ -72,14 +72,15 @@ test.describe('the screens people meet', () => {
   test('the People screen has no violations', async ({ page }) => {
     await signIn(page);
     await page.goto(`${AUTH}/admin/people`);
-    await expect(page.getByRole('heading', { name: 'People', exact: true })).toBeVisible();
+    // The count is part of the heading's name ("People, 5 items").
+    await expect(page.getByRole('heading', { level: 1, name: /^People/ })).toBeVisible();
     await expectNoViolations(page, '/admin/people');
   });
 
   test('the account area can be reached and used with the keyboard alone', async ({ page }) => {
     await signIn(page);
     await page.goto(`${AUTH}/account/profile`);
-    await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Profile', exact: true })).toBeVisible();
 
     // Tab until the display name field has focus, then type into it: no mouse anywhere.
     // Tab until the focused control is the display name field.

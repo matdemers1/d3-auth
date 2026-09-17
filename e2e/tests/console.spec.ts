@@ -47,8 +47,9 @@ test.describe('the console', () => {
   test('a group hands out access, and never appears in a token', async ({ page }) => {
     const name = `E2E Group ${Date.now()}`;
     await page.goto(`${AUTH}/admin/groups`);
-    await page.getByLabel('New group').fill(name);
-    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByRole('button', { name: 'Create a group' }).click();
+    await page.getByLabel('Group name').fill(name);
+    await page.getByRole('button', { name: 'Create group' }).click();
     await expect(page.getByRole('link', { name })).toBeVisible();
 
     await page.getByRole('link', { name }).click();
@@ -63,7 +64,9 @@ test.describe('the console', () => {
     // Put it back.
     await page.goto(`${AUTH}/admin/groups`);
     await page.getByRole('link', { name }).click();
-    await page.getByRole('button', { name: 'Delete this group' }).click();
+    // Deleting cannot be undone, so it asks in a dialog that names the group.
+    await page.getByRole('button', { name: `Delete ${name}` }).click();
+    await page.getByRole('dialog').getByRole('button', { name: `Delete ${name}` }).click();
     // Deleting leaves nothing to look at, so it goes back to the list — where the group is gone.
     await expect(page).toHaveURL(/\/admin\/groups$/);
     await expect(page.getByRole('link', { name })).toBeHidden();

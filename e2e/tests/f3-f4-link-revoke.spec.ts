@@ -77,7 +77,7 @@ test.describe('F4 revoking access', () => {
     // The owner revokes their own access to this app from the console.
     await page.goto(`${AUTH}/admin/apps/dev-web`);
     await expect(page.getByRole('heading', { name: 'Local development client' })).toBeVisible();
-    const row = page.locator('.row', { hasText: OWNER.email });
+    const row = page.getByRole('list', { name: 'Who can sign in' }).getByRole('listitem').filter({ hasText: OWNER.email });
     await row.getByRole('button', { name: 'Revoke' }).click();
     await expect(page.getByText('Access revoked')).toBeVisible();
 
@@ -94,7 +94,7 @@ test.describe('F4 revoking access', () => {
 
     // Put the fixture back, so the suite can be run twice.
     await page.goto(`${AUTH}/admin/people`);
-    const person = page.locator('.row', { hasText: OWNER.email });
+    const person = page.getByRole('list', { name: 'People' }).getByRole('listitem').filter({ hasText: OWNER.email });
     await person.getByRole('link', { name: 'Dev Person' }).click();
     await page.getByRole('button', { name: 'Administrator' }).click();
     await expect(page.getByText('Administrator given.')).toBeVisible();

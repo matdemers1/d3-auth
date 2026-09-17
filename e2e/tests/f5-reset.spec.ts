@@ -42,15 +42,17 @@ test.describe('F5 lost phone', () => {
 
     await signIn(page, OWNER);
 
-    // The owner finds them in People and resets the account. It asks twice.
+    // The owner finds them in People and resets the account. It cannot be undone, so it asks first,
+    // in a dialog rather than a second button under the pointer.
     await page.goto(`${AUTH}/admin/people`);
-    const row = page.locator('.row', { hasText: GUEST.email });
-    await row.getByRole('button', { name: 'Reset' }).click();
-    await row.getByRole('button', { name: 'Yes, reset their account' }).click();
+    const row = page.getByRole('list', { name: 'People' }).getByRole('listitem').filter({ hasText: GUEST.email });
+    await row.getByRole('button', { name: /^More actions for / }).click();
+    await page.getByRole('menuitem', { name: 'Reset their account…' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Reset account' }).click();
 
     // Mail is the log driver in development, so the console shows the link to send by hand —
     // which is the fallback that has to work when mail is down (REQ-108).
-    const link = page.locator('.copy-link');
+    const link = page.locator('code', { hasText: '/login/invite/' });
     await expect(link).toBeVisible();
     const url = (await link.textContent())?.trim() ?? '';
     expect(url).toContain('/login/invite/');

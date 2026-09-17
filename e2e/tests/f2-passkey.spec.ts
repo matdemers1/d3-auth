@@ -53,7 +53,7 @@ test.describe('F2 passkeys', () => {
 
     // Enrol from the account area.
     await page.goto(`${AUTH}/account/security`);
-    await expect(page.getByRole('heading', { name: 'How you sign in' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Security', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Add a passkey' }).click();
     // The ceremony is asynchronous; this is the server's answer, not the heading above the list.
     await expect(page.getByText('Passkey added')).toBeVisible();
@@ -109,6 +109,7 @@ test.describe('F2 passkeys', () => {
     // passkey left behind would lock the next run out of the password-only path.
     await page.goto(`${AUTH}/account/security`);
     await page.getByRole('button', { name: 'Remove' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Remove passkey' }).click();
     await expect(page.getByText('Your account is protected by a password only')).toBeVisible();
   });
 });

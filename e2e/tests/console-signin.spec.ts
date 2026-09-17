@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openAccountMenu } from './account-menu';
 
 // Going straight to the console (ADR-005). An operator types the address in, signs in, lands on
 // the page they asked for, and signing out puts the sign-in form back in front of them — no app in
@@ -17,9 +18,11 @@ test('the console asks for a sign-in, returns to the page, and asks again after 
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page).toHaveURL(`${AUTH}/admin/people`);
-  await expect(page.getByRole('heading', { name: 'People', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^People/ })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Sign out' }).click();
+  // Sign-out is the last item in the account menu, on every console page.
+  await openAccountMenu(page);
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await page.getByRole('button', { name: 'Yes, sign me out' }).click();
   await expect(page.getByRole('heading', { name: /Sign in to/ })).toBeVisible();
 
