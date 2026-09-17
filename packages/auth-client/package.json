@@ -3,7 +3,7 @@
   "private": false,
   "version": "0.0.0",
   "description": "D3 Auth relying-party SDK for TypeScript, with a React sign-in button",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "lint": "eslint .",

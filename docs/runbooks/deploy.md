@@ -1,6 +1,6 @@
 # Deploying D3 Auth to the ZimaOS host
 
-**Host:** ZimaOS at `192.168.1.231` (the same box as Bindery)
+**Host:** ZimaOS at `<zima-lan-ip>` (the same box as Bindery)
 **Hostname:** `auth.d3cloud.io`, reached only through the Cloudflare Tunnel — no ports are published on the Zima (REQ-125)
 **Deploy:** deliberate `docker compose pull && docker compose up -d`. Nothing auto-updates the service every other app signs in through (REQ-136).
 
@@ -48,7 +48,7 @@ D3AUTH_TAG=sha-<the commit you are deploying>
 ## 2. Files on the host
 
 ```bash
-ssh root@192.168.1.231
+ssh root@<zima-lan-ip>
 mkdir -p /DATA/d3auth && cd /DATA/d3auth
 # copy docker-compose.yml and docker-compose.tunnel.yml from the repo
 ```
@@ -282,7 +282,7 @@ recovery. That is the alert that still arrives when the Zima itself is off.
 
 ```ini
 MAIL_DRIVER=worker
-MAIL_RELAY_URL=https://d3auth-mail-relay.matthew-67a.workers.dev/send
+MAIL_RELAY_URL=https://d3auth-mail-relay.<your-subdomain>.workers.dev/send
 MAIL_FROM=no-reply@no-reply.d3cloud.io
 MAIL_RELAY_SECRET=<the same value as the Worker's RELAY_SECRET>
 ```

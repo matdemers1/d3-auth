@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "Self-hosted OpenID Connect provider with per-app roles — D3 Cloud",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=22.13.0",

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "OIDC provider, interaction routes, console/account API and CLI",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "module",
   "files": [
     "dist",

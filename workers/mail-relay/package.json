@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "Cloudflare Worker: POST /send via send_email",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "lint": "eslint .",

@@ -1,6 +1,7 @@
 [project]
 name = "d3auth-client"
 version = "0.0.0"
+license = "Apache-2.0"
 description = "D3 Auth relying-party helper for FastAPI/Starlette, over Authlib"
 requires-python = ">=3.11"
 dependencies = [

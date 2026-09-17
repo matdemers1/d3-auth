@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "Console SPA: /login, /account, /admin",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
