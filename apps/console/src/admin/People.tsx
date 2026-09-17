@@ -51,7 +51,7 @@ function Header({ count, onInvite }: { count?: number; onInvite?: () => void }) 
   return (
     <PageHeader
       title="People"
-      {...(count === undefined ? {} : { count })}
+      {...(count === undefined ? {} : { count, countNoun: { one: 'person', other: 'people' } })}
       description="Everyone who can sign in, and the invites you have sent."
       {...(onInvite
         ? {

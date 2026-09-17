@@ -64,7 +64,7 @@ export function Apps() {
   if (apps.length === 0) {
     return (
       <Page>
-        <PageHeader title="Apps" count={0} description={DESCRIPTION} />
+        <PageHeader title="Apps" count={0} countNoun={{ one: 'app', other: 'apps' }} description={DESCRIPTION} />
         <Card>
           <EmptyState kind="empty" headingLevel={2} heading="No apps yet" icon={icon(AppWindow, 24)} action={register()}>
             Register one from its manifest — its name, where it may send people back to, and the roles it understands. Then give people access to it.
@@ -76,7 +76,7 @@ export function Apps() {
 
   return (
     <Page>
-      <PageHeader title="Apps" count={apps.length} description={DESCRIPTION} actions={register()} />
+      <PageHeader title="Apps" count={apps.length} countNoun={{ one: 'app', other: 'apps' }} description={DESCRIPTION} actions={register()} />
       <Card>
         <DataList aria-label="Apps">
           {apps.map((app) => (

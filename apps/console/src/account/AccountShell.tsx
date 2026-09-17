@@ -42,7 +42,7 @@ function YourApps() {
   const apps = state.data;
   return (
     <Page>
-      <PageHeader title="Your apps" count={apps.length} description={DESCRIPTION} />
+      <PageHeader title="Your apps" count={apps.length} countNoun={{ one: 'app', other: 'apps' }} description={DESCRIPTION} />
       <Card>
         <DataList
           aria-label="Your apps"

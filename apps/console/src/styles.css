@@ -3,18 +3,6 @@
    (d3-check-usage). The server-rendered no-JavaScript pages need nothing here: they are written in
    the library's own classes (apps/server/src/interaction/auth-markup.ts). */
 
-/* The document ground. The library styles components, not <body>: without this the page between
-   and around them is the browser's white in both themes. */
-@layer base {
-  body {
-    margin: 0;
-    background: var(--color-bg);
-    color: var(--color-fg);
-    font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
-  }
-}
-
 /* The authenticator QR code. It must be dark modules on a white ground to scan reliably, whatever
    the theme, and the library has no image-on-white treatment. */
 .qr {

@@ -155,7 +155,7 @@ export function Groups() {
   if (groups.length === 0) {
     return (
       <Page>
-        <PageHeader title="Groups" count={0} description={description} />
+        <PageHeader title="Groups" count={0} countNoun={{ one: 'group', other: 'groups' }} description={description} />
         <Card>
           <EmptyState kind="empty" headingLevel={2} heading="No groups yet" icon={icon(UsersRound, 24)} action={create}>
             Access works without them. Make one when the same people need the same access to more than one app.
@@ -168,7 +168,7 @@ export function Groups() {
 
   return (
     <Page>
-      <PageHeader title="Groups" count={groups.length} description={description} actions={create} />
+      <PageHeader title="Groups" count={groups.length} countNoun={{ one: 'group', other: 'groups' }} description={description} actions={create} />
       {created ? (
         <Alert tone="success" dynamic title={`${created} is ready`}>
           Open it to add people and give it access.
