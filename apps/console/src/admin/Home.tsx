@@ -4,12 +4,12 @@ import { api } from '../api';
 
 // C-0: the console's front page (REQ-073).
 //
-// Four tiles, and each one says what to do rather than just what is wrong: "never tested" is more
+// Five tiles, and each one says what to do rather than just what is wrong: "never tested" is more
 // useful than a green tick that means nothing, and "invites are not arriving" is what an operator
 // actually needs to hear when a mail test failed last week.
 
 interface Tile {
-  key: 'database' | 'keys' | 'mail' | 'migrations';
+  key: 'database' | 'keys' | 'mail' | 'migrations' | 'backups';
   ok: boolean;
   detail: string;
 }
@@ -26,6 +26,7 @@ const TILE_LABEL: Record<Tile['key'], string> = {
   keys: 'Signing keys',
   migrations: 'Schema',
   mail: 'Mail',
+  backups: 'Backups',
 };
 
 const when = (iso: string): string => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });

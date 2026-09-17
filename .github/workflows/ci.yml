@@ -107,6 +107,14 @@ jobs:
         run: |
           PGPASSWORD=d3auth psql -h 127.0.0.1 -U d3auth -d d3auth -c 'CREATE DATABASE shadow;'
           pnpm exec prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+      # The backup tests dump and restore for real, and pg_dump refuses a server newer than itself.
+      - name: Postgres 16 client tools
+        run: |
+          if ! pg_dump --version | grep -q ' 16\.'; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+            echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+          fi
+          /usr/lib/postgresql/16/bin/pg_dump --version 2>/dev/null || pg_dump --version
       - run: pnpm --filter d3auth-server test:integration
       - name: Adversarial suite — the security gate (REQ-128)
         run: pnpm --filter d3auth-server test:adversarial

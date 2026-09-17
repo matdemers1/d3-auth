@@ -58,6 +58,7 @@ export const AUDIT_EVENTS = {
   alertSent: 'alert.sent',
   tokenRefreshReused: 'token.refresh_reused',
   mailFailed: 'mail.failed',
+  adminSealed: 'admin.sealed',
   mailTested: 'mail.tested',
   factorAdded: 'factor.added',
   factorRemoved: 'factor.removed',

@@ -163,3 +163,17 @@ describe('with nobody to tell', () => {
     expect(rulesFired(await evaluateAlerts(deps(), later(3)), 'backup_failure')).toBe(true);
   });
 });
+
+describe('the sealed admin', () => {
+  it('alerts the moment the envelope account signs in, and not for anybody else', async () => {
+    const person = await h.service.db.user.create({ data: { email: `sealed-alert-${String(Date.now())}@example.com`, username: `sealedalert${String(Date.now())}`, displayName: 'Sealed admin', kind: 'admin', status: 'active' } });
+    await h.service.db.setting.upsert({ where: { key: 'sealed_admin' }, create: { key: 'sealed_admin', value: { userId: person.id } }, update: { value: { userId: person.id } } });
+
+    await h.service.db.auditEvent.create({ data: { event: 'login.success', at: later(1), detail: {} } });
+    expect(rulesFired(await evaluateAlerts(deps(), later(2)), 'sealed_admin_used')).toBe(false);
+
+    await h.service.db.auditEvent.create({ data: { event: 'login.success', at: later(3), actorUserId: person.id, ip: '203.0.113.9', detail: {} } });
+    expect(rulesFired(await evaluateAlerts(deps(), later(4)), 'sealed_admin_used')).toBe(true);
+    expect(sent.find((message) => message.subject.includes('sealed admin'))?.text).toContain('203.0.113.9');
+  });
+});

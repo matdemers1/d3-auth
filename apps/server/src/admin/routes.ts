@@ -39,6 +39,8 @@ export interface AdminDeps {
   audit: AuditWriter;
   /** The same probe /readyz answers with, so the home tiles cannot disagree with it. */
   readiness: ReadinessProbe;
+  /** Whether nightly offsite backups are set up, so the home page can say when they are not. */
+  backupsConfigured?: boolean;
 }
 
 export function adminRouter({
@@ -55,6 +57,7 @@ export function adminRouter({
   trustedDevices,
   audit,
   readiness,
+  backupsConfigured = false,
 }: AdminDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '8kb' });
@@ -751,7 +754,7 @@ export function adminRouter({
   router.get(`${ADMIN_API}/overview`, auth.requireAdmin, (_req, res, next) => {
     void (async () => {
       try {
-        res.set('Cache-Control', 'no-store').json(await overview(db, readiness));
+        res.set('Cache-Control', 'no-store').json(await overview(db, readiness, { backupsConfigured }));
       } catch (err) {
         next(err);
       }

@@ -14,7 +14,7 @@ import { MINIMUM_OVERLAP_MS } from '../oidc/keys.js';
 // difference should be obvious at a glance.
 
 export interface Tile {
-  key: 'database' | 'keys' | 'mail' | 'migrations';
+  key: 'database' | 'keys' | 'mail' | 'migrations' | 'backups';
   ok: boolean;
   /** One line a person can act on. Never a stack trace. */
   detail: string;
@@ -45,7 +45,10 @@ const ago = (date: Date): string => {
   return `${String(Math.round(hours / 24))} days ago`;
 };
 
-export async function overview(db: Db, readiness: ReadinessProbe): Promise<Overview> {
+/** A backup older than this is late: the job runs nightly (ADR-004). */
+const BACKUP_LATE_MS = 36 * 60 * 60 * 1000;
+
+export async function overview(db: Db, readiness: ReadinessProbe, options: { backupsConfigured?: boolean } = {}): Promise<Overview> {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -59,6 +62,11 @@ export async function overview(db: Db, readiness: ReadinessProbe): Promise<Overv
     db.auditEvent.findFirst({ where: { event: 'mail.tested' }, orderBy: { id: 'desc' } }),
     searchAudit(db, { limit: 10 }),
     db.user.count({ where: { kind: 'owner' } }),
+  ]);
+  const [lastBackup, lastBackupFailure, lastDrill] = await Promise.all([
+    db.auditEvent.findFirst({ where: { event: 'backup.created' }, orderBy: { id: 'desc' }, select: { at: true } }),
+    db.auditEvent.findFirst({ where: { event: 'backup.failed' }, orderBy: { id: 'desc' }, select: { at: true } }),
+    db.auditEvent.findFirst({ where: { event: { in: ['backup.drill_passed', 'backup.drill_failed'] } }, orderBy: { id: 'desc' }, select: { at: true, event: true, detail: true } }),
   ]);
 
   const current = keys.filter((key) => key.status === 'current');
@@ -96,6 +104,7 @@ export async function overview(db: Db, readiness: ReadinessProbe): Promise<Overv
           : `Last test failed ${ago(lastMail.at)}. Invites and recovery links are not arriving.`
         : 'Never tested. Send one from Settings before anybody needs an invite.',
     },
+    backupTile(options.backupsConfigured === true, lastBackup?.at, lastBackupFailure?.at, lastDrill ?? undefined),
   ];
 
   // The checklist earns its place only while something on it is undone.
@@ -112,4 +121,32 @@ export async function overview(db: Db, readiness: ReadinessProbe): Promise<Overv
     recent: recent.events,
     checklist: steps.every((step) => step.done) ? null : steps,
   };
+}
+
+/**
+ * Backups are fine only when the last one is recent, nothing has failed since, and the last drill
+ * of one passed. A backup nobody has restored is a hope, so the drill counts as much as the upload.
+ */
+function backupTile(
+  configured: boolean,
+  lastBackup: Date | undefined,
+  lastFailure: Date | undefined,
+  lastDrill: { at: Date; event: string; detail: unknown } | undefined,
+): Tile {
+  if (!configured) {
+    return { key: 'backups', ok: false, detail: 'Not set up. Nothing leaves this host; see docs/runbooks/backup-restore.md.' };
+  }
+  if (lastFailure && (!lastBackup || lastFailure > lastBackup)) {
+    return { key: 'backups', ok: false, detail: `Last backup failed ${ago(lastFailure)}. The alert email has the reason.` };
+  }
+  if (!lastBackup) return { key: 'backups', ok: false, detail: 'None taken yet. The first runs tonight, or take one now with the backup command.' };
+  if (Date.now() - lastBackup.getTime() > BACKUP_LATE_MS) {
+    return { key: 'backups', ok: false, detail: `Last backup ${ago(lastBackup)} — the nightly job has not run.` };
+  }
+  if (lastDrill?.event === 'backup.drill_failed') {
+    const failure = (lastDrill.detail as { failure?: string } | null)?.failure;
+    return { key: 'backups', ok: false, detail: `Backed up ${ago(lastBackup)}, but the restore drill failed ${ago(lastDrill.at)}${failure ? `: ${failure}` : ''}.` };
+  }
+  if (!lastDrill) return { key: 'backups', ok: true, detail: `Backed up ${ago(lastBackup)}. Not yet restored by a drill.` };
+  return { key: 'backups', ok: true, detail: `Backed up ${ago(lastBackup)}; restored and checked ${ago(lastDrill.at)}.` };
 }

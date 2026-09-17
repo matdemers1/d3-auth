@@ -2,6 +2,7 @@ import type { Settings } from '../admin/settings.js';
 import type { Db } from '../db.js';
 import type { Logger } from '../log.js';
 import type { MailAdapter } from '../mail/adapter.js';
+import { SEALED_ADMIN_KEY } from '../admin/sealed-admin.js';
 import { AUDIT_EVENTS } from './events.js';
 
 // Alerts (T-6.3, REQ-114).
@@ -149,6 +150,32 @@ export function alertRules(options: { backupsConfigured: boolean }): AlertRule[]
               const detail = row.detail as { failure?: string; error?: string; key?: string };
               return `${when(row.at)}  ${row.event === AUDIT_EVENTS.drillFailed ? 'drill' : 'backup'}: ${detail.failure ?? detail.error ?? '?'}${detail.key ? `  (${detail.key})` : ''}`;
             }),
+          ],
+        };
+      },
+    },
+    {
+      name: 'sealed_admin_used',
+      subject: 'The sealed admin account was used',
+      quietFor: HOUR,
+      async check(db, since) {
+        const sealed = await db.setting.findUnique({ where: { key: SEALED_ADMIN_KEY } });
+        const userId = (sealed?.value as { userId?: string } | null)?.userId;
+        if (!userId) return undefined;
+        const rows = await db.auditEvent.findMany({
+          where: { event: AUDIT_EVENTS.loginSuccess, actorUserId: userId, at: { gt: since } },
+          orderBy: { id: 'desc' },
+          take: 20,
+          select: { at: true, ip: true },
+        });
+        if (rows.length === 0) return undefined;
+        return {
+          lines: [
+            'Somebody signed in with the credentials from the sealed envelope.',
+            'If that was you, finish what you needed and then rotate them: node dist/cli/seal-admin.js --email <address> --rotate',
+            'If it was not, suspend that account now and rotate the owner\'s credentials.',
+            '',
+            ...rows.map((row) => `${when(row.at)}  from ${row.ip ?? 'unknown address'}`),
           ],
         };
       },

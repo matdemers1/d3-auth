@@ -61,6 +61,29 @@ describe('the tiles', () => {
   });
 });
 
+describe('the backups tile', () => {
+  const tile = async (options: { backupsConfigured?: boolean }) =>
+    (await overview(h.service.db, allGood, options)).tiles.find((entry) => entry.key === 'backups');
+
+  it('says so when nothing is backed up offsite', async () => {
+    expect(await tile({})).toMatchObject({ ok: false, detail: expect.stringContaining('Not set up') as string });
+  });
+
+  it('is only fine when the last backup is recent and the last drill of one passed', async () => {
+    await h.service.db.auditEvent.create({ data: { event: 'backup.created', detail: { key: 'bundles/x' } } });
+    await h.service.db.auditEvent.create({ data: { event: 'backup.drill_failed', detail: { failure: 'the KEK on this host is not the one that sealed this bundle' } } });
+    const failedDrill = await tile({ backupsConfigured: true });
+    expect(failedDrill).toMatchObject({ ok: false });
+    expect(failedDrill?.detail).toContain('the KEK on this host');
+
+    await h.service.db.auditEvent.create({ data: { event: 'backup.drill_passed', detail: {} } });
+    expect(await tile({ backupsConfigured: true })).toMatchObject({ ok: true, detail: expect.stringContaining('restored and checked') as string });
+
+    await h.service.db.auditEvent.create({ data: { event: 'backup.failed', at: new Date(Date.now() + 1000), detail: { error: 'AccessDenied' } } });
+    expect(await tile({ backupsConfigured: true })).toMatchObject({ ok: false, detail: expect.stringContaining('failed') as string });
+  });
+});
+
 describe('the rest of the page', () => {
   it('counts what the console links to, and shows what just happened', async () => {
     const view = await overview(h.service.db, allGood);

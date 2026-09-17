@@ -16,6 +16,8 @@ in ([ADR-003](../../../D3%20Cloud%20Vault/D3%20Auth/ADR-003%20—%20Break-glass%
 
 1. **Another admin.** People → their row → **Reset**. That emails them a link to set the account
    up again, keeps their account id, and needs no shell. Prefer it every time.
+   This does not work for the **owner**: nobody can reset the owner from the console, including the
+   sealed admin (`sealed-admin.md`). The owner comes back through this runbook.
 2. **A trusted browser.** If a browser was told to skip the second step in the last 30 days, it
    still will. Try the laptop before you try the host.
 

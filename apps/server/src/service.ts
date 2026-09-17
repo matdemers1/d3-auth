@@ -69,6 +69,7 @@ type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' |
     Pick<
       Config,
       | 'CONSOLE_DIST'
+      | 'BACKUP_S3_BUCKET'
       | 'CONFORMANCE_PKCE_EXEMPT_CLIENTS'
       | 'OPERATOR_DISPLAY_NAME'
       | 'MAIL_DRIVER'
@@ -305,7 +306,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
       accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
-      adminRouter({ db, apps, grants, groups, settings, mail, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit, readiness }),
+      adminRouter({ db, apps, grants, groups, settings, mail, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit, readiness, backupsConfigured: Boolean(config.BACKUP_S3_BUCKET) }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       consoleRouter(consoleDist),
     ],
