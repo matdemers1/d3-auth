@@ -14,7 +14,13 @@ import type { RequestHandler } from 'express';
 //     person or app supplied. (ZAP reports the omission; it is filtered there with this reason.)
 //
 // No 'unsafe-inline' anywhere. The provider's one inline script — the auto-submitting form — gets a
-// sha256 hash added to script-src by the provider itself.
+// sha256 hash added to script-src by the provider itself. The console has one too: the design
+// system's theme boot script in apps/console/index.html, which sets light or dark before the first
+// paint (D-066). It is allowed by the hash of exactly that script, and nothing else inline runs.
+// test/unit/headers.test.ts hashes the file itself, so the two cannot drift apart.
+
+/** sha256 of the inline `<script>` in apps/console/index.html (`themeBootScript()` from @d3cloud/ui). */
+export const THEME_BOOT_SCRIPT_HASH = "'sha256-59L8/iAzZ528VLBKND6XMlQ+evHRA0yaYEo85pD8VCc='";
 
 const BASE_CSP = [
   "default-src 'self'",
@@ -30,7 +36,10 @@ const BASE_CSP = [
   "manifest-src 'self'",
 ];
 
-export const CONSOLE_CSP = [...BASE_CSP, "form-action 'self'"].join('; ');
+export const CONSOLE_CSP = [
+  ...BASE_CSP.map((directive) => (directive === "script-src 'self'" ? `script-src 'self' ${THEME_BOOT_SCRIPT_HASH}` : directive)),
+  "form-action 'self'",
+].join('; ');
 /** The provider redirects and form-posts to validated client URLs; it never renders our console. */
 export const PROVIDER_CSP = BASE_CSP.join('; ');
 
