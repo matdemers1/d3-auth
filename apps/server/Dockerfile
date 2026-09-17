@@ -23,10 +23,20 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm --filter d3auth-server deploy --prod --legacy --config.minimum-release-age=0 /out
 
 FROM ${NODE_IMAGE} AS runtime
-# pg_dump takes the pre-migration dump at boot (REQ-121) and the backup bundle in Phase 6.
-# The 17 client talks to a 16 server; the newer client is the supported direction.
-RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+# pg_dump takes the pre-migration dump at boot (REQ-121) and the backup bundle (ADR-004); pg_restore
+# puts either back. The client must be the server's major version: a newer pg_dump reads an older
+# server, but a newer pg_restore writes settings the older server refuses (Postgres 17 emits
+# `SET transaction_timeout`, which 16 rejects). Found by the first production restore drill.
+# Debian's own package follows the distribution (17 on trixie), so this comes from PGDG, whose
+# signing key ships inside Debian's postgresql-common — no key is fetched over the network.
+ARG POSTGRES_MAJOR=16
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-common ca-certificates \
+    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends postgresql-client-${POSTGRES_MAJOR} \
+    && rm -rf /var/lib/apt/lists/* \
+    && pg_dump --version | grep -q " ${POSTGRES_MAJOR}\." \
+    && pg_restore --version | grep -q " ${POSTGRES_MAJOR}\."
 ENV NODE_ENV=production PORT=3000 CONSOLE_DIST=/app/public BACKUP_DIR=/backups
 WORKDIR /app
 # Code stays root-owned so the service user cannot modify it; only /backups is writable.
