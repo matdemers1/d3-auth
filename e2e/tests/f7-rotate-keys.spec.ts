@@ -86,7 +86,7 @@ test.describe('F7 rotate signing keys', () => {
     // 1. Generate. It is published immediately and signs nothing — that is what gives every
     //    consumer time to fetch it before it has to trust it.
     await page.getByRole('button', { name: 'Generate a next ES256 key' }).click();
-    await expect(page.getByText('A next key is published')).toBeVisible();
+    await expect(page.getByText('A next key is published. Promote it after the window.', { exact: true })).toBeVisible();
     await expect(page.getByText('next', { exact: true })).toBeVisible();
 
     const afterGenerate = await publishedKids(page);
