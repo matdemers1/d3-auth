@@ -25,6 +25,7 @@
     "flow": "node scripts/flow.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1128.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "@simplewebauthn/server": "^14.0.2",
@@ -38,12 +39,12 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@d3cloud/auth-client": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/nodemailer": "^8.0.2",
     "@types/oidc-provider": "^9.12.1",
+    "jose": "^6.2.12",
     "openid-client": "^6.8.8",
-    "tsx": "^4.23.13",
-    "@d3cloud/auth-client": "workspace:*",
-    "jose": "^6.2.12"
+    "tsx": "^4.23.13"
   }
 }

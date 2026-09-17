@@ -42,3 +42,9 @@ ignoredBuiltDependencies:
   - prisma
   - workerd
   - core-js-pure
+
+# Held back so every package newly added for Phase 6 backups is at least seven days old: the
+# @aws-sdk/client-s3 release chosen accepts ^3.33.3, and 3.34.x was five days old when it was added.
+# Remove once 3.34.x has aged past the window.
+overrides:
+  '@smithy/core': 3.33.3

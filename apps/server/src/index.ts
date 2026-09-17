@@ -2,6 +2,10 @@ import { migrateOnBoot } from './boot/migrate.js';
 import { ConfigError, loadConfig, type Config } from './config.js';
 import { createDb } from './db.js';
 import { createLogger } from './log.js';
+import { offsiteStore } from './backup/from-config.js';
+import { runBackup, runDrill } from './backup/operations.js';
+import { scheduleDaily } from './jobs/daily.js';
+import { createAuditWriter } from './audit/writer.js';
 import { createService } from './service.js';
 
 function readConfig(): Config {
@@ -46,7 +50,35 @@ const server = service.app.listen(config.PORT, (err?: Error) => {
   logger.info({ port: config.PORT, issuer: config.ISSUER }, 'listening');
 });
 
+// Nightly backup and restore drill (T-6.1, T-6.2, ADR-004). Without an offsite store the service
+// runs anyway and says so; the alert rules then flag the missing backups.
+const store = offsiteStore(config);
+const jobs: { stop(): void }[] = [];
+if (store) {
+  const audit = createAuditWriter(service.db, logger);
+  jobs.push(
+    scheduleDaily('backup', config.BACKUP_AT, () =>
+      runBackup({ db: service.db, databaseUrl: config.DATABASE_URL, kek: config.KEK, store, backupDir: config.BACKUP_DIR, audit, logger }),
+    logger),
+    scheduleDaily('restore-drill', config.DRILL_AT, () =>
+      runDrill({
+        databaseUrl: config.DATABASE_URL,
+        kek: config.KEK,
+        pepper: config.PEPPER,
+        cookieKeys: config.COOKIE_KEYS,
+        issuer: config.ISSUER,
+        store,
+        audit,
+        logger,
+      }),
+    logger),
+  );
+} else {
+  logger.warn('offsite backups are not configured (BACKUP_S3_BUCKET); only pre-migration dumps are kept');
+}
+
 function shutdown(signal: NodeJS.Signals): void {
+  for (const job of jobs) job.stop();
   logger.info({ signal }, 'shutting down');
   server.close((err) => {
     void service.close().finally(() => process.exit(err ? 1 : 0));

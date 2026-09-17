@@ -234,6 +234,15 @@ export async function loadSigningKeys(db: Db, kek: KekCrypto): Promise<PrivateJw
     }
   });
 
+  return decryptPublishedKeys(db, kek);
+}
+
+/**
+ * Decrypts every published key and generates nothing. The restore drill uses this rather than
+ * `loadSigningKeys`, which would mint fresh keys for a database that has none — exactly the backup a
+ * drill exists to catch (R-03).
+ */
+export async function decryptPublishedKeys(db: Db, kek: KekCrypto): Promise<PrivateJwk[]> {
   const rows = await db.signingKey.findMany({ where: { status: { in: [...PUBLISHED_STATUSES] } } });
   rows.sort((a, b) => STATUS_ORDER[a.status as keyof typeof STATUS_ORDER] - STATUS_ORDER[b.status as keyof typeof STATUS_ORDER]);
 

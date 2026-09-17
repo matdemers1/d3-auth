@@ -75,8 +75,16 @@ const schema = z
     MAIL_RELAY_SECRET: z.string().optional(),
     MAIL_RELAY_URL: z.url().optional().or(z.literal('')),
     SMTP_URL: z.string().optional(),
-    S3_ENDPOINT: z.url().optional().or(z.literal('')),
-    S3_REGION: z.string().optional(),
+    // Offsite backups (T-6.1, ADR-004). Unset bucket means no offsite copy — the service still runs,
+    // and the alert rules say so. AWS credentials come from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+    BACKUP_S3_BUCKET: z.string().optional().transform((v) => v || undefined),
+    BACKUP_S3_REGION: z.string().default('us-east-1'),
+    BACKUP_KMS_KEY_ID: z.string().optional().transform((v) => v || undefined),
+    /** Only for S3-compatible stores in testing. */
+    BACKUP_S3_ENDPOINT: z.url().optional().or(z.literal('')).transform((v) => v || undefined),
+    /** UTC times of day, HH:MM. The drill follows the backup it restores. */
+    BACKUP_AT: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'BACKUP_AT is HH:MM in UTC').default('02:30'),
+    DRILL_AT: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'DRILL_AT is HH:MM in UTC').default('03:30'),
   })
   .superRefine((env, ctx) => {
     const issuer = new URL(env.ISSUER);
@@ -88,6 +96,9 @@ const schema = z
     }
     if (env.CONFORMANCE_PKCE_EXEMPT_CLIENTS.length > 0 && !issuer.hostname.endsWith('.test')) {
       ctx.addIssue({ code: 'custom', path: ['CONFORMANCE_PKCE_EXEMPT_CLIENTS'], message: 'CONFORMANCE_PKCE_EXEMPT_CLIENTS is only allowed for *.test issuers' });
+    }
+    if (env.BACKUP_S3_BUCKET && !env.BACKUP_KMS_KEY_ID) {
+      ctx.addIssue({ code: 'custom', path: ['BACKUP_KMS_KEY_ID'], message: 'BACKUP_KMS_KEY_ID is required with BACKUP_S3_BUCKET: bundles are always written under a named key' });
     }
     if (env.PEPPER.equals(env.KEK)) {
       ctx.addIssue({ code: 'custom', path: ['PEPPER'], message: 'PEPPER must not reuse the KEK' });
