@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { Router, type RequestHandler } from 'express';
@@ -46,6 +46,7 @@ export function unavailableGate(readiness: ReadinessProbe): RequestHandler {
 export function consoleRouter(dist: string): Router {
   const router = Router();
   const index = join(dist, 'index.html');
+  let shell: string | undefined;
 
   router.use(
     '/assets',
@@ -59,9 +60,10 @@ export function consoleRouter(dist: string): Router {
       res.status(503).type('text').send('The console is not available on this build.');
       return;
     }
-    // The path is the build's own index.html, fixed at startup; nothing from the request reaches it.
-    // nosemgrep: javascript.express.security.audit.express-res-sendfile.express-res-sendfile
-    res.sendFile(index);
+    // Sent as a string rather than a file so the security headers can add this response's style
+    // nonce (see security/headers.ts). The path is the build's own index.html, fixed at startup.
+    shell ??= readFileSync(index, 'utf8');
+    res.type('html').send(shell);
   });
 
   return router;

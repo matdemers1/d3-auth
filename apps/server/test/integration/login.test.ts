@@ -1,6 +1,6 @@
 import * as client from 'openid-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { CONSOLE_CSP } from '../../src/security/headers.js';
+import { consoleCsp } from '../../src/security/headers.js';
 import { authorize, Browser, ISSUER, RP_CALLBACK, startHarness, USER, webClientConfig, type Harness } from './oidc-harness.js';
 
 let h: Harness;
@@ -185,7 +185,10 @@ describe('security headers (REQ-132)', () => {
 
   it('locks the console down and keeps the provider workable', async () => {
     const console_ = await h.opFetch(`${ISSUER}/healthz`);
-    expect(console_.headers.get('content-security-policy')).toBe(CONSOLE_CSP);
+    const consoleHeader = console_.headers.get('content-security-policy') ?? '';
+    const nonce = /'nonce-([A-Za-z0-9_-]+)'/.exec(consoleHeader)?.[1] ?? '';
+    expect(consoleHeader).toBe(consoleCsp(nonce));
+    expect(consoleHeader).not.toContain('unsafe-inline');
 
     const provider = await h.opFetch(`${ISSUER}/oidc/jwks`);
     const csp = provider.headers.get('content-security-policy') ?? '';

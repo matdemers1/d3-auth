@@ -5,7 +5,9 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CONSOLE_CSP, PROVIDER_CSP, securityHeaders, THEME_BOOT_SCRIPT_HASH } from '../../src/security/headers.js';
+import { consoleCsp, PROVIDER_CSP, securityHeaders, THEME_BOOT_SCRIPT_HASH, withStyleNonce } from '../../src/security/headers.js';
+
+const CONSOLE_CSP = consoleCsp('NONCE');
 
 // The console's one inline script (REQ-132, D-066): the theme boot script in index.html. The CSP
 // has no 'unsafe-inline', so the script runs only because its hash is allowed — and only that
@@ -25,6 +27,11 @@ describe('the console CSP and its one inline script', () => {
     const scriptSrc = CONSOLE_CSP.split('; ').find((directive) => directive.startsWith('script-src '));
     expect(scriptSrc).toBe(`script-src 'self' ${hash}`);
     expect(CONSOLE_CSP).not.toContain('unsafe-inline');
+  });
+
+  it('allows styles only by nonce, never inline', () => {
+    expect(CONSOLE_CSP).toContain("style-src 'self' 'nonce-NONCE'");
+    expect(withStyleNonce('<html><head lang="x"><title>t</title>', 'N')).toBe('<html><head lang="x"><meta name="d3-style-nonce" content="N"><title>t</title>');
   });
 
   it('keeps the provider policy free of the console hash', () => {
@@ -51,15 +58,28 @@ describe('the console CSP and its one inline script', () => {
       server.close();
     });
 
-    it.each(['/login/abc', '/admin/people'])('sends the hash on the console page %s', async (path) => {
+    const nonceIn = (csp: string | null): string => /style-src 'self' 'nonce-([A-Za-z0-9_-]+)'/.exec(csp ?? '')?.[1] ?? '';
+
+    it.each(['/login/abc', '/admin/people'])('sends the hash and a style nonce on the console page %s', async (path) => {
       const res = await fetch(base + path);
-      expect(res.headers.get('content-security-policy')).toBe(CONSOLE_CSP);
-      expect(res.headers.get('content-security-policy')).toContain(THEME_BOOT_SCRIPT_HASH);
+      const csp = res.headers.get('content-security-policy');
+      const nonce = nonceIn(csp);
+      expect(nonce).toMatch(/^[A-Za-z0-9_-]{24}$/);
+      expect(csp).toBe(consoleCsp(nonce));
+      expect(csp).toContain(THEME_BOOT_SCRIPT_HASH);
+      // The page carries the same nonce, where the console reads it.
+      expect(await res.text()).toContain(`<meta name="d3-style-nonce" content="${nonce}">`);
+    });
+
+    it('gives every response its own nonce', async () => {
+      const [a, b] = await Promise.all([fetch(`${base}/admin/people`), fetch(`${base}/admin/people`)]);
+      expect(nonceIn(a.headers.get('content-security-policy'))).not.toBe(nonceIn(b.headers.get('content-security-policy')));
     });
 
     it('does not send it on the provider', async () => {
       const res = await fetch(`${base}/oidc/jwks`);
       expect(res.headers.get('content-security-policy')).toBe(PROVIDER_CSP);
+      expect(await res.text()).not.toContain('d3-style-nonce');
     });
   });
 });
