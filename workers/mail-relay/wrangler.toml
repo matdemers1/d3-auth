@@ -12,6 +12,19 @@ workers_dev = true
 
 [vars]
 DEFAULT_FROM = "no-reply@no-reply.d3cloud.io"
+# The readiness probe (T-6.4). No secret: /readyz is public.
+READYZ_URL = "https://auth.d3cloud.io/readyz"
+ALERT_TO = ""
+
+# Every minute; one email after five minutes down, one on recovery.
+[triggers]
+crons = ["* * * * *"]
+
+# Remembers when a failure started between runs.
+#   wrangler kv namespace create PROBE_STATE   → put the id below
+[[kv_namespaces]]
+binding = "PROBE_STATE"
+id = "REPLACE_WITH_NAMESPACE_ID"
 
 [[send_email]]
 name = "EMAIL"

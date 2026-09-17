@@ -1,5 +1,6 @@
 import { EmailMessage } from 'cloudflare:email';
 import { createMimeMessage } from 'mimetext';
+import { runProbe, type ProbeEnv } from './probe.js';
 
 // The mail relay (REQ-106). Cloudflare can only send through a Worker binding, and D3 Auth is a
 // container on someone's shelf — so this Worker is the two-hundred-line bridge between them.
@@ -8,7 +9,7 @@ import { createMimeMessage } from 'mimetext';
 // and hand the message to the send_email binding. It stores nothing, logs no message bodies, and
 // refuses anything else.
 
-export interface Env {
+export interface Env extends Partial<Omit<ProbeEnv, 'EMAIL'>> {
   /** The send_email binding, configured in wrangler.toml. */
   EMAIL: { send(message: EmailMessage): Promise<void> };
   /** Shared secret, set with `wrangler secret put RELAY_SECRET`. */
@@ -81,5 +82,11 @@ export default {
     if (url.pathname !== '/send') return json(404, { error: 'not_found' });
     if (request.method !== 'POST') return json(405, { error: 'method_not_allowed' });
     return handleSend(request, env);
+  },
+
+  /** Every minute (wrangler.toml): the readiness probe, when it is configured (T-6.4). */
+  async scheduled(_controller: unknown, env: Env): Promise<void> {
+    if (!env.READYZ_URL || !env.PROBE_STATE || !env.ALERT_TO) return;
+    await runProbe({ ...env, PROBE_STATE: env.PROBE_STATE });
   },
 };
