@@ -9,7 +9,7 @@ import { z } from 'zod';
 // console cannot grant somebody a role the app has never heard of.
 
 /** Client ids appear in URLs, logs and token audiences, so they stay short and boring. */
-const CLIENT_ID = /^[a-z0-9][a-z0-9._-]{1,63}$/;
+export const CLIENT_ID = /^[a-z0-9][a-z0-9._-]{1,63}$/;
 
 /**
  * Redirect URIs are matched exactly, never by pattern (REQ-005). The rules below are the ones an

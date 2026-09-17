@@ -4,6 +4,7 @@ import type { Adapter, ClientMetadata } from 'oidc-provider';
 import type Provider from 'oidc-provider';
 import type { Db } from '../db.js';
 import type { SecretHasher } from '../security/hash.js';
+import { ID_TOKEN_SIGNING_ALG, TOKEN_ENDPOINT_AUTH_METHOD } from './protocol.js';
 
 // Where the provider's clients come from: the App table, looked up per request (T-3.1).
 //
@@ -49,12 +50,12 @@ export function clientMetadataFor(app: AppClient): ClientResult {
     // refused per client: nothing here uses them, and form_post is the one mode that would need the
     // provider's pages to allow a form to post off-site (T-5.4).
     response_modes: ['query'],
-    id_token_signed_response_alg: 'ES256',
+    id_token_signed_response_alg: ID_TOKEN_SIGNING_ALG,
     ...(app.backchannelLogoutUri ? { backchannel_logout_uri: app.backchannelLogoutUri, backchannel_logout_session_required: true } : {}),
   };
 
   if (app.clientType === 'public_native') {
-    return { ok: true, metadata: { ...common, application_type: 'native', token_endpoint_auth_method: 'none' } };
+    return { ok: true, metadata: { ...common, application_type: 'native', token_endpoint_auth_method: TOKEN_ENDPOINT_AUTH_METHOD.public_native } };
   }
   if (!app.clientSecretHash) return { ok: false, reason: 'confidential app has no client secret' };
 
@@ -63,7 +64,7 @@ export function clientMetadataFor(app: AppClient): ClientResult {
     metadata: {
       ...common,
       application_type: 'web',
-      token_endpoint_auth_method: 'client_secret_basic',
+      token_endpoint_auth_method: TOKEN_ENDPOINT_AUTH_METHOD.confidential_web,
       client_secret: placeholderSecret(app.clientSecretHash),
     },
   };

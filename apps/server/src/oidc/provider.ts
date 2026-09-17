@@ -6,6 +6,7 @@ import { effectiveAccess } from '../authz/effective-roles.js';
 import { createAdapterFactory } from './adapter.js';
 import { createClientAdapter, installHashedClientSecrets } from './clients.js';
 import type { PrivateJwk } from './keys.js';
+import { ID_TOKEN_SIGNING_ALG, ROLES_CLAIM, ROLES_SCOPE, SIGNING_ALGS, SUPPORTED_SCOPES, TOKEN_ENDPOINT_AUTH_METHOD } from './protocol.js';
 import { DEFAULT_IDLE_DAYS, interactionPolicyWithAbsoluteLifetime, sessionTtl } from './session-lifetime.js';
 
 // Provider configuration per ADR-001 and T-0.7. Every value here narrows the library's
@@ -122,7 +123,7 @@ export function createProvider(options: ProviderOptions): Provider {
     responseTypes: ['code'],
     // `d3:roles` is ours (REQ-052). Apps that do not ask for it never see a roles claim, and an
     // app that does sees only its own.
-    scopes: ['openid', 'offline_access', 'profile', 'email', 'd3:roles'],
+    scopes: [...SUPPORTED_SCOPES],
     claims: {
       // Declaring `claims` replaces the provider's defaults, and anything undeclared is filtered
       // out of the token — which is how `amr`, `auth_time` and `sid` went missing the first time
@@ -139,22 +140,22 @@ export function createProvider(options: ProviderOptions): Provider {
       openid: ['sub', 'amr', 'auth_time'],
       email: ['email', 'email_verified'],
       profile: ['name', 'preferred_username'],
-      'd3:roles': ['roles'],
+      [ROLES_SCOPE]: [ROLES_CLAIM],
     },
-    clientAuthMethods: ['client_secret_basic', 'none'],
+    clientAuthMethods: [TOKEN_ENDPOINT_AUTH_METHOD.confidential_web, TOKEN_ENDPOINT_AUTH_METHOD.public_native],
     clientDefaults: {
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
-      id_token_signed_response_alg: 'ES256',
-      token_endpoint_auth_method: 'client_secret_basic',
+      id_token_signed_response_alg: ID_TOKEN_SIGNING_ALG,
+      token_endpoint_auth_method: TOKEN_ENDPOINT_AUTH_METHOD.confidential_web,
     },
     enabledJWA: {
-      idTokenSigningAlgValues: ['ES256', 'RS256'],
-      userinfoSigningAlgValues: ['ES256', 'RS256'],
-      introspectionSigningAlgValues: ['ES256', 'RS256'],
-      authorizationSigningAlgValues: ['ES256', 'RS256'],
-      requestObjectSigningAlgValues: ['ES256', 'RS256'],
-      clientAuthSigningAlgValues: ['ES256', 'RS256'],
+      idTokenSigningAlgValues: [...SIGNING_ALGS],
+      userinfoSigningAlgValues: [...SIGNING_ALGS],
+      introspectionSigningAlgValues: [...SIGNING_ALGS],
+      authorizationSigningAlgValues: [...SIGNING_ALGS],
+      requestObjectSigningAlgValues: [...SIGNING_ALGS],
+      clientAuthSigningAlgValues: [...SIGNING_ALGS],
       dPoPSigningAlgValues: ['ES256'],
     },
 
@@ -162,7 +163,8 @@ export function createProvider(options: ProviderOptions): Provider {
     // consumer call userinfo for a display name. Roles join them in Phase 3.
     conformIdTokenClaims: false,
 
-    // PKCE S256 on every client, confidential ones included (REQ-003). v9 has no `plain`.
+    // PKCE S256 on every client, confidential ones included (REQ-003). v9 has no `plain`, so
+    // protocol.ts PKCE_METHOD is the only method there is, and what the connection sheet shows.
     pkce: { required: (_ctx, client) => !pkceExempt.has(client.clientId) },
     allowOmittingSingleRegisteredRedirectUri: false,
     // No browser calls the token, userinfo, introspection or revocation endpoints from another

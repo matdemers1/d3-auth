@@ -1,6 +1,7 @@
 import type { FindAccount } from 'oidc-provider';
 import { effectiveAccess } from '../authz/effective-roles.js';
 import type { Db } from '../db.js';
+import { ROLES_CLAIM, ROLES_SCOPE } from './protocol.js';
 
 // Maps `sub` to a user. Only active users are accounts; invited and suspended users are not,
 // so their sessions and refresh tokens stop working without extra checks.
@@ -28,10 +29,10 @@ export function createFindAccount(db: Db): FindAccount {
           preferred_username: user.username,
           name: user.displayName,
         };
-        if (!clientId || !scope.split(' ').includes('d3:roles')) return base;
+        if (!clientId || !scope.split(' ').includes(ROLES_SCOPE)) return base;
 
         const access = await effectiveAccess(db, { userId: user.id, clientId });
-        return { ...base, roles: access.roles };
+        return { ...base, [ROLES_CLAIM]: access.roles };
       },
     };
   };
