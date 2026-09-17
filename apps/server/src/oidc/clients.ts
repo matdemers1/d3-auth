@@ -1,3 +1,4 @@
+import { consoleClientMetadata, isConsoleClient } from '../console/console-client.js';
 import { createHash } from 'node:crypto';
 import type { Adapter, ClientMetadata } from 'oidc-provider';
 import type Provider from 'oidc-provider';
@@ -82,10 +83,12 @@ const APP_SELECT = {
  * The `Client` kind of the provider's storage. Only `find` is meaningful: clients are registered
  * through the console (REQ-046), never by the provider itself — dynamic registration is off.
  */
-export function createClientAdapter(db: Db): Adapter {
+export function createClientAdapter(db: Db, issuer: string): Adapter {
   const unsupported = (): Promise<undefined> => Promise.resolve(undefined);
   return {
     async find(clientId: string) {
+      // The console's own client is built in, and no App row can shadow it (ADR-005).
+      if (isConsoleClient(clientId)) return consoleClientMetadata(issuer);
       // A disabled app is not a client at all, so its authorizations fail at the door (REQ-054).
       const app = await db.app.findFirst({ where: { clientId, enabled: true }, select: APP_SELECT });
       if (!app) return undefined;

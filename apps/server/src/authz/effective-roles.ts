@@ -1,3 +1,4 @@
+import { isConsoleClient } from '../console/console-client.js';
 import type { Db } from '../db.js';
 
 // Who may sign in to what, and as what (REQ-049, REQ-050, REQ-051).
@@ -24,6 +25,14 @@ export interface EffectiveAccess {
 
 export const NO_ACCESS: EffectiveAccess = { hasGrant: false, roles: [], from: { direct: false, groups: [] }, firstSignInAt: null };
 
+/**
+ * The one exception, and it is not an app: the console's own client (ADR-005). Every account may
+ * sign in to its own account page, with no roles and no interstitial. It is decided by client id
+ * alone, which no registered app can take, and the account must still be able to sign in at all —
+ * `findAccount` refuses anybody invited or suspended before this is ever asked.
+ */
+const CONSOLE_ACCESS: EffectiveAccess = { hasGrant: true, roles: [], from: { direct: false, groups: [] }, firstSignInAt: new Date(0) };
+
 type RoleRow = { role: { key: string; sortOrder: number } };
 
 /** Highest first by the app's own manifest order, so a caller never has to sort again. */
@@ -40,6 +49,7 @@ const orderedKeys = (rows: RoleRow[]): string[] => {
  * and a caller that only looked at `roles` would otherwise let somebody in with none.
  */
 export async function effectiveAccess(db: Db, input: { userId: string; clientId: string }): Promise<EffectiveAccess> {
+  if (isConsoleClient(input.clientId)) return CONSOLE_ACCESS;
   const [direct, viaGroups, visit] = await Promise.all([
     db.grant.findFirst({
       where: { userId: input.userId, app: { clientId: input.clientId, enabled: true } },

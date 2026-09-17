@@ -1,3 +1,4 @@
+import { isConsoleClient } from '../console/console-client.js';
 import express, { Router, type Request, type RequestHandler, type Response } from 'express';
 import type Provider from 'oidc-provider';
 import type { AdapterFactory } from 'oidc-provider';
@@ -182,6 +183,8 @@ export function interactionRouter(deps: InteractionDeps): Router {
 
   /** True when this person has never completed a sign-in to this app before (REQ-059). */
   async function firstTimeHere(accountId: string, clientId: string): Promise<boolean> {
+    // Nothing to confirm about signing in to your own account (ADR-005).
+    if (isConsoleClient(clientId)) return false;
     const visit = await db.appVisit.findFirst({ where: { userId: accountId, app: { clientId } }, select: { userId: true } });
     return visit === null;
   }

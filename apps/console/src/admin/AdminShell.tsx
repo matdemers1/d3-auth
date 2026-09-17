@@ -10,6 +10,7 @@ import { PersonDetail } from './PersonDetail';
 import { RegisterApp } from './RegisterApp';
 import { Settings } from './Settings';
 import { Transfer } from './Transfer';
+import { SIGN_OUT_HREF } from '../signout';
 
 // The operator console: home, people, groups, apps, keys, audit, settings, export/import.
 //
@@ -42,7 +43,7 @@ function Nav({ current }: { current: string }) {
       ))}
       {/* Sign-out is on every signed-in page (ASVS 7.4.4). The provider asks before it acts, so a
           stray click costs a "No, stay signed in". */}
-      <a className="account-nav-link" href="/oidc/session/end">
+      <a className="account-nav-link" href={SIGN_OUT_HREF}>
         Sign out
       </a>
     </nav>

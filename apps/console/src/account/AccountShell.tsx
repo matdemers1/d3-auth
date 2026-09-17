@@ -5,6 +5,7 @@ import { Password } from './Password';
 import { Profile } from './Profile';
 import { Security } from './Security';
 import { Sessions } from './Sessions';
+import { SIGN_OUT_HREF } from '../signout';
 
 // The account area (A-1…A-5). Plain links, not a router: each section is its own page, which
 // keeps the bundle small and the back button honest.
@@ -32,7 +33,7 @@ function Nav({ current }: { current: string }) {
       ))}
       {/* Sign-out is on every signed-in page (ASVS 7.4.4). The provider asks before it acts, so a
           stray click costs a "No, stay signed in". */}
-      <a className="account-nav-link" href="/oidc/session/end">
+      <a className="account-nav-link" href={SIGN_OUT_HREF}>
         Sign out
       </a>
     </nav>

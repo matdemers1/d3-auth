@@ -1,3 +1,4 @@
+import { signinRouter } from './console/signin.js';
 import type { Express } from 'express';
 import type Provider from 'oidc-provider';
 import { createApp } from './app.js';
@@ -308,6 +309,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
       adminRouter({ db, apps, grants, groups, settings, mail, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit, readiness, backupsConfigured: Boolean(config.BACKUP_S3_BUCKET) }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
+      signinRouter({ issuer: config.ISSUER, auth: consoleAuth, secureCookies }),
       consoleRouter(consoleDist),
     ],
     beforeRouters: [unavailableGate(readiness)],

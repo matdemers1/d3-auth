@@ -1,3 +1,4 @@
+import { isConsoleClient } from '../console/console-client.js';
 import { z } from 'zod';
 
 // The app manifest (REQ-046, REQ-047). An app is registered by pasting this, or by the seed file
@@ -51,7 +52,10 @@ const roleSchema = z.object({
 
 export const manifestSchema = z
   .object({
-    client_id: z.string().regex(CLIENT_ID, 'Client ids are 2–64 characters: lower-case letters, numbers, dot, dash or underscore.'),
+    client_id: z
+      .string()
+      .regex(CLIENT_ID, 'Client ids are 2–64 characters: lower-case letters, numbers, dot, dash or underscore.')
+      .refine((id) => !isConsoleClient(id), 'That client id belongs to D3 Auth itself.'),
     name: z.string().min(1),
     description: z.string().default(''),
     client_type: z.enum(['confidential_web', 'public_native']),

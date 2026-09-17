@@ -64,9 +64,9 @@ export interface ProviderOptions {
 }
 
 /** Everything goes to the payload table except `Client`, which is served from the App table. */
-function clientBackedAdapters(db: Db): AdapterFactory {
+function clientBackedAdapters(db: Db, issuer: string): AdapterFactory {
   const payloads = createAdapterFactory(db);
-  const clients = createClientAdapter(db);
+  const clients = createClientAdapter(db, issuer);
   return (kind: string) => (kind === 'Client' ? clients : payloads(kind));
 }
 
@@ -78,8 +78,9 @@ export function createProvider(options: ProviderOptions): Provider {
   const operatorDisplayName = options.operatorDisplayName ?? 'D3 Auth';
   const configuration: Configuration = {
     // Clients come from the App table through the adapter (T-3.1), so registering an app takes
-    // effect without a restart. There are deliberately no static clients.
-    adapter: clientBackedAdapters(options.db),
+    // effect without a restart. There are deliberately no static clients; the console's own client
+    // is served by the same adapter (ADR-005).
+    adapter: clientBackedAdapters(options.db, options.issuer),
     findAccount: createFindAccount(options.db),
 
     /**
@@ -240,6 +241,7 @@ ${form}
 <main>
 <h1>You are signed out</h1>
 <p>You can close this tab, or sign in again from the app you were using.</p>
+<p><a href="/signin">Sign in to ${escapeHtml(operatorDisplayName)}</a></p>
 </main>
 </body></html>`;
         },

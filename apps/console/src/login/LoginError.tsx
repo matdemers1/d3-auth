@@ -1,4 +1,4 @@
-import { Alert } from '@d3cloud/ui';
+import { Alert, Link } from '@d3cloud/ui';
 
 // I-9: the interaction error screen. It never redirects anywhere, by design.
 export function LoginError({ operatorDisplayName = 'the operator' }: { operatorDisplayName?: string }) {
@@ -8,6 +8,11 @@ export function LoginError({ operatorDisplayName = 'the operator' }: { operatorD
         The link may have expired, or the app that sent you may be misconfigured. Go back to the app and start again, or
         ask {operatorDisplayName}.
       </Alert>
+      <p>
+        <Link variant="standalone" href="/signin">
+          Sign in to your account
+        </Link>
+      </p>
     </main>
   );
 }
