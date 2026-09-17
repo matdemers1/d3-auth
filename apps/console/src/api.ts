@@ -94,6 +94,9 @@ export interface App {
   postLogoutRedirectUris: string[];
   roles: AppRole[];
   people: number;
+  /** The preset that built it, if one did. */
+  preset: string | null;
+  presetInputs: Record<string, string>;
   createdAt: string;
 }
 
@@ -121,6 +124,18 @@ export interface PersonDetail extends Person {
   access: PersonAccess[];
 }
 
+/** A manifest as the server parsed it. */
+export interface Manifest {
+  client_id: string;
+  name: string;
+  description: string;
+  client_type: 'confidential_web' | 'public_native';
+  redirect_uris: string[];
+  post_logout_redirect_uris: string[];
+  backchannel_logout_uri?: string;
+  roles: { key: string; display: string; description: string; default: boolean }[];
+}
+
 export interface ManifestDiff {
   isNew: boolean;
   changed: { field: string; from: string; to: string }[];
@@ -135,4 +150,65 @@ export interface InviteCreated {
   url: string;
   expiresAt: string;
   mail: { delivered: boolean; error?: string };
+}
+
+/** What to do with one field on the other app's settings screen. */
+export type SheetAction = 'set' | 'leave' | 'on' | 'off';
+
+export interface SheetRow {
+  id: string;
+  label: string;
+  /** Null for a toggle, an empty field, or a secret that is not being shown. */
+  value: string | string[] | null;
+  why?: string;
+  action?: SheetAction;
+  /** The client secret. Its value is there only at registration or rotation. */
+  secret?: true;
+}
+
+export interface PresetSheet {
+  preset: string;
+  name: string;
+  docsUrl: string;
+  where: string;
+  checked: string;
+  steps: string[];
+  cautions: string[];
+  rows: SheetRow[];
+}
+
+export interface Connection {
+  clientId: string;
+  rows: SheetRow[];
+  preset: PresetSheet | null;
+}
+
+export interface PresetInput {
+  key: string;
+  label: string;
+  kind: 'address' | 'client_id';
+  help: string;
+  placeholder?: string;
+  default?: string;
+}
+
+export interface PresetSummary {
+  key: string;
+  name: string;
+  summary: string;
+  docsUrl: string;
+  inputs: PresetInput[];
+}
+
+/** What registering answers with: the secret and the sheet, both once. */
+export interface Registration {
+  app: App;
+  secret?: string;
+  diff: ManifestDiff;
+  connection: Connection;
+}
+
+export interface Problem {
+  field: string;
+  message: string;
 }

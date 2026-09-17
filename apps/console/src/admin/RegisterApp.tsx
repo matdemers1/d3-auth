@@ -1,10 +1,13 @@
 import { Alert, Button, FormActions, FormField, Link, Page, PageHeader, Section, Stack, Textarea } from '@d3cloud/ui';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
-import { api, ApiError, type App, type ManifestDiff } from '../api';
+import { api, ApiError, type ManifestDiff, type Registration } from '../api';
 import { icon } from '../shared/icons';
+import { useStepUp } from '../shared/StepUp';
+import { Registered } from './Registered';
 
-// C-6: register an app by pasting its manifest (REQ-046, REQ-067), as a form page of its own.
+// C-6: register your own app by pasting its manifest (REQ-046, REQ-067), as a form page of its own.
+// Apps D3 Auth already knows are added from the picker instead (AddApp, PresetForm).
 //
 // Paste, check, register. The check is not decoration: it is the only chance to see what a manifest
 // will do before it does it, and the same code path is how an app is changed later.
@@ -22,16 +25,11 @@ const EXAMPLE = `{
   ]
 }`;
 
-interface Created {
-  app: App;
-  secret?: string;
-}
-
 function Back() {
   return (
-    <Link variant="muted" href="/admin/apps">
+    <Link variant="muted" href="/admin/apps/new">
       {icon(ArrowLeft, 14)}
-      Apps
+      Add an app
     </Link>
   );
 }
@@ -40,8 +38,9 @@ export function RegisterApp() {
   const [manifest, setManifest] = useState('');
   const [problems, setProblems] = useState<string[]>([]);
   const [diff, setDiff] = useState<ManifestDiff | undefined>();
-  const [created, setCreated] = useState<Created | undefined>();
+  const [created, setCreated] = useState<Registration | undefined>();
   const [busy, setBusy] = useState(false);
+  const { ask, prompt } = useStepUp();
 
   const readProblems = (err: unknown): string[] => {
     if (!(err instanceof ApiError)) return ['The console could not reach the server. Nothing was registered.'];
@@ -50,47 +49,21 @@ export function RegisterApp() {
     return [err.message];
   };
 
-  async function act(path: string, onDone: (answer: Created & { diff?: ManifestDiff }) => void) {
+  async function act(path: string, onDone: (answer: Registration) => void) {
     setBusy(true);
     setProblems([]);
     try {
-      onDone(await api.post<Created & { diff?: ManifestDiff }>(path, { manifest }));
+      onDone(await api.post<Registration>(path, { manifest }));
     } catch (err) {
+      // Registering needs fresh proof; hold the click until they have given it.
+      if (ask(err, 'registering an app', () => void act(path, onDone))) return;
       setProblems(readProblems(err));
     } finally {
       setBusy(false);
     }
   }
 
-  if (created) {
-    return (
-      <Page width="narrow">
-        <PageHeader back={<Back />} title={`${created.app.name} is registered`} description="Give somebody access to it and they can sign in." />
-        <Section title="Its client secret">
-          {created.secret ? (
-            <Alert tone="warning" dynamic title="This is the only time the client secret is shown">
-              <p>Copy it into the app now. Nothing here can show it again — if it is lost, rotate it from the app’s page.</p>
-              <code>{created.secret}</code>
-            </Alert>
-          ) : (
-            <Alert tone="info" title="No client secret">
-              A native app holds no secret. It proves itself with PKCE instead.
-            </Alert>
-          )}
-          <FormActions>
-            <Button
-              variant="primary"
-              onClick={() => {
-                window.location.assign(`/admin/apps/${encodeURIComponent(created.app.clientId)}`);
-              }}
-            >
-              Open {created.app.name}
-            </Button>
-          </FormActions>
-        </Section>
-      </Page>
-    );
-  }
+  if (created) return <Registered registration={created} />;
 
   return (
     <Page width="narrow">
@@ -178,6 +151,7 @@ export function RegisterApp() {
           </Button>
         </FormActions>
       </Stack>
+      {prompt}
     </Page>
   );
 }

@@ -18,13 +18,14 @@ import {
 } from '@d3cloud/ui';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { api, ApiError, type AccessRow, type App, type ManifestDiff } from '../api';
+import { api, ApiError, type AccessRow, type App, type Connection, type ManifestDiff } from '../api';
 import { Confirm } from '../shared/Confirm';
 import { icon } from '../shared/icons';
 import { messageOf, useLoad } from '../shared/load';
 import { useMe } from '../shared/me';
 import { Denied, FactsSkeleton, LoadFailed, RowsSkeleton } from '../shared/states';
 import { clientTypeLabel } from './Apps';
+import { ConnectionSection } from './connection';
 
 // C-5: one app — what it is, who can reach it, its manifest, and the buttons that stop it
 // (Detail page pattern).
@@ -81,6 +82,9 @@ export function AppDetail({ clientId }: { clientId: string }) {
   const base = `/api/admin/apps/${encodeURIComponent(clientId)}`;
   const app = useLoad(() => api.get<App>(base), clientId);
   const access = useLoad(() => api.get<{ access: AccessRow[] }>(`${base}/access`).then((answer) => answer.access), clientId);
+  const connection = useLoad(() => api.get<Connection>(`${base}/connection`), clientId);
+  /** The sheet as the rotation answered it: the one place, after registering, the secret appears. */
+  const [rotated, setRotated] = useState<Connection | undefined>();
   const [feedback, setFeedback] = useState<Feedback | undefined>();
   const [secret, setSecret] = useState<string | undefined>();
   const [manifest, setManifest] = useState('');
@@ -95,6 +99,7 @@ export function AppDetail({ clientId }: { clientId: string }) {
   const reload = () => {
     app.reload();
     access.reload();
+    connection.reload();
   };
 
   /** Runs one change and says what happened at the top of the Section it concerns. */
@@ -207,6 +212,36 @@ export function AppDetail({ clientId }: { clientId: string }) {
         </DescriptionList>
       </Section>
 
+      {rotated ? (
+        <ConnectionSection
+          id="connect"
+          title="Connect this app"
+          description="With the new secret, shown this once. Put it in the app now; the old one has stopped working."
+          connection={rotated}
+          secretCopyable
+        />
+      ) : connection.state.status === 'ready' ? (
+        <ConnectionSection
+          id="connect"
+          title="Connect this app"
+          description="What the app needs to sign people in here, taken from how D3 Auth is set up. The client secret is never shown again."
+          connection={connection.state.data}
+          {...(connection.state.data.preset
+            ? {
+                actions: (
+                  <Link href={`/admin/apps/${encodeURIComponent(view.clientId)}/connect`}>
+                    {connection.state.data.preset.name} paste sheet
+                  </Link>
+                ),
+              }
+            : {})}
+        />
+      ) : connection.state.status === 'loading' ? (
+        <FactsSkeleton title="Connect this app" rows={4} />
+      ) : connection.state.status === 'failed' ? (
+        <LoadFailed what="How to connect this app" message={connection.state.message} onRetry={connection.retry} />
+      ) : null}
+
       <Section title="Roles" description="Declared in the manifest. An app sees only its own roles in a token.">
         <DataList
           aria-label="Roles"
@@ -237,7 +272,7 @@ export function AppDetail({ clientId }: { clientId: string }) {
         </DataList>
       </Section>
 
-      <Section title="Who can sign in" description="Revoking signs them out of this app now, if it has a sign-out notice endpoint.">
+      <Section id="who-can-sign-in" title="Who can sign in" description="Revoking signs them out of this app now, if it has a sign-out notice endpoint.">
         {alertFor('access')}
         <DataList
           aria-label="Who can sign in"
@@ -340,8 +375,9 @@ export function AppDetail({ clientId }: { clientId: string }) {
                   confirm="Rotate secret"
                   cancel="Keep the current secret"
                   onConfirm={async () => {
-                    const answer = await api.post<{ secret: string }>(`${base}/secret`);
+                    const answer = await api.post<{ secret: string; connection?: Connection }>(`${base}/secret`);
                     setSecret(answer.secret);
+                    setRotated(answer.connection);
                   }}
                 />
               }

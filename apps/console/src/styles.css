@@ -10,3 +10,32 @@
   border-radius: var(--radius-md);
   background: #fff; /* d3-allow: a QR code must be black on white to scan reliably */
 }
+
+/* The connection sheet's copyable values (admin/connection.tsx). A value is monospace and may be a
+   43-character secret or a long URL, so it breaks anywhere rather than pushing the page sideways on
+   a phone; the copy button and its "Copied" sit beside it and wrap under it when there is no room.
+   The library has no copy field yet — this is the CopyField candidate. */
+.sheet-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+}
+.sheet-value code,
+.mono-list code {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.sheet-copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-6);
+}
+.sheet-said,
+.sheet-why {
+  color: var(--color-fg-muted);
+  font-size: var(--text-13);
+}

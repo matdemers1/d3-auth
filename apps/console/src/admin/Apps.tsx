@@ -15,7 +15,7 @@ const DESCRIPTION = 'Everything that can ask this system who somebody is.';
 export const clientTypeLabel = (type: App['clientType']): string =>
   type === 'public_native' ? 'Native app, PKCE with no secret' : 'Web app with a client secret';
 
-function register(label = 'Register an app') {
+function register(label = 'Add an app') {
   return (
     <Button
       variant="primary"
@@ -67,7 +67,7 @@ export function Apps() {
         <PageHeader title="Apps" count={0} countNoun={{ one: 'app', other: 'apps' }} description={DESCRIPTION} />
         <Card>
           <EmptyState kind="empty" headingLevel={2} heading="No apps yet" icon={icon(AppWindow, 24)} action={register()}>
-            Register one from its manifest — its name, where it may send people back to, and the roles it understands. Then give people access to it.
+            Pick an app D3 Auth already knows, like Immich, or describe your own with a manifest. Then give people access to it.
           </EmptyState>
         </Card>
       </Page>
