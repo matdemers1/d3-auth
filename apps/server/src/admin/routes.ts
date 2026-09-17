@@ -17,6 +17,7 @@ import { GroupError, type Groups } from './groups.js';
 import type { MailAdapter } from '../mail/adapter.js';
 import type { Invites } from './invites.js';
 import { parseManifest, type Manifest } from './manifest.js';
+import { buildFromPreset, connectionFor, describePreset, findPreset, PRESETS } from './presets/index.js';
 
 // The console's API for the people side of the house (C-1, C-3). Phase 3 adds apps, grants and
 // groups here; this is the part Phase 2 needs to put a real person on the system.
@@ -25,6 +26,8 @@ export const ADMIN_API = '/api/admin';
 
 export interface AdminDeps {
   db: Db;
+  /** The issuer apps are told to use, for their connection sheets. */
+  issuer: string;
   apps: Apps;
   grants: Grants;
   groups: Groups;
@@ -45,6 +48,7 @@ export interface AdminDeps {
 
 export function adminRouter({
   db,
+  issuer,
   apps,
   grants,
   groups,
@@ -460,10 +464,88 @@ export function adminRouter({
         ip: clientIp(req),
         userAgent: req.get('user-agent'),
       });
-      // The secret is in this response and nowhere else, ever again.
-      res.status(201).json(created);
+      // The secret is in this response and nowhere else, ever again — here and in the sheet.
+      res.status(201).json({ ...created, connection: connectionFor(issuer, created.app, created.secret) });
     }),
   );
+
+  // Presets (REQ-143): an app D3 Auth already knows how to connect. The list is served from the
+  // registry, so the console cannot offer a preset the server does not have.
+  router.get(`${ADMIN_API}/app-presets`, auth.requireOwner, (_req, res) => {
+    res.set('Cache-Control', 'no-store').json({ presets: PRESETS.map((preset) => describePreset(preset)) });
+  });
+
+  router.post<{ key: string }>(`${ADMIN_API}/app-presets/:key/preview`, auth.requireOwner, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const preset = findPreset(req.params.key);
+        if (!preset) {
+          res.status(404).json({ error: 'preset_not_found', message: 'There is no preset by that name.' });
+          return;
+        }
+        const built = buildFromPreset(preset, (req.body as { inputs?: unknown } | undefined)?.inputs);
+        if (!built.ok) {
+          res.status(400).json({ error: 'invalid_inputs', problems: built.problems });
+          return;
+        }
+        res.json({ inputs: built.inputs, manifest: built.manifest, diff: await apps.preview(built.manifest) });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  // Registering from a preset is registering a manifest: same parse, same register, same step-up.
+  // The only difference is that the answers are remembered, so the paste sheet can be shown again.
+  router.post(`${ADMIN_API}/apps/from-preset`, auth.requireFreshOwner, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const input = (req.body ?? {}) as { preset?: unknown; inputs?: unknown };
+        const preset = typeof input.preset === 'string' ? findPreset(input.preset) : undefined;
+        if (!preset) {
+          res.status(404).json({ error: 'preset_not_found', message: 'There is no preset by that name.' });
+          return;
+        }
+        const built = buildFromPreset(preset, input.inputs);
+        if (!built.ok) {
+          res.status(400).json({ error: 'invalid_inputs', problems: built.problems });
+          return;
+        }
+        const { user } = consoleUserOf(res);
+        const created = await apps.register({
+          manifest: built.manifest,
+          actorUserId: user.id,
+          preset: { key: preset.key, inputs: built.inputs },
+          ip: clientIp(req),
+          userAgent: req.get('user-agent'),
+        });
+        res.status(201).set('Cache-Control', 'no-store').json({ ...created, connection: connectionFor(issuer, created.app, created.secret) });
+      } catch (err) {
+        if (err instanceof AppError) {
+          res.status(err.code === 'already_exists' ? 409 : 404).json({ error: err.code, message: err.message });
+          return;
+        }
+        next(err);
+      }
+    })();
+  });
+
+  // What the app needs, at any time (REQ-142). Built from the row and the provider's own protocol
+  // choices; the stored secret is a hash and is never part of it.
+  router.get<{ clientId: string }>(`${ADMIN_API}/apps/:clientId/connection`, auth.requireOwner, (req, res, next) => {
+    void (async () => {
+      try {
+        const app = await apps.get(req.params.clientId);
+        if (!app) {
+          res.status(404).json({ error: 'not_found' });
+          return;
+        }
+        res.set('Cache-Control', 'no-store').json(connectionFor(issuer, app));
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
 
   router.post<{ clientId: string }>(
     `${ADMIN_API}/apps/:clientId/manifest`,
@@ -512,7 +594,12 @@ export function adminRouter({
   router.post<{ clientId: string }>(
     `${ADMIN_API}/apps/:clientId/secret`,
     auth.requireFreshOwner,
-    appAction((clientId, req, _res, actorUserId) => apps.rotateSecret({ clientId, actorUserId, ip: clientIp(req) })),
+    appAction(async (clientId, req, _res, actorUserId) => {
+      const { secret } = await apps.rotateSecret({ clientId, actorUserId, ip: clientIp(req) });
+      const app = await apps.get(clientId);
+      // Shown once: in this answer, and in the sheet with it.
+      return { secret, ...(app ? { connection: connectionFor(issuer, app, secret) } : {}) };
+    }),
   );
 
   router.post<{ clientId: string }>(

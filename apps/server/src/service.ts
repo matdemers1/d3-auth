@@ -307,7 +307,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
       accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
-      adminRouter({ db, apps, grants, groups, settings, mail, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit, readiness, backupsConfigured: Boolean(config.BACKUP_S3_BUCKET) }),
+      adminRouter({ db, issuer: config.ISSUER, apps, grants, groups, settings, mail, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit, readiness, backupsConfigured: Boolean(config.BACKUP_S3_BUCKET) }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       signinRouter({ issuer: config.ISSUER, auth: consoleAuth, secureCookies }),
       consoleRouter(consoleDist),

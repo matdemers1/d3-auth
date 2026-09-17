@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AUDIT_EVENTS } from '../audit/events.js';
 import type { AuditWriter } from '../audit/writer.js';
 import type { Db } from '../db.js';
+import { findPreset } from './presets/index.js';
 import { mustHoldFactor, verifiedFactorCount } from '../security/factors.js';
 
 // Exporting and importing the administrative state (REQ-072).
@@ -39,6 +40,9 @@ const appSchema = z.object({
   roles_claim_name: z.string().default('roles'),
   enabled: z.boolean().default(true),
   roles: z.array(roleSchema).default([]),
+  /** Which preset built the app, and its answers. Optional: files from before presets still import. */
+  preset: z.string().min(1).optional(),
+  preset_inputs: z.record(z.string(), z.string()).optional(),
 });
 
 const personSchema = z.object({
@@ -132,6 +136,11 @@ async function decideKinds(
   return kinds;
 }
 
+const stringRecord = (value: unknown): Record<string, string> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    : {};
+
 /** Everything an operator would need to rebuild this instance's shape elsewhere. */
 export async function exportState(db: Db): Promise<AdminState> {
   const [apps, people, groups, settings] = await Promise.all([
@@ -163,6 +172,7 @@ export async function exportState(db: Db): Promise<AdminState> {
       ...(app.backchannelLogoutUri ? { backchannel_logout_uri: app.backchannelLogoutUri } : {}),
       roles_claim_name: app.rolesClaimName,
       enabled: app.enabled,
+      ...(app.preset ? { preset: app.preset, preset_inputs: stringRecord(app.presetInputs) } : {}),
       roles: app.roles.map((role) => ({
         key: role.key,
         display: role.displayName,
@@ -212,6 +222,13 @@ export async function planImport(db: Db, state: AdminState): Promise<ImportPlan>
   const declaredApps = new Set(state.apps.map((app) => app.client_id));
   const allApps = new Set([...declaredApps, ...appIds]);
 
+  for (const app of state.apps) {
+    // Recorded anyway, and harmless: a sheet is only built from a preset this version knows, from
+    // answers that pass its validators again.
+    if (app.preset && !findPreset(app.preset)) {
+      problems.push(`"${app.client_id}" was built by a preset this version does not know ("${app.preset}"); its paste sheet will not be shown.`);
+    }
+  }
   for (const person of state.people) {
     for (const grant of person.grants) {
       if (!allApps.has(grant.client_id)) problems.push(`${person.email} is granted "${grant.client_id}", which is not in this file.`);
@@ -292,6 +309,8 @@ export async function importState(
       backchannelLogoutUri: app.backchannel_logout_uri ?? null,
       rolesClaimName: app.roles_claim_name,
       enabled: app.enabled,
+      // Absent from the file means "not said", so an older file leaves what is here alone.
+      ...(app.preset ? { preset: app.preset, presetInputs: app.preset_inputs ?? {} } : {}),
     };
     const saved = await db.app.upsert({ where: { clientId: app.client_id }, create: { clientId: app.client_id, ...data }, update: data });
 

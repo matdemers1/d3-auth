@@ -192,6 +192,10 @@ model App {
   backchannelLogoutUri   String?    @map("backchannel_logout_uri")
   postLogoutRedirectUris String[]   @map("post_logout_redirect_uris")
   rolesClaimName         String     @default("roles") @map("roles_claim_name")
+  /// The preset that built this app (e.g. "immich"), so its paste sheet can be shown again. Null for a manifest.
+  preset                 String?
+  /// The answers the preset was given, normalised. Never a secret.
+  presetInputs           Json       @default("{}") @map("preset_inputs")
   enabled                Boolean    @default(true)
   createdAt              DateTime   @default(now()) @map("created_at") @db.Timestamptz
 

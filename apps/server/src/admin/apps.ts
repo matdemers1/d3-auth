@@ -28,6 +28,10 @@ export interface AppSummary {
   postLogoutRedirectUris: string[];
   roles: { key: string; displayName: string; description: string; sortOrder: number; isDefault: boolean; granted: number }[];
   people: number;
+  /** The preset that built it, if one did (REQ-143). */
+  preset: string | null;
+  /** The answers that preset was given. An address and a client id — never a secret. */
+  presetInputs: Record<string, string>;
   createdAt: Date;
 }
 
@@ -54,7 +58,14 @@ export interface Apps {
   get(clientId: string): Promise<AppSummary | undefined>;
   /** What this manifest would do, without doing it. */
   preview(manifest: Manifest): Promise<ManifestDiff>;
-  register(input: { manifest: Manifest; actorUserId: string; ip?: string | undefined; userAgent?: string | undefined }): Promise<Registered>;
+  register(input: {
+    manifest: Manifest;
+    actorUserId: string;
+    /** Set when a preset built the manifest; recorded on the app and in the audit row. */
+    preset?: { key: string; inputs: Readonly<Record<string, string>> } | undefined;
+    ip?: string | undefined;
+    userAgent?: string | undefined;
+  }): Promise<Registered>;
   update(input: {
     manifest: Manifest;
     actorUserId: string;
@@ -70,6 +81,12 @@ export interface Apps {
 
 const newSecret = (): string => randomBytes(32).toString('base64url');
 
+/** Stored answers are a flat object of strings; anything else in the column is not shown. */
+const inputsOf = (value: unknown): Record<string, string> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    : {};
+
 /** The shape the diff needs, including how many people hold each role. */
 const EXISTING = {
   redirectUris: { select: { uri: true } },
@@ -84,6 +101,8 @@ type AppRow = ExistingApp & {
   id: string;
   clientId: string;
   enabled: boolean;
+  preset: string | null;
+  presetInputs: unknown;
   createdAt: Date;
   roles: { key: string; displayName: string; description: string; sortOrder: number; isDefault: boolean; _count: { grantRoles: number } }[];
   _count: { grants: number };
@@ -108,6 +127,8 @@ const summarise = (app: AppRow): AppSummary => ({
     granted: role._count?.grantRoles ?? 0,
   })),
   people: app._count.grants,
+  preset: app.preset,
+  presetInputs: inputsOf(app.presetInputs),
   createdAt: app.createdAt,
 });
 
@@ -175,7 +196,7 @@ export function createApps(deps: { db: Db; hasher: SecretHasher; audit: AuditWri
       return diffManifest(manifest, await load(manifest.client_id));
     },
 
-    async register({ manifest, actorUserId, ip, userAgent }) {
+    async register({ manifest, actorUserId, preset, ip, userAgent }) {
       if (await load(manifest.client_id)) {
         throw new AppError('already_exists', `An app with the client id "${manifest.client_id}" is already registered.`);
       }
@@ -190,6 +211,7 @@ export function createApps(deps: { db: Db; hasher: SecretHasher; audit: AuditWri
           clientSecretHash: secret ? await hasher.hash(secret) : null,
           backchannelLogoutUri: manifest.backchannel_logout_uri ?? null,
           postLogoutRedirectUris: manifest.post_logout_redirect_uris,
+          ...(preset ? { preset: preset.key, presetInputs: { ...preset.inputs } } : {}),
         },
       });
       await apply(manifest, created.id);
@@ -201,7 +223,11 @@ export function createApps(deps: { db: Db; hasher: SecretHasher; audit: AuditWri
         targetId: created.id,
         ip,
         userAgent,
-        detail: { clientId: manifest.client_id, roles: manifest.roles.map((role) => role.key) },
+        detail: {
+          clientId: manifest.client_id,
+          roles: manifest.roles.map((role) => role.key),
+          ...(preset ? { preset: preset.key } : {}),
+        },
       });
 
       const app = summarise(await loadOrThrow(manifest.client_id));
