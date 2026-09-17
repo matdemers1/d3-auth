@@ -350,7 +350,7 @@ packages:
       react-dom: ^18.2.0 || ^19.0.0
 
   '@d3cloud/ui@https://github.com/matdemers1/d3-design-system/releases/download/v1.1.0/d3cloud-ui-1.1.0.tgz':
-    resolution: {tarball: https://github.com/matdemers1/d3-design-system/releases/download/v1.1.0/d3cloud-ui-1.1.0.tgz}
+    resolution: {integrity: sha512-BstfVZqV8Otvm57sOo6TJXWiuF+BxGgLeh/el5Xrk7eb3Ng1Nc72DZzaUDdc0FKm4rIvc8EQn0Awk3WfxYXx0g==, tarball: https://github.com/matdemers1/d3-design-system/releases/download/v1.1.0/d3cloud-ui-1.1.0.tgz}
     version: 1.1.0
     engines: {node: '>=20.0.0'}
     hasBin: true
