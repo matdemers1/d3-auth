@@ -138,8 +138,10 @@ const handle = createBackchannelHandler({
 
 ## Registering
 
-Apps are registered by the owner in the console, from a manifest. Roles are declared there and
-nowhere else — the console cannot invent a role your app has never heard of.
+Apps are registered by the owner in the console: **Apps → Add an app**. An app D3 Auth already
+knows (Immich, for now) is added from the picker by giving its address; anything else is
+registered from a manifest. Roles are declared there and nowhere else — the console cannot invent
+a role your app has never heard of.
 
 ```json
 {
@@ -159,6 +161,20 @@ nowhere else — the console cannot invent a role your app has never heard of.
 Redirect URIs are matched exactly: no wildcards, no fragments, https on anything that is not
 localhost. The client secret is shown once, at registration, and can only be rotated afterwards —
 never re-read.
+
+### The connection sheet
+
+Don't copy values from this page into your app's configuration. Every app's page in the console
+has a **Connect this app** section: issuer, discovery URL, client ID, token endpoint auth method,
+ID token signing algorithm, PKCE, scopes, roles claim, redirect and post-logout URIs, back-channel
+logout and end session endpoint, each with a copy button and a line saying why. It is built from
+the provider's own configuration (`apps/server/src/oidc/protocol.ts`), so it is always what the
+provider actually does. The same sheet is in `GET /api/admin/apps/:clientId/connection` (owner).
+
+The client secret is on that sheet exactly once: on the screen that registers the app, or rotates
+its secret. For an app added from a preset, the registered screen also shows the app's own
+settings screen field by field, in its own labels (for Immich: *Administration → Settings →
+Authentication → OAuth*), and the app's page links back to it.
 
 ## See also
 
