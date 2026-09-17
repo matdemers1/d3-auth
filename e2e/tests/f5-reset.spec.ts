@@ -29,7 +29,7 @@ async function subjectOf(page: Page): Promise<string> {
 
 async function signOut(page: Page): Promise<void> {
   await page.goto('/logout');
-  await page.getByRole('button', { name: 'Yes, sign me out' }).click();
+  await page.getByRole('button', { name: /^Sign out( everywhere)?$/ }).click();
 }
 
 test.describe('F5 lost phone', () => {

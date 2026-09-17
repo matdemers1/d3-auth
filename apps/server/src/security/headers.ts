@@ -64,8 +64,13 @@ export const styleNonceOf = (res: Response): string | undefined => res.locals.st
 export function withStyleNonce(html: string, nonce: string): string {
   return html.replace(/<head([^>]*)>/i, (head) => `${head}<meta name="d3-style-nonce" content="${nonce}">`);
 }
-/** The provider redirects and form-posts to validated client URLs; it never renders our console. */
-export const PROVIDER_CSP = BASE_CSP.join('; ');
+/**
+ * The provider redirects and form-posts to validated client URLs. Its sign-out pages are drawn in the
+ * console's shell, so they carry the same theme boot script and allow it by the same hash.
+ */
+export const PROVIDER_CSP = BASE_CSP.map((directive) =>
+  directive === "script-src 'self'" ? `script-src 'self' ${THEME_BOOT_SCRIPT_HASH}` : directive,
+).join('; ');
 
 export const HSTS = 'max-age=63072000; includeSubDomains; preload';
 

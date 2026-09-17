@@ -1,3 +1,4 @@
+import { ROUTES } from '../../oidc/provider.js';
 import { authMethodFor, SECRET_NOT_SHOWN, SECRET_ON_REGISTER } from '../connection.js';
 import { ID_TOKEN_SIGNING_ALG, ROLES_CLAIM, ROLES_SCOPE } from '../../oidc/protocol.js';
 import type { Preset, PresetInputs } from './types.js';
@@ -103,7 +104,13 @@ export const immich: Preset = {
       },
       { id: 'userinfo_signed_response_alg', label: 'userinfo_signed_response_alg', value: 'none', action: 'leave' },
       { id: 'prompt', label: 'prompt', value: null, action: 'leave', why: 'Leave it empty.' },
-      { id: 'end_session_endpoint', label: 'end_session_endpoint', value: null, action: 'leave', why: 'Leave it empty. Immich discovers it from D3 Auth.' },
+      {
+        id: 'end_session_endpoint',
+        label: 'end_session_endpoint',
+        value: `${issuer}${ROUTES.end_session}?client_id=${encodeURIComponent(app.clientId)}&post_logout_redirect_uri=${encodeURIComponent(`${at}/auth/login`)}`,
+        action: 'set',
+        why: 'Brings people back to Immich’s sign-in page after signing out. Left empty, they end on D3 Auth instead.',
+      },
       { id: 'request_timeout', label: 'Request Timeout', value: '30000', action: 'leave' },
       {
         id: 'allow_insecure_requests',

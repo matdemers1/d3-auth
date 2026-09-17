@@ -34,9 +34,12 @@ describe('the console CSP and its one inline script', () => {
     expect(withStyleNonce('<html><head lang="x"><title>t</title>', 'N')).toBe('<html><head lang="x"><meta name="d3-style-nonce" content="N"><title>t</title>');
   });
 
-  it('keeps the provider policy free of the console hash', () => {
+  it('gives the provider the theme script hash and nothing else inline', () => {
     expect(PROVIDER_CSP).toContain("script-src 'self'");
-    expect(PROVIDER_CSP).not.toContain(THEME_BOOT_SCRIPT_HASH);
+    // The sign-out pages are drawn in the console shell, so the provider allows the same one script.
+    expect(PROVIDER_CSP).toContain(THEME_BOOT_SCRIPT_HASH);
+    expect(PROVIDER_CSP).not.toContain('nonce-');
+    expect(PROVIDER_CSP).not.toContain('unsafe-inline');
   });
 
   describe('on the wire', () => {

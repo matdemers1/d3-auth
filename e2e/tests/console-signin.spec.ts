@@ -23,7 +23,9 @@ test('the console asks for a sign-in, returns to the page, and asks again after 
   // Sign-out is the last item in the account menu, on every console page.
   await openAccountMenu(page);
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
-  await page.getByRole('button', { name: 'Yes, sign me out' }).click();
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'You are signed out' })).toBeVisible();
+  await page.getByRole('link', { name: 'Sign in again' }).click();
   await expect(page.getByRole('heading', { name: /Sign in to/ })).toBeVisible();
 
   // And the bare address means the same thing.

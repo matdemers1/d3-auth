@@ -4,5 +4,5 @@
 
 export const SIGN_OUT_HREF = `/oidc/session/end?${new URLSearchParams({
   client_id: 'd3auth-console',
-  post_logout_redirect_uri: `${window.location.origin}/signin`,
+  post_logout_redirect_uri: `${window.location.origin}/signed-out`,
 }).toString()}`;

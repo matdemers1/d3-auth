@@ -120,7 +120,9 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   async function refreshLifetimes(): Promise<void> {
     sessionIdleDays = (await settings.lifetimes()).sessionDays;
   }
+  const consoleDist = config.CONSOLE_DIST ?? defaultConsoleDist();
   const provider = createProvider({
+    consoleDist,
     sessionIdleDays: () => sessionIdleDays,
     issuer: config.ISSUER,
     db,
@@ -165,7 +167,6 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       });
   });
   recordSessions(provider, db, audit, logger);
-  const consoleDist = config.CONSOLE_DIST ?? defaultConsoleDist();
   if (!consoleBuilt(consoleDist)) logger.warn({ consoleDist }, 'console build not found; /login, /account and /admin answer 503');
   if (config.CONFORMANCE_PKCE_EXEMPT_CLIENTS?.length) {
     logger.warn({ clients: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS }, 'PKCE exemption active for conformance clients — test issuers only');
@@ -309,7 +310,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit }),
       adminRouter({ db, issuer: config.ISSUER, apps, grants, groups, settings, mail, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit, readiness, backupsConfigured: Boolean(config.BACKUP_S3_BUCKET) }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
-      signinRouter({ issuer: config.ISSUER, auth: consoleAuth, secureCookies }),
+      signinRouter({ issuer: config.ISSUER, auth: consoleAuth, secureCookies, consoleDist }),
       consoleRouter(consoleDist),
     ],
     beforeRouters: [unavailableGate(readiness)],

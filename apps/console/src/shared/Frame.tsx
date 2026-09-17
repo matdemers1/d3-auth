@@ -80,8 +80,8 @@ function AccountNav({ current }: { current: AccountPlace }) {
 
 /**
  * Who is signed in, then the places set up once, then the theme, then sign-out — last, on every
- * page, in the same place (ASVS 7.4.4). The provider asks "Sign out?" before it acts, so a stray
- * click costs a "No, stay signed in" (ADR-005).
+ * page, in the same place (ASVS 7.4.4). The provider asks "Sign out of D3 Auth?" before it acts, so
+ * a stray click costs a "Stay signed in", and signing out lands on /signed-out (ADR-005).
  */
 function Account({ me, area }: { me: Me; area: 'admin' | 'account' }) {
   return (

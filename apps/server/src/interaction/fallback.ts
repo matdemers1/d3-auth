@@ -174,7 +174,7 @@ export function renderRecoveryPage(
  * things are already wrong, and "the assets are missing" must not be one more thing in the way.
  * Unstyled and readable beats a 500.
  */
-function intoShell(consoleDist: string, markup: string): string {
+export function intoShell(consoleDist: string, markup: string): string {
   try {
     const shell = readFileSync(join(consoleDist, 'index.html'), 'utf8');
     return shell.replace('<div id="root"></div>', `<div id="root">${markup}</div>`);

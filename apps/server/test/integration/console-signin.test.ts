@@ -140,6 +140,24 @@ describe('signing out', () => {
   });
 });
 
+describe('the signed-out page', () => {
+  it('says so, with a way back in, and the question before it names D3 Auth', async () => {
+    const page = await h.opFetch(`${ISSUER}/signed-out`);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('Sign in again');
+
+    const browser = new Browser(h.opFetch);
+    await browser.login((await browser.navigate(`${ISSUER}/signin`)).response, USER);
+    const question = await browser.request(`${ISSUER}/oidc/session/end?${new URLSearchParams({ client_id: 'd3auth-console', post_logout_redirect_uri: `${ISSUER}/signed-out` }).toString()}`);
+    const html = await question.text();
+    expect(html).toContain('Sign out of D3 Auth?');
+    expect(html).toContain('Signed in as <strong>');
+    const xsrf = /name="xsrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
+    const confirmed = await browser.request(`${ISSUER}/oidc/session/end/confirm`, { form: { xsrf, logout: 'yes' } });
+    expect(confirmed.headers.get('location')).toBe(`${ISSUER}/signed-out`);
+  });
+});
+
 describe('where next may go', () => {
   it('only to the console or account pages on this origin', () => {
     expect(safeNext('/admin')).toBe('/admin');

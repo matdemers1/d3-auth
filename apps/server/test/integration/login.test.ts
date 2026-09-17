@@ -219,12 +219,15 @@ describe('logout (REQ-010)', () => {
     endSession.searchParams.set('id_token_hint', tokens.id_token ?? '');
     const confirm = await browser.navigate(endSession.toString());
     const html = await confirm.response.text();
-    expect(html).toMatch(/Sign out\?/);
-    expect(html).toMatch(/Matthew/);
+    // The app that asked, by name, and who is signed in — not the operator's name standing in for
+    // the product, which is what this page used to say.
+    expect(html).toContain('Sign out of Web App?');
+    expect(html).toContain(`Signed in as <strong>${USER.displayName}</strong>`);
+    expect(html).toContain('Only sign out of Web App');
 
     const xsrf = /name="xsrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
     const done = await browser.navigate(`${ISSUER}/oidc/session/end/confirm`, { form: { xsrf, logout: 'yes' } });
-    // Plain HTML, so it says so with JavaScript off too.
+    // Server-rendered, so it says so with JavaScript off too.
     expect(await done.response.text()).toMatch(/You are signed out/);
 
     const after = await h.service.db.session.findUniqueOrThrow({ where: { id: session.id } });

@@ -28,7 +28,7 @@ async function signIn(page: Page): Promise<void> {
   await page.goto('/');
   if (await page.locator('#signed-in').isVisible()) {
     await page.goto('/logout');
-    await page.getByRole('button', { name: 'Yes, sign me out' }).click();
+    await page.getByRole('button', { name: /^Sign out( everywhere)?$/ }).click();
     await page.goto('/');
   }
   await page.getByRole('link', { name: 'Sign in with D3 Auth' }).click();

@@ -8,7 +8,7 @@ export type Surface = 'login' | 'account' | 'admin' | 'server-rendered' | 'not-f
  * is one: opening it is what claims the link, so a React screen that asked again on mount would
  * be told the link had already been used — by itself.
  */
-const SERVER_RENDERED: readonly string[] = ['/login/recover/'];
+const SERVER_RENDERED: readonly string[] = ['/login/recover/', '/oidc/session/end', '/signed-out'];
 
 const PREFIXES: readonly (readonly [string, Surface])[] = [
   ['/login', 'login'],

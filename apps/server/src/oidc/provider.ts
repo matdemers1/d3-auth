@@ -1,3 +1,5 @@
+import { isConsoleClient } from '../console/console-client.js';
+import { renderSignedOut, renderSignOutQuestion } from '../interaction/signout-pages.js';
 import Provider, { type AdapterFactory, type Configuration } from 'oidc-provider';
 import type { Db } from '../db.js';
 import type { SecretHasher } from '../security/hash.js';
@@ -54,8 +56,10 @@ export interface ProviderOptions {
   hasher: SecretHasher;
   cookieKeys: string[];
   interactionPath: (uid: string) => string;
-  /** Shown on the logout confirmation, e.g. "Matthew". */
+  /** Shown in copy like "Ask Matthew". */
   operatorDisplayName?: string;
+  /** The console build, whose shell and stylesheet the sign-out pages are drawn in. */
+  consoleDist?: string;
   /** False only for a local http issuer, where prefixed cookie names cannot be used. */
   secureCookies?: boolean;
   /** Conformance-suite clients exempt from PKCE; config refuses this outside *.test issuers. */
@@ -76,7 +80,7 @@ const escapeHtml = (value: unknown): string =>
 
 export function createProvider(options: ProviderOptions): Provider {
   const pkceExempt = new Set(options.pkceExemptClientIds ?? []);
-  const operatorDisplayName = options.operatorDisplayName ?? 'D3 Auth';
+  const consoleDist = options.consoleDist ?? '';
   const configuration: Configuration = {
     // Clients come from the App table through the adapter (T-3.1), so registering an app takes
     // effect without a restart. There are deliberately no static clients; the console's own client
@@ -215,37 +219,26 @@ export function createProvider(options: ProviderOptions): Provider {
       userinfo: { enabled: true },
       rpInitiatedLogout: {
         enabled: true,
-        // Plain HTML, no inline styles or script: this renders under the provider's CSP and
-        // still works with JavaScript off (REQ-010).
-        logoutSource(ctx, form) {
+        // Drawn like every other single-task page and server-rendered, so it works with JavaScript
+        // off (REQ-010). The two answers say what they do: see interaction/signout-pages.ts.
+        async logoutSource(ctx, form) {
+          const accountId = ctx.oidc.session?.accountId;
+          const person = accountId
+            ? await options.db.user.findUnique({ where: { id: accountId }, select: { displayName: true, email: true } })
+            : null;
+          const client = ctx.oidc.client;
           ctx.type = 'html';
-          ctx.body = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign out</title></head>
-<body>
-<main>
-<h1>Sign out?</h1>
-<p>This ends your session with ${escapeHtml(operatorDisplayName)} and the apps that use it.</p>
-${form}
-<button autofocus type="submit" form="op.logoutForm" value="yes" name="logout">Yes, sign me out</button>
-<button type="submit" form="op.logoutForm">No, stay signed in</button>
-</main>
-</body></html>`;
+          ctx.body = renderSignOutQuestion(consoleDist, {
+            form,
+            ...(person ? { person } : {}),
+            ...(client && !isConsoleClient(client.clientId) ? { appName: client.clientName ?? client.clientId } : {}),
+          });
         },
-        // Nothing registered to return to (I-8). Plain HTML like the question before it, so the
-        // answer to "am I signed out?" does not depend on JavaScript loading (REQ-010).
+        // Reached with a client only when that app alone was signed out; otherwise everything was.
         postLogoutSuccessSource(ctx) {
+          const client = ctx.oidc.client;
           ctx.type = 'html';
-          ctx.body = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Signed out</title></head>
-<body>
-<main>
-<h1>You are signed out</h1>
-<p>You can close this tab, or sign in again from the app you were using.</p>
-<p><a href="/signin">Sign in to ${escapeHtml(operatorDisplayName)}</a></p>
-</main>
-</body></html>`;
+          ctx.body = renderSignedOut(consoleDist, client && !isConsoleClient(client.clientId) ? { onlyApp: client.clientName ?? client.clientId } : {});
         },
       },
       registration: { enabled: false },

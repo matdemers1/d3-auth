@@ -3,7 +3,8 @@ import { Router, type Request, type Response } from 'express';
 import { readCookie } from '../security/cookies.js';
 import { ROUTES } from '../oidc/provider.js';
 import { isAdmin, type ConsoleAuth } from './auth.js';
-import { CONSOLE_CLIENT_ID, SIGNIN_CALLBACK_PATH, SIGNIN_PATH } from './console-client.js';
+import { renderSignedOut } from '../interaction/signout-pages.js';
+import { CONSOLE_CLIENT_ID, SIGNED_OUT_PATH, SIGNIN_CALLBACK_PATH, SIGNIN_PATH } from './console-client.js';
 
 // Signing in to the console directly (ADR-005).
 //
@@ -38,7 +39,7 @@ const sameString = (a: string, b: string): boolean => {
   return left.length === right.length && timingSafeEqual(left, right);
 };
 
-export function signinRouter(deps: { issuer: string; auth: ConsoleAuth; secureCookies: boolean }): Router {
+export function signinRouter(deps: { issuer: string; auth: ConsoleAuth; secureCookies: boolean; consoleDist?: string }): Router {
   const router = Router();
   const origin = new URL(deps.issuer).origin;
   const cookieName = deps.secureCookies ? STATE_COOKIE_SECURE : STATE_COOKIE_PLAIN;
@@ -56,6 +57,12 @@ export function signinRouter(deps: { issuer: string; auth: ConsoleAuth; secureCo
   // The bare origin and the bare /login have nothing to show on their own; both mean "sign in".
   router.get(['/', '/login'], (_req, res) => {
     res.redirect(302, SIGNIN_PATH);
+  });
+
+  // After the console's own sign-out: a page that says it happened, rather than a sign-in form that
+  // looks as though nothing did.
+  router.get(SIGNED_OUT_PATH, (_req, res) => {
+    res.set('Cache-Control', 'no-store').type('html').send(renderSignedOut(deps.consoleDist ?? ''));
   });
 
   router.get(SIGNIN_PATH, (req, res, nextHandler) => {

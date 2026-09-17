@@ -28,7 +28,7 @@ test.describe('F1 sign in with D3 Auth', () => {
     await expect(page.locator('#claims')).toContainText('"sub"');
 
     await page.getByRole('link', { name: 'Sign out' }).click();
-    await page.getByRole('button', { name: 'Yes, sign me out' }).click();
+    await page.getByRole('button', { name: /^Sign out( everywhere)?$/ }).click();
     await expect(page.getByText('You are signed out.')).toBeVisible();
   });
 

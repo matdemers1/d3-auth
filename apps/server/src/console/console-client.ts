@@ -17,6 +17,8 @@ export const CONSOLE_CLIENT_ID = 'd3auth-console';
 
 export const SIGNIN_PATH = '/signin';
 export const SIGNIN_CALLBACK_PATH = '/signin/callback';
+/** Where the console lands after signing out: a page that says so, with a way back in. */
+export const SIGNED_OUT_PATH = '/signed-out';
 
 export const isConsoleClient = (clientId: string): boolean => clientId === CONSOLE_CLIENT_ID;
 
@@ -28,7 +30,7 @@ export function consoleClientMetadata(issuer: string): ClientMetadata {
     application_type: 'web',
     token_endpoint_auth_method: 'none',
     redirect_uris: [`${origin}${SIGNIN_CALLBACK_PATH}`],
-    post_logout_redirect_uris: [`${origin}${SIGNIN_PATH}`],
+    post_logout_redirect_uris: [`${origin}${SIGNED_OUT_PATH}`, `${origin}${SIGNIN_PATH}`],
     grant_types: ['authorization_code'],
     response_types: ['code'],
     response_modes: ['query'],
