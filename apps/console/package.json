@@ -13,8 +13,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@d3cloud/ui": "https://github.com/matdemers1/d3-design-system/releases/download/v1.0.0/d3cloud-ui-1.0.0.tgz",
+    "@d3cloud/ui": "file:../../vendor/d3cloud-ui-1.1.0-rc.1.tgz",
     "@simplewebauthn/browser": "^14.0.0",
+    "lucide-react": "1.41.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
