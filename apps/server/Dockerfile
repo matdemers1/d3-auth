@@ -10,6 +10,8 @@ WORKDIR /repo
 
 # Fetch from the lockfile alone so dependency layers survive source edits.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+# Tarballs the lockfile points at by path (a design-system release candidate before it is published).
+COPY vendor ./vendor
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm fetch --frozen-lockfile
 
 COPY . .

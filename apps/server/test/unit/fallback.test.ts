@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { fallbackForm, renderRecoveryPage } from '../../src/interaction/fallback.js';
+import { fallbackForm, renderContinueAsPage, renderRecoveryPage } from '../../src/interaction/fallback.js';
+import { inviteForm } from '../../src/interaction/invite-page.js';
+import { setupFinishedPage, setupForm } from '../../src/setup/page.js';
 import { start, type LoginState } from '../../src/interaction/machine.js';
 
 // The no-JavaScript forms (REQ-010) and the break-glass page (REQ-122).
@@ -44,6 +47,45 @@ describe('the form that arrives in the HTML', () => {
     const nasty = view({ name: 'awaiting_password', identity });
     nasty.flow.attemptedEmail = '<script>alert(1)</script>';
     expect(fallbackForm(nasty)).not.toContain('<script>alert(1)</script>');
+  });
+});
+
+describe('the classes it is drawn in', () => {
+  // The no-JavaScript pages carry no styles of their own: they borrow the design system's. A class
+  // renamed in a release would leave them unstyled with nothing failing, so every class they use
+  // has to exist in the stylesheet the console actually ships.
+  const css = readFileSync(new URL('../../../console/node_modules/@d3cloud/ui/dist/index.css', import.meta.url), 'utf8');
+  const pages = [
+    fallbackForm(view(start())),
+    fallbackForm(view({ name: 'awaiting_password', identity })),
+    fallbackForm(view({ name: 'awaiting_factor', identity, amr: ['pwd'] })),
+    fallbackForm(view({ name: 'awaiting_trusted_device', identity, amr: ['pwd', 'otp'] })),
+    renderContinueAsPage('/nowhere', { uid: 'abc', csrf: 't', clientName: 'Web App', username: 'them', displayName: 'Them', operatorDisplayName: 'Matthew' }),
+    renderRecoveryPage('/nowhere', { ok: true, email: 'owner@example.com', expiresAt: new Date(0) }, 'Matthew'),
+    setupForm(),
+    setupFinishedPage(),
+    inviteForm({ valid: true, email: 'guest@example.com', token: 'tok', operatorDisplayName: 'Matthew' }),
+  ];
+  const used = new Set(pages.flatMap((html) => [...html.matchAll(/class="([^"]+)"/g)].flatMap((match) => (match[1] ?? '').split(/\s+/))));
+
+  it('uses only d3- classes', () => {
+    expect([...used].filter((name) => !name.startsWith('d3-'))).toEqual([]);
+  });
+
+  // Modifiers the components emit for their default, which the stylesheet has no rule for. Written
+  // anyway so the markup matches what Card and Section render.
+  const unstyledDefaults = new Set(['d3-crd--md', 'd3-sec--card']);
+
+  it.each([...used].filter((name) => !unstyledDefaults.has(name)))('%s exists in @d3cloud/ui', (name) => {
+    expect(css).toMatch(new RegExp(`\\.${name.replace(/[-_]/g, (c) => `\\${c}`)}(?![\\w-])`));
+  });
+
+  it('labels every field it draws', () => {
+    for (const html of pages) {
+      for (const match of html.matchAll(/<input class="d3-inp__control" id="([^"]+)"/g)) {
+        expect(html).toContain(`for="${match[1] ?? ''}"`);
+      }
+    }
   });
 });
 
