@@ -22,6 +22,12 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["d3auth_client*"]
 
+# Every function here is annotated, and without this marker none of it reaches the
+# consumer: mypy skips an installed package that does not claim to be typed, so a
+# relying party gets `Any` back from the SDK it was careful to type against.
+[tool.setuptools.package-data]
+d3auth_client = ["py.typed"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
