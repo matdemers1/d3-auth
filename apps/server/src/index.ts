@@ -4,6 +4,7 @@ import { createDb } from './db.js';
 import { createLogger } from './log.js';
 import { offsiteStore } from './backup/from-config.js';
 import { runBackup, runDrill } from './backup/operations.js';
+import { alertRules, startAlerts } from './audit/alerts.js';
 import { scheduleDaily } from './jobs/daily.js';
 import { createAuditWriter } from './audit/writer.js';
 import { createService } from './service.js';
@@ -76,6 +77,18 @@ if (store) {
 } else {
   logger.warn('offsite backups are not configured (BACKUP_S3_BUCKET); only pre-migration dumps are kept');
 }
+
+// Alert rules over the audit trail (T-6.3, REQ-114), every five minutes.
+jobs.push(
+  startAlerts({
+    db: service.db,
+    mail: service.mail,
+    settings: service.settings,
+    logger,
+    operatorDisplayName: config.OPERATOR_DISPLAY_NAME,
+    rules: alertRules({ backupsConfigured: store !== undefined }),
+  }),
+);
 
 function shutdown(signal: NodeJS.Signals): void {
   for (const job of jobs) job.stop();

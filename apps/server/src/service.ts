@@ -6,6 +6,7 @@ import { createApps, type Apps } from './admin/apps.js';
 import { createGrants, type Grants } from './authz/grants.js';
 import { createGroups, type Groups } from './admin/groups.js';
 import { adminRouter } from './admin/routes.js';
+import { AUDIT_EVENTS } from './audit/events.js';
 import { createAuditWriter } from './audit/writer.js';
 import { accountRouter } from './account/routes.js';
 import { createConsoleAuth } from './console/auth.js';
@@ -142,6 +143,25 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       );
     });
   }
+  // A refresh token presented twice (REQ-009) is either a bug or a stolen token. The provider has
+  // already revoked the grant; this makes it an audit row, which the alert rules watch (REQ-114).
+  provider.on('grant.error', (ctx, err) => {
+    // The client is told only "grant request is invalid"; the reason lives in error_detail.
+    if ((err as { error_detail?: string }).error_detail !== 'refresh token already used') return;
+    const grant = ctx.oidc.entities.Grant as { accountId?: string } | undefined;
+    void audit
+      .write({
+        event: AUDIT_EVENTS.tokenRefreshReused,
+        actorUserId: grant?.accountId ?? null,
+        targetType: 'app',
+        targetId: ctx.oidc.client?.clientId ?? null,
+        ip: ctx.get('cf-connecting-ip') || ctx.ip,
+        detail: { clientId: ctx.oidc.client?.clientId },
+      })
+      .catch((writeErr: unknown) => {
+        logger.error({ err: writeErr }, 'could not record a refresh token reuse');
+      });
+  });
   recordSessions(provider, db, audit, logger);
   const consoleDist = config.CONSOLE_DIST ?? defaultConsoleDist();
   if (!consoleBuilt(consoleDist)) logger.warn({ consoleDist }, 'console build not found; /login, /account and /admin answer 503');
@@ -171,7 +191,9 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const lifetimeTimer = setInterval(() => void refreshLifetimes().catch(() => undefined), 30_000);
   lifetimeTimer.unref();
   // Resolved per send, so changing it in the console takes effect without a deploy (REQ-071).
-  const mail = mailFromSettings(settings, logger);
+  const mail = mailFromSettings(settings, logger, (failure) =>
+    audit.write({ event: AUDIT_EVENTS.mailFailed, detail: failure }).catch(() => undefined),
+  );
   const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'), new URL(config.ISSUER).origin);
   const issuerUrl = new URL(config.ISSUER);
   // A password built on this instance's own names is as guessable as one built on the product's

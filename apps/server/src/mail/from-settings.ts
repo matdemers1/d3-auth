@@ -11,7 +11,15 @@ import { workerRelayDriver } from './worker-relay.js';
 // console is that changing it takes effect without a deploy. Resolution is one indexed row; the
 // send that follows is a network round trip, so the cost is noise.
 
-export function mailFromSettings(settings: Settings, logger: Logger): MailAdapter {
+/**
+ * `onFailure` hears about a real driver failing, which the alert rules watch (REQ-114). The log
+ * driver fails on purpose — it is what "no mail configured" looks like — and is not reported.
+ */
+export function mailFromSettings(
+  settings: Settings,
+  logger: Logger,
+  onFailure?: (failure: { driver: string; error: string }) => Promise<void>,
+): MailAdapter {
   const resolve = async (): Promise<MailDriver> => {
     const configured = await settings.mail();
     const from = configured?.from ?? 'no-reply@localhost';
@@ -35,7 +43,9 @@ export function mailFromSettings(settings: Settings, logger: Logger): MailAdapte
     driver: 'configured',
     async send(message): Promise<MailResult> {
       const driver = await resolve();
-      return createMailAdapter(driver, logger).send(message);
+      const result = await createMailAdapter(driver, logger).send(message);
+      if (!result.delivered && driver.name !== 'log') await onFailure?.({ driver: driver.name, error: result.error ?? 'unknown' });
+      return result;
     },
   };
 }
