@@ -1,11 +1,30 @@
-import { Alert, Badge, Button, Card, EmptyState, FormField, Input, PageHeader, Skeleton } from '@d3cloud/ui';
-import { useEffect, useState } from 'react';
+import {
+  Alert,
+  Badge,
+  Button,
+  CodeInput,
+  DataList,
+  DataListRow,
+  EmptyState,
+  FormActions,
+  FormField,
+  Page,
+  PageHeader,
+  Section,
+  Stack,
+} from '@d3cloud/ui';
+import { KeyRound, Laptop, Smartphone } from 'lucide-react';
+import { useState } from 'react';
 import { api, ApiError } from '../api';
-import { StepUp } from '../admin/StepUp';
+import { Confirm } from '../shared/Confirm';
+import { icon } from '../shared/icons';
+import { messageOf, useLoad } from '../shared/load';
+import { useStepUp } from '../shared/StepUp';
+import { FactsSkeleton, LoadFailed, RowsSkeleton } from '../shared/states';
 import { describeDevice } from './device-name';
 
-// A-4: how you sign in. A passkey is the good path and leads; an authenticator app is the
-// fallback for anyone whose device cannot do one.
+// A-4: how you sign in. A passkey is the good path and leads; an authenticator app is the fallback
+// for anyone whose device cannot do one.
 
 interface Passkey {
   id: string;
@@ -40,50 +59,33 @@ interface Enrolment {
   manualKey: string;
 }
 
-const when = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateString() : 'not yet');
+type Region = 'page' | 'passkeys' | 'totp' | 'devices';
+
+const day = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'not yet');
+
+const DESCRIPTION = 'Passkeys and authenticator apps on your account, and the browsers you have told to stop asking.';
 
 export function Security() {
-  const [factors, setFactors] = useState<Factors | undefined>();
-  const [devices, setDevices] = useState<TrustedDevice[]>([]);
-  const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | undefined>();
+  const factors = useLoad(() => api.get<Factors>('/api/account/factors'));
+  // The factor list is the point of this screen; a missing device list is not worth an alarm.
+  const devices = useLoad(() => api.get<{ devices: TrustedDevice[] }>('/api/account/devices').then((answer) => answer.devices));
+  const { ask, prompt } = useStepUp();
+  const [message, setMessage] = useState<{ where: Region; tone: 'danger' | 'success'; text: string } | undefined>();
   const [busy, setBusy] = useState(false);
   const [enrolment, setEnrolment] = useState<Enrolment | undefined>();
   const [qr, setQr] = useState<string | undefined>();
   const [code, setCode] = useState('');
-  // Adding or removing a factor asks for fresh proof (ASVS 7.5.1): a borrowed session must not be
-  // able to plant a passkey that outlasts a password change.
-  const [pending, setPending] = useState<{ describe: string; retry: () => void } | undefined>();
   // After a factor changes, offer to end every other sign-in (ASVS 7.4.3): if the change was made
   // because something was lost or suspected, the other sessions are exactly what to worry about.
   const [offerSignOutOthers, setOfferSignOutOthers] = useState(false);
-  const askFirst = (err: unknown, describe: string, retry: () => void): boolean => {
-    if (err instanceof ApiError && err.body.error === 'step_up_required') {
-      setPending({ describe, retry });
-      return true;
-    }
-    return false;
-  };
 
   const load = () => {
-    api
-      .get<Factors>('/api/account/factors')
-      .then(setFactors)
-      .catch(() => {
-        setMessage({ tone: 'danger', text: 'We could not load your security settings.' });
-      });
-    api
-      .get<{ devices: TrustedDevice[] }>('/api/account/devices')
-      .then((answer) => {
-        setDevices(answer.devices);
-      })
-      .catch(() => {
-        // The factor list is the point of this screen; a missing device list is not worth an alarm.
-        setDevices([]);
-      });
+    factors.reload();
+    devices.reload();
   };
 
-  useEffect(load, []);
-
+  // Adding or removing a factor asks for fresh proof (ASVS 7.5.1): a borrowed session must not be
+  // able to plant a passkey that outlasts a password change.
   async function addPasskey() {
     setBusy(true);
     setMessage(undefined);
@@ -92,12 +94,12 @@ export function Security() {
       const options = await api.post<Parameters<typeof startRegistration>[0]['optionsJSON']>('/api/account/passkeys/begin');
       const response = await startRegistration({ optionsJSON: options });
       await api.post('/api/account/passkeys/finish', { response, label: 'Passkey' });
-      setMessage({ tone: 'success', text: 'Passkey added. You can use it to sign in from now on.' });
+      setMessage({ where: 'passkeys', tone: 'success', text: 'Passkey added. You can use it to sign in from now on.' });
       setOfferSignOutOthers(true);
       load();
     } catch (err) {
-      if (askFirst(err, 'adding a passkey', () => void addPasskey())) return;
-      if (err instanceof ApiError) setMessage({ tone: 'danger', text: err.message });
+      if (ask(err, 'adding a passkey', () => void addPasskey())) return;
+      if (err instanceof ApiError) setMessage({ where: 'passkeys', tone: 'danger', text: err.message });
       // A cancelled prompt is a choice, not a failure.
     } finally {
       setBusy(false);
@@ -113,14 +115,14 @@ export function Security() {
       const { toDataURL } = await import('qrcode');
       setQr(await toDataURL(started.uri, { margin: 1, width: 220 }));
     } catch (err) {
-      if (askFirst(err, 'adding an authenticator app', () => void startTotp())) return;
-      setMessage({ tone: 'danger', text: 'We could not start that. Try again.' });
+      if (ask(err, 'adding an authenticator app', () => void startTotp())) return;
+      setMessage({ where: 'totp', tone: 'danger', text: 'That could not start. Try again.' });
     } finally {
       setBusy(false);
     }
   }
 
-  async function confirmTotp(event: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+  async function confirmTotp(event: React.SyntheticEvent) {
     event.preventDefault();
     if (!enrolment) return;
     setBusy(true);
@@ -129,12 +131,12 @@ export function Security() {
       setEnrolment(undefined);
       setQr(undefined);
       setCode('');
-      setMessage({ tone: 'success', text: 'Authenticator app added.' });
+      setMessage({ where: 'totp', tone: 'success', text: 'Authenticator app added.' });
       setOfferSignOutOthers(true);
       load();
     } catch (err) {
-      if (askFirst(err, 'adding an authenticator app', () => undefined)) return;
-      setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That code did not match.' });
+      if (ask(err, 'adding an authenticator app', () => undefined)) return;
+      setMessage({ where: 'totp', tone: 'danger', text: err instanceof ApiError ? err.message : 'That code did not match.' });
     } finally {
       setBusy(false);
     }
@@ -144,10 +146,10 @@ export function Security() {
     setMessage(undefined);
     try {
       await api.post(`/api/account/devices/${encodeURIComponent(id)}/revoke`);
-      setMessage({ tone: 'success', text: 'That browser will be asked for a passkey or code again.' });
+      setMessage({ where: 'devices', tone: 'success', text: 'That browser will be asked for a passkey or code again.' });
       load();
     } catch {
-      setMessage({ tone: 'danger', text: 'That did not work.' });
+      setMessage({ where: 'devices', tone: 'danger', text: 'That did not work. Try again.' });
     }
   }
 
@@ -156,15 +158,20 @@ export function Security() {
     try {
       const answer = await api.post<{ revoked?: number }>('/api/account/sessions/revoke-others');
       setOfferSignOutOthers(false);
-      setMessage({ tone: 'success', text: answer.revoked ? `Signed out of ${String(answer.revoked)} other sign-in(s).` : 'You were not signed in anywhere else.' });
+      setMessage({
+        where: 'page',
+        tone: 'success',
+        text: answer.revoked ? `Signed out of ${String(answer.revoked)} other sign-in${answer.revoked === 1 ? '' : 's'}.` : 'You were not signed in anywhere else.',
+      });
     } catch (err) {
-      if (askFirst(err, 'ending your other sign-ins', () => void signOutOthers())) return;
-      setMessage({ tone: 'danger', text: 'That did not work.' });
+      if (ask(err, 'ending your other sign-ins', () => void signOutOthers())) return;
+      setMessage({ where: 'page', tone: 'danger', text: 'That did not work. Try again.' });
     } finally {
       setBusy(false);
     }
   }
 
+  /** Runs from inside the confirmation, so a step-up closes it and takes over. */
   async function remove(kind: 'passkeys' | 'totp', id: string) {
     setMessage(undefined);
     try {
@@ -172,168 +179,210 @@ export function Security() {
       setOfferSignOutOthers(true);
       load();
     } catch (err) {
-      if (askFirst(err, kind === 'passkeys' ? 'removing a passkey' : 'removing an authenticator app', () => void remove(kind, id))) return;
-      setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That did not work.' });
+      const retry = () => {
+        remove(kind, id).catch((again: unknown) => {
+          setMessage({ where: kind === 'passkeys' ? 'passkeys' : 'totp', tone: 'danger', text: messageOf(again) });
+        });
+      };
+      if (ask(err, kind === 'passkeys' ? 'removing a passkey' : 'removing an authenticator app', retry)) return;
+      throw err;
     }
   }
 
-  return (
-    <main className="shell">
-      <PageHeader title="How you sign in" description="Passkeys and authenticator apps on your account." />
+  const alertFor = (where: Region) =>
+    message?.where === where ? (
+      <Alert tone={message.tone} dynamic title={message.tone === 'danger' ? 'That did not work' : 'Done'}>
+        {message.text}
+      </Alert>
+    ) : null;
 
-      {message ? (
-        <Alert tone={message.tone} dynamic title={message.tone === 'danger' ? 'That did not work' : 'Done'}>
-          {message.text}
+  const state = factors.state;
+  if (state.status !== 'ready') {
+    return (
+      <Page width="narrow" {...(state.status === 'loading' ? { 'aria-busy': true } : {})}>
+        <PageHeader title="Security" description={DESCRIPTION} />
+        {state.status === 'loading' ? (
+          <>
+            <FactsSkeleton title="Passkeys" rows={1} />
+            <RowsSkeleton rows={1} />
+          </>
+        ) : (
+          <LoadFailed what="Your security settings" message={state.status === 'failed' ? state.message : 'The server refused.'} onRetry={factors.retry} />
+        )}
+      </Page>
+    );
+  }
+
+  const { passkeys, totp, factorRequired } = state.data;
+  const trusted = devices.state.status === 'ready' ? devices.state.data : [];
+
+  return (
+    <Page width="narrow">
+      <PageHeader title="Security" description={DESCRIPTION} />
+
+      {alertFor('page')}
+      {offerSignOutOthers ? (
+        <Alert
+          tone="info"
+          dynamic
+          title="Sign out everywhere else?"
+          actions={
+            <>
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setOfferSignOutOthers(false);
+                }}
+              >
+                Not now
+              </Button>
+              <Button size="sm" loading={busy} onClick={() => void signOutOthers()}>
+                Sign out everywhere else
+              </Button>
+            </>
+          }
+        >
+          If you made this change because a device was lost or you suspect someone else, end every other sign-in too.
         </Alert>
       ) : null}
 
-      {offerSignOutOthers ? (
-        <Card padding="lg">
-          <h2 className="section-title">Sign out everywhere else?</h2>
-          <p className="muted">If you made this change because a device was lost or you suspect someone else, end every other sign-in too.</p>
-          <div className="row-meta">
-            <Button variant="primary" loading={busy} onClick={() => void signOutOthers()}>
-              Sign out everywhere else
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={busy}
-              onClick={() => {
-                setOfferSignOutOthers(false);
-              }}
-            >
-              Not now
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-
-      {pending ? (
-        <StepUp
-          action={pending.describe}
-          onProved={() => {
-            const { retry } = pending;
-            setPending(undefined);
-            retry();
-          }}
-          onCancel={() => {
-            setPending(undefined);
-          }}
-        />
-      ) : null}
-
-      {!factors ? (
-        <Skeleton height="10rem" />
-      ) : (
-        <>
-          <Card padding="lg">
-            <h2 className="section-title">Passkeys</h2>
-            {factors.passkeys.length === 0 ? (
-              <EmptyState kind="empty" size="inline" headingLevel={3} heading="Your account is protected by a password only">
-                A passkey uses your phone or laptop to prove it is you — nothing to remember, and nothing to phish.
-              </EmptyState>
-            ) : (
-              <ul className="rows">
-                {factors.passkeys.map((passkey) => (
-                  <li key={passkey.id} className="row">
-                    <div>
-                      <strong>{passkey.label}</strong>
-                      <div className="muted">
-                        added {when(passkey.createdAt)} · last used {when(passkey.lastUsedAt)}
-                      </div>
-                    </div>
-                    <div className="row-meta">
-                      {passkey.backedUp ? <Badge tone="neutral">synced</Badge> : null}
-                      <Button variant="danger-ghost" size="sm" onClick={() => void remove('passkeys', passkey.id)}>
-                        Remove
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <Button variant="primary" onClick={() => void addPasskey()} loading={busy}>
-              Add a passkey
-            </Button>
-          </Card>
-
-          <Card padding="lg">
-            <h2 className="section-title">Authenticator app</h2>
-            {factors.totp.length === 0 ? (
-              <p className="muted">A six-digit code from an app, for devices that cannot do passkeys.</p>
-            ) : (
-              <ul className="rows">
-                {factors.totp.map((credential) => (
-                  <li key={credential.id} className="row">
-                    <strong>{credential.label}</strong>
-                    <Button variant="danger-ghost" size="sm" onClick={() => void remove('totp', credential.id)}>
+      <Section
+        title="Passkeys"
+        description={
+          factorRequired
+            ? 'Your phone or laptop proves it is you — nothing to remember, nothing to phish. Your account manages other people, so once it has a passkey or an authenticator app it cannot remove the last one.'
+            : 'Your phone or laptop proves it is you — nothing to remember, nothing to phish.'
+        }
+        actions={
+          <Button size="sm" variant="primary" loading={busy} onClick={() => void addPasskey()}>
+            Add a passkey
+          </Button>
+        }
+      >
+        {alertFor('passkeys')}
+        <DataList
+          aria-label="Passkeys"
+          empty={
+            <EmptyState kind="empty" size="inline" headingLevel={3} heading="Your account is protected by a password only">
+              Add a passkey, and signing in asks for your phone or laptop as well as your password.
+            </EmptyState>
+          }
+        >
+          {passkeys.map((passkey) => (
+            <DataListRow
+              key={passkey.id}
+              leading={icon(KeyRound, 20)}
+              title={passkey.label}
+              description={`Added ${day(passkey.createdAt)} · last used ${day(passkey.lastUsedAt)}`}
+              {...(passkey.backedUp ? { meta: <Badge size="sm">Synced</Badge> } : {})}
+              actions={
+                <Confirm
+                  trigger={
+                    <Button size="sm" variant="danger-ghost">
                       Remove
                     </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
+                  }
+                  title={`Remove ${passkey.label}?`}
+                  description="It stops working for this account at once. To use it again you would add it again from this page."
+                  confirm="Remove passkey"
+                  cancel="Keep it"
+                  onConfirm={() => remove('passkeys', passkey.id)}
+                />
+              }
+            />
+          ))}
+        </DataList>
+      </Section>
 
-            {enrolment ? (
-              <form className="stack" onSubmit={(event) => void confirmTotp(event)}>
-                <p className="muted">Scan this with your authenticator app, then type the code it shows.</p>
-                {qr ? <img className="qr" src={qr} alt="QR code for your authenticator app" width={220} height={220} /> : null}
-                <p className="muted">
-                  Cannot scan? Enter this key by hand: <code className="copy-link">{enrolment.manualKey}</code>
-                </p>
-                <FormField label="Code from the app">
-                  <Input
-                    name="code"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    required
-                    value={code}
-                    onChange={(event) => {
-                      setCode(event.target.value);
-                    }}
+      <Section title="Authenticator app" description="A six-digit code from an app on your phone, for devices that cannot do passkeys.">
+        {alertFor('totp')}
+        {totp.length > 0 ? (
+          <DataList aria-label="Authenticator apps">
+            {totp.map((credential) => (
+              <DataListRow
+                key={credential.id}
+                leading={icon(Smartphone, 20)}
+                title={credential.label}
+                actions={
+                  <Confirm
+                    trigger={
+                      <Button size="sm" variant="danger-ghost">
+                        Remove
+                      </Button>
+                    }
+                    title={`Remove ${credential.label}?`}
+                    description="Its codes stop working for this account at once. To use the app again you would scan a new code."
+                    confirm="Remove authenticator app"
+                    cancel="Keep it"
+                    onConfirm={() => remove('totp', credential.id)}
                   />
-                </FormField>
-                <Button type="submit" variant="primary" loading={busy}>
-                  Confirm
-                </Button>
-              </form>
-            ) : (
-              <Button variant="secondary" onClick={() => void startTotp()} loading={busy}>
-                Add an authenticator app
+                }
+              />
+            ))}
+          </DataList>
+        ) : null}
+
+        {enrolment ? (
+          <Stack as="form" gap="16" aria-label="Add an authenticator app" onSubmit={(event) => void confirmTotp(event)}>
+            <p>Scan this with your authenticator app, then type the code it shows.</p>
+            {/* The one local class: a QR code has to be dark on white to scan (styles.css). */}
+            {qr ? <img className="qr" src={qr} alt="QR code for your authenticator app" width={220} height={220} /> : null}
+            <p>
+              Cannot scan it? Enter this key by hand: <code>{enrolment.manualKey}</code>
+            </p>
+            <FormField label="Code from the app" help="Six digits. It changes every 30 seconds.">
+              <CodeInput name="code" autoComplete="one-time-code" required value={code} onValueChange={setCode} />
+            </FormField>
+            <FormActions>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  setEnrolment(undefined);
+                  setQr(undefined);
+                  setCode('');
+                }}
+              >
+                Cancel
               </Button>
-            )}
-          </Card>
+              <Button type="submit" loading={busy}>
+                Confirm the code
+              </Button>
+            </FormActions>
+          </Stack>
+        ) : (
+          <FormActions align="start">
+            <Button loading={busy} onClick={() => void startTotp()}>
+              Add an authenticator app
+            </Button>
+          </FormActions>
+        )}
+      </Section>
 
-          {devices.length > 0 ? (
-            <Card padding="lg">
-              <h2 className="section-title">Browsers that skip the second step</h2>
-              <ul className="rows">
-                {devices.map((device) => (
-                  <li key={device.id} className="row">
-                    <div>
-                      <strong title={device.userAgent ?? undefined}>
-                        {device.current ? 'This browser' : describeDevice(device.userAgent)}
-                      </strong>
-                      <div className="muted">
-                        trusted {when(device.createdAt)} · stops {when(device.expiresAt)}
-                      </div>
-                    </div>
-                    <Button variant="danger-ghost" size="sm" onClick={() => void forgetDevice(device.id)}>
-                      Forget
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
-
-          {factors.factorRequired ? (
-            <Alert tone="info" title="Admins keep at least one factor">
-              Your account can manage other people, so it needs a passkey or an authenticator app at all times.
-            </Alert>
-          ) : null}
-        </>
+      {trusted.length > 0 ? (
+        <Section title="Browsers that skip the second step" description="They ask for your password only, until they expire or you forget them here.">
+          {alertFor('devices')}
+          <DataList aria-label="Browsers that skip the second step">
+            {trusted.map((device) => (
+              <DataListRow
+                key={device.id}
+                leading={icon(Laptop, 20)}
+                title={<span title={device.userAgent ?? undefined}>{device.current ? 'This browser' : describeDevice(device.userAgent)}</span>}
+                description={`Trusted ${day(device.createdAt)} · stops ${day(device.expiresAt)}`}
+                actions={
+                  <Button size="sm" variant="ghost" onClick={() => void forgetDevice(device.id)}>
+                    Forget
+                  </Button>
+                }
+              />
+            ))}
+          </DataList>
+        </Section>
+      ) : (
+        alertFor('devices')
       )}
-    </main>
+
+      {prompt}
+    </Page>
   );
 }

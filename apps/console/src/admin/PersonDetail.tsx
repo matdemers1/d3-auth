@@ -1,186 +1,265 @@
-import { Alert, Badge, Button, Card, EmptyState, PageHeader, Skeleton } from '@d3cloud/ui';
-import { useEffect, useState } from 'react';
-import { api, ApiError, type App, type PersonDetail as Person } from '../api';
+import {
+  Alert,
+  Badge,
+  Button,
+  DataList,
+  DataListRow,
+  DescriptionItem,
+  DescriptionList,
+  EmptyState,
+  Link,
+  Page,
+  PageHeader,
+  Section,
+} from '@d3cloud/ui';
+import { ArrowLeft, Laptop } from 'lucide-react';
+import { useState } from 'react';
+import { api, type App, type PersonDetail as Person } from '../api';
+import { describeAddress, describeDevice } from '../account/device-name';
+import { icon } from '../shared/icons';
+import { messageOf, useLoad } from '../shared/load';
+import { KIND_LABEL, useMe } from '../shared/me';
+import { Denied, FactsSkeleton, LoadFailed, RowsSkeleton } from '../shared/states';
+import { AccessList } from './access';
+import { changeKind, ConfirmReset, firstName, reactivate, suspend, type ResetResult, ResetOutcome } from './person-actions';
 
-// C-2: one person — who they are, what they can reach, and how they prove it is them.
-//
-// The grants editor is the part that matters: access is deny-by-default, so this screen is
-// where somebody stops being locked out of everything.
+// C-2: one person — who they are, what they can reach, where they are signed in, and the two
+// things that stop them (Detail page pattern).
 
-const when = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateString() : 'never');
+const day = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'Never');
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+type Region = 'profile' | 'access' | 'danger';
+type Feedback = { where: Region; tone: 'success' | 'danger'; text: string } | { where: 'danger'; tone: 'reset'; result: ResetResult };
+
+function Back() {
+  return (
+    <Link variant="muted" href="/admin/people">
+      {icon(ArrowLeft, 14)}
+      People
+    </Link>
+  );
+}
+
+function FeedbackAlert({ feedback, where }: { feedback: Feedback | undefined; where: Region }) {
+  if (feedback?.where !== where) return null;
+  if (feedback.tone === 'reset') return <ResetOutcome result={feedback.result} />;
+  return (
+    <Alert tone={feedback.tone} dynamic title={feedback.tone === 'danger' ? 'That did not work' : 'Done'}>
+      {feedback.text}
+    </Alert>
+  );
+}
 
 export function PersonDetail({ id }: { id: string }) {
-  const [person, setPerson] = useState<Person | undefined>();
-  const [apps, setApps] = useState<App[]>([]);
-  const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | undefined>();
+  const me = useMe();
+  const person = useLoad(() => api.get<Person>(`/api/admin/people/${encodeURIComponent(id)}`), id);
+  // Only the owner can list apps; an admin still sees the access this person has.
+  const apps = useLoad(() => api.get<{ apps: App[] }>('/api/admin/apps').then((answer) => answer.apps.filter((app) => app.enabled)), id);
+  const [feedback, setFeedback] = useState<Feedback | undefined>();
   const [busy, setBusy] = useState(false);
 
-  const load = () => {
-    api
-      .get<Person>(`/api/admin/people/${encodeURIComponent(id)}`)
-      .then(setPerson)
-      .catch(() => {
-        setMessage({ tone: 'danger', text: 'We could not load that person.' });
-      });
-    api
-      .get<{ apps: App[] }>('/api/admin/apps')
-      .then((answer) => {
-        setApps(answer.apps.filter((app) => app.enabled));
-      })
-      .catch(() => {
-        // Only the owner can list apps; an admin still sees the access this person has.
-        setApps([]);
-      });
-  };
-
-  useEffect(load, [id]);
-
-  async function act(path: string, body: unknown, said: string) {
+  function act(where: Region, run: () => Promise<unknown>, said: string) {
     setBusy(true);
-    setMessage(undefined);
-    try {
-      await api.post(path, body);
-      setMessage({ tone: 'success', text: said });
-      load();
-    } catch (err) {
-      setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That did not work.' });
-    } finally {
-      setBusy(false);
-    }
+    setFeedback(undefined);
+    run()
+      .then(() => {
+        setFeedback({ where, tone: 'success', text: said });
+        person.reload();
+      })
+      .catch((err: unknown) => {
+        setFeedback({ where, tone: 'danger', text: messageOf(err) });
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   }
 
-  if (!person) {
+  const state = person.state;
+  if (state.status !== 'ready') {
     return (
-      <main className="shell">
-        {message ? (
-          <Alert tone="danger" title="That did not work">
-            {message.text}
-          </Alert>
+      <Page width="narrow" {...(state.status === 'loading' ? { 'aria-busy': true } : {})}>
+        <PageHeader back={<Back />} title="Person" />
+        {state.status === 'loading' ? (
+          <>
+            <FactsSkeleton title="Profile" rows={6} />
+            <RowsSkeleton rows={2} />
+          </>
+        ) : state.status === 'denied' ? (
+          <Denied heading="Managing people is for admins">
+            Your account can sign in to apps, but not see or change anyone else’s. {me?.operatorDisplayName ?? 'The owner'} can make you an admin.
+          </Denied>
         ) : (
-          <Skeleton height="12rem" />
+          <LoadFailed what="This person" message={state.message} onRetry={person.retry} />
         )}
-      </main>
+      </Page>
     );
   }
 
-  const granted = new Map(person.access.map((row) => [row.clientId, row.roles]));
-  const base = `/api/admin/people/${encodeURIComponent(person.id)}`;
-  const factorCount = person.factors.passkeys + person.factors.authenticatorApps;
+  const who = state.data;
+  const base = `/api/admin/people/${encodeURIComponent(who.id)}`;
+  const locked = who.kind === 'owner' || who.id === me?.id;
+  const factors = [
+    who.factors.passkeys > 0 ? plural(who.factors.passkeys, 'passkey', 'passkeys') : null,
+    who.factors.authenticatorApps > 0 ? plural(who.factors.authenticatorApps, 'authenticator app', 'authenticator apps') : null,
+  ].filter(Boolean);
 
   return (
-    <main className="shell">
-      <PageHeader title={person.displayName} description={person.email} />
+    <Page width="narrow">
+      <PageHeader back={<Back />} title={who.displayName} description={`${KIND_LABEL[who.kind]} · ${who.email}`} />
 
-      {message ? (
-        <Alert tone={message.tone} dynamic title={message.tone === 'danger' ? 'That did not work' : 'Done'}>
-          {message.text}
-        </Alert>
-      ) : null}
+      <Section
+        title="Profile"
+        {...(me?.kind === 'owner' && !locked
+          ? {
+              actions: (
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    act('profile', () => changeKind(who), who.kind === 'admin' ? `${who.displayName} is a guest again.` : `${who.displayName} is an admin.`);
+                  }}
+                >
+                  {who.kind === 'admin' ? 'Make a guest' : 'Make an admin'}
+                </Button>
+              ),
+            }
+          : {})}
+      >
+        <FeedbackAlert feedback={feedback} where="profile" />
+        <DescriptionList>
+          <DescriptionItem term="Username">
+            <code>{who.username}</code>
+          </DescriptionItem>
+          <DescriptionItem term="Email">{who.email}</DescriptionItem>
+          <DescriptionItem term="Role">
+            <Badge size="sm">{KIND_LABEL[who.kind]}</Badge>
+          </DescriptionItem>
+          <DescriptionItem term="Status">
+            {who.status === 'suspended' ? (
+              <Badge size="sm" tone="danger">
+                Suspended
+              </Badge>
+            ) : who.status === 'invited' ? (
+              'Invited, not set up yet'
+            ) : (
+              'Active'
+            )}
+          </DescriptionItem>
+          <DescriptionItem term="Signs in with">
+            {factors.length === 0 ? 'A password only' : `A password, and ${factors.join(' and ')}`}
+            {who.factors.trustedDevices > 0 ? ` · ${plural(who.factors.trustedDevices, 'trusted browser', 'trusted browsers')}` : ''}
+          </DescriptionItem>
+          <DescriptionItem term="Last signed in" numeric>
+            {day(who.lastLoginAt)}
+          </DescriptionItem>
+          <DescriptionItem term="Joined" numeric>
+            {day(who.createdAt)}
+          </DescriptionItem>
+        </DescriptionList>
+      </Section>
 
-      <Card padding="lg">
-        <ul className="rows">
-          <li className="row">
-            <span>Username</span>
-            <span className="muted">@{person.username}</span>
-          </li>
-          <li className="row">
-            <span>Kind</span>
-            <div className="row-meta">
-              <Badge tone={person.kind === 'guest' ? 'neutral' : 'attention'}>{person.kind}</Badge>
-              {person.status === 'active' ? null : <Badge tone="danger">{person.status}</Badge>}
-            </div>
-          </li>
-          <li className="row">
-            <span>Last signed in</span>
-            <span className="muted">{when(person.lastLoginAt)}</span>
-          </li>
-          <li className="row">
-            <span>How they prove it is them</span>
-            <span className="muted">
-              {factorCount === 0
-                ? 'Password only'
-                : `${String(person.factors.passkeys)} passkey(s), ${String(person.factors.authenticatorApps)} authenticator app(s)`}
-              {person.factors.trustedDevices > 0 ? ` · ${String(person.factors.trustedDevices)} trusted browser(s)` : ''}
-            </span>
-          </li>
-          <li className="row">
-            <span>Signed in now</span>
-            <span className="muted">
-              {person.sessions.length} {person.sessions.length === 1 ? 'session' : 'sessions'}
-            </span>
-          </li>
-        </ul>
-      </Card>
+      <Section title="App access" description="Removing access signs them out of that app. Groups can add more; they never take away.">
+        <FeedbackAlert feedback={feedback} where="access" />
+        <AccessList
+          label="App access"
+          apps={apps.state.status === 'ready' ? apps.state.data : []}
+          grants={who.access}
+          busy={busy}
+          onGrant={(app, roles, said) => {
+            act('access', () => api.post(`${base}/access`, { clientId: app.clientId, roles }), said);
+          }}
+          onRevoke={(app) => {
+            act('access', () => api.post(`${base}/access/revoke`, { clientId: app.clientId }), `Access to ${app.name} revoked.`);
+          }}
+          say={{ role: (role, on) => (on ? `${role} removed.` : `${role} given.`), given: (app) => `Access to ${app} given.` }}
+          emptyHeading="No access yet"
+          emptyText={`${firstName(who)} cannot sign in to anything until they are given access to an app.`}
+        />
+      </Section>
 
-      <Card padding="lg">
-        <h2 className="section-title">Apps they can sign in to</h2>
-        {apps.length === 0 && person.access.length === 0 ? (
-          <EmptyState kind="empty" size="inline" headingLevel={3} heading="No access yet">
-            Nobody can sign in to an app until they are given access to it.
-          </EmptyState>
-        ) : (
-          <ul className="rows">
-            {(apps.length > 0 ? apps : person.access.map((row) => ({ clientId: row.clientId, name: row.name, roles: [] }))).map((app) => {
-              const roles = granted.get(app.clientId);
-              const hasAccess = roles !== undefined;
-              return (
-                <li key={app.clientId} className="row">
-                  <div>
-                    <strong>{app.name}</strong>
-                    <div className="muted">{hasAccess ? (roles.length > 0 ? roles.join(', ') : 'access, no roles') : 'no access'}</div>
-                  </div>
-                  <div className="row-meta">
-                    {'roles' in app && Array.isArray(app.roles)
-                      ? app.roles.map((role) => {
-                          const on = roles?.includes(role.key) ?? false;
-                          return (
-                            <Button
-                              key={role.key}
-                              size="sm"
-                              variant={on ? 'primary' : 'secondary'}
-                              disabled={busy}
-                              onClick={() =>
-                                void act(
-                                  `${base}/access`,
-                                  {
-                                    clientId: app.clientId,
-                                    roles: on ? (roles ?? []).filter((key) => key !== role.key) : [...(roles ?? []), role.key],
-                                  },
-                                  on ? `${role.displayName} removed.` : `${role.displayName} given.`,
-                                )
-                              }
-                            >
-                              {role.displayName}
-                            </Button>
-                          );
-                        })
-                      : null}
-                    {hasAccess ? (
-                      <Button
-                        size="sm"
-                        variant="danger-ghost"
-                        disabled={busy}
-                        onClick={() => void act(`${base}/access/revoke`, { clientId: app.clientId }, `Access to ${app.name} revoked.`)}
-                      >
-                        Revoke
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => void act(`${base}/access`, { clientId: app.clientId, roles: [] }, `Access to ${app.name} given.`)}
-                      >
-                        Give access
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
-    </main>
+      <Section title="Signed in now" description={plural(who.sessions.length, 'session', 'sessions')}>
+        <DataList
+          aria-label="Signed in now"
+          empty={
+            <EmptyState kind="empty" size="inline" headingLevel={3} heading="Not signed in anywhere">
+              Their next sign-in will show here.
+            </EmptyState>
+          }
+        >
+          {who.sessions.map((session) => (
+            <DataListRow
+              key={session.id}
+              leading={icon(Laptop, 20)}
+              title={<span title={session.userAgent ?? undefined}>{describeDevice(session.userAgent)}</span>}
+              description={describeAddress(session.ip)}
+              meta={<span>Last seen {new Date(session.lastSeenAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+            />
+          ))}
+        </DataList>
+      </Section>
+
+      {locked ? null : (
+        <Section title="Suspend or reset">
+          <FeedbackAlert feedback={feedback} where="danger" />
+          <DataList aria-label="Suspend or reset">
+            {who.status === 'suspended' ? (
+              <DataListRow
+                truncate={false}
+                title="Let them back in"
+                description="They can sign in again, to the same apps as before."
+                actions={
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      act('danger', () => reactivate(who), `${who.displayName} can sign in again.`);
+                    }}
+                  >
+                    Let {firstName(who)} back in
+                  </Button>
+                }
+              />
+            ) : (
+              <DataListRow
+                truncate={false}
+                title="Suspend"
+                description="Signs them out everywhere and stops every sign-in until you let them back in. Nothing is deleted."
+                actions={
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      act('danger', () => suspend(who), `${who.displayName} is suspended and signed out everywhere.`);
+                    }}
+                  >
+                    Suspend {firstName(who)}
+                  </Button>
+                }
+              />
+            )}
+            <DataListRow
+              truncate={false}
+              title="Reset their account"
+              description="Removes their password and every factor. They set it up again from an emailed link — for a lost phone."
+              actions={
+                <ConfirmReset
+                  person={who}
+                  trigger={
+                    <Button size="sm" variant="danger-ghost" disabled={busy}>
+                      Reset account
+                    </Button>
+                  }
+                  onDone={(result) => {
+                    setFeedback({ where: 'danger', tone: 'reset', result });
+                    person.reload();
+                  }}
+                />
+              }
+            />
+          </DataList>
+        </Section>
+      )}
+    </Page>
   );
 }

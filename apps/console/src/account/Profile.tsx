@@ -1,6 +1,9 @@
-import { Alert, Button, Card, FormField, Input, PageHeader, Skeleton } from '@d3cloud/ui';
-import { useEffect, useState } from 'react';
+import { Alert, Button, FormActions, FormField, Input, Page, PageHeader, Section, Stack } from '@d3cloud/ui';
+import { useState } from 'react';
 import { api, ApiError } from '../api';
+import { useLoad } from '../shared/load';
+import { useOperator } from '../shared/me';
+import { FactsSkeleton, LoadFailed } from '../shared/states';
 
 // A-2: the parts of the profile a person owns. The email is shown but not editable — it is the
 // address an admin invited, and it is how the account is found.
@@ -11,41 +14,17 @@ interface ProfileView {
   displayName: string;
 }
 
-interface Operator {
-  operatorDisplayName: string;
-}
+const DESCRIPTION = 'The name people see, and the username you sign in with.';
 
-export function Profile() {
-  const [profile, setProfile] = useState<ProfileView | undefined>();
-  const [displayName, setDisplayName] = useState('');
-  const [username, setUsername] = useState('');
+function Form({ profile }: { profile: ProfileView }) {
+  const operator = useOperator();
+  const [displayName, setDisplayName] = useState(profile.displayName);
+  const [username, setUsername] = useState(profile.username);
   const [problems, setProblems] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [operator, setOperator] = useState('an admin');
 
-  useEffect(() => {
-    api
-      .get<ProfileView>('/api/account/profile')
-      .then((loaded) => {
-        setProfile(loaded);
-        setDisplayName(loaded.displayName);
-        setUsername(loaded.username);
-      })
-      .catch(() => {
-        setProblems(['We could not load your profile.']);
-      });
-    api
-      .get<Operator>('/api/me')
-      .then((me) => {
-        setOperator(me.operatorDisplayName);
-      })
-      .catch(() => {
-        // The generic wording is the fallback, not an error worth showing.
-      });
-  }, []);
-
-  async function save(event: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+  async function save(event: React.SyntheticEvent) {
     event.preventDefault();
     setBusy(true);
     setProblems([]);
@@ -58,7 +37,7 @@ export function Profile() {
         const listed = err.body.problems;
         setProblems(Array.isArray(listed) ? (listed as string[]) : [err.message]);
       } else {
-        setProblems(['We could not save that. Try again.']);
+        setProblems(['The console could not reach the server. Nothing was saved.']);
       }
     } finally {
       setBusy(false);
@@ -66,12 +45,10 @@ export function Profile() {
   }
 
   return (
-    <main className="shell">
-      <PageHeader title="Your profile" description="The name people see, and the username you sign in with." />
-
+    <Section title="Your details">
       {problems.length > 0 ? (
         <Alert tone="danger" dynamic title="That did not save">
-          <ul className="rows">
+          <ul>
             {problems.map((problem) => (
               <li key={problem}>{problem}</li>
             ))}
@@ -83,43 +60,55 @@ export function Profile() {
           Your profile is up to date.
         </Alert>
       ) : null}
+      <Stack as="form" gap="16" aria-label="Your details" onSubmit={(event) => void save(event)}>
+        <FormField label="Display name" width="lg" help="What other people see next to your activity.">
+          <Input
+            name="displayName"
+            autoComplete="name"
+            required
+            value={displayName}
+            onChange={(event) => {
+              setDisplayName(event.target.value);
+            }}
+          />
+        </FormField>
+        <FormField label="Username" width="md" help="Letters, numbers, dot, dash or underscore.">
+          <Input
+            name="username"
+            autoComplete="username"
+            spellCheck={false}
+            required
+            value={username}
+            onChange={(event) => {
+              setUsername(event.target.value);
+            }}
+          />
+        </FormField>
+        <FormField label="Email" width="lg" help={`Ask ${operator} if this needs to change.`}>
+          <Input name="email" value={profile.email} readOnly />
+        </FormField>
+        <FormActions>
+          <Button type="submit" variant="primary" loading={busy}>
+            Save profile
+          </Button>
+        </FormActions>
+      </Stack>
+    </Section>
+  );
+}
 
-      {!profile ? (
-        <Skeleton height="12rem" />
+export function Profile() {
+  const { state, retry } = useLoad(() => api.get<ProfileView>('/api/account/profile'));
+  return (
+    <Page width="narrow" {...(state.status === 'loading' ? { 'aria-busy': true } : {})}>
+      <PageHeader title="Profile" description={DESCRIPTION} />
+      {state.status === 'loading' ? (
+        <FactsSkeleton title="Your details" rows={3} />
+      ) : state.status === 'ready' ? (
+        <Form profile={state.data} />
       ) : (
-        <Card padding="lg">
-          <form className="stack" onSubmit={(event) => void save(event)}>
-            <FormField label="Display name" help="What other people see next to your activity.">
-              <Input
-                name="displayName"
-                autoComplete="name"
-                required
-                value={displayName}
-                onChange={(event) => {
-                  setDisplayName(event.target.value);
-                }}
-              />
-            </FormField>
-            <FormField label="Username" help="Letters, numbers, dot, dash or underscore.">
-              <Input
-                name="username"
-                autoComplete="username"
-                required
-                value={username}
-                onChange={(event) => {
-                  setUsername(event.target.value);
-                }}
-              />
-            </FormField>
-            <FormField label="Email" help={`Ask ${operator} if this needs to change.`}>
-              <Input name="email" value={profile.email} readOnly />
-            </FormField>
-            <Button type="submit" variant="primary" loading={busy}>
-              Save
-            </Button>
-          </form>
-        </Card>
+        <LoadFailed what="Your profile" message={state.status === 'failed' ? state.message : 'The server refused.'} onRetry={retry} />
       )}
-    </main>
+    </Page>
   );
 }

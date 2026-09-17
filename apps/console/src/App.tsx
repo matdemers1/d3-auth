@@ -1,27 +1,46 @@
-import { EmptyState, Spinner } from '@d3cloud/ui';
-import { lazy, Suspense } from 'react';
-import { surfaceFor } from './surface';
+import { AuthLayout, Link, ThemeProvider } from '@d3cloud/ui';
+import type { ComponentType } from 'react';
+import type { Surface } from './surface';
 
-const LoginShell = lazy(() => import('./login/LoginShell'));
-const AccountShell = lazy(() => import('./account/AccountShell'));
-const AdminShell = lazy(() => import('./admin/AdminShell'));
+// Each surface is its own chunk, so a phone on the sign-in screen never downloads the admin
+// console (REQ-077, R-09).
 
-export function App() {
-  const surface = surfaceFor(window.location.pathname);
-
+function NotFound() {
   return (
-    <Suspense fallback={<div className="shell-loading"><Spinner size="lg" label="Loading" /></div>}>
-      {surface === 'login' && <LoginShell />}
-      {surface === 'account' && <AccountShell />}
-      {surface === 'admin' && <AdminShell />}
-      {surface === 'server-rendered' && null}
-      {surface === 'not-found' && (
-        <main className="shell shell--narrow">
-          <EmptyState kind="error" size="page" headingLevel={2} heading="There is nothing at this address">
-            Check the link you followed.
-          </EmptyState>
-        </main>
-      )}
-    </Suspense>
+    <AuthLayout
+      title="There is nothing at this address"
+      description="Check the link you followed."
+      footer={
+        <Link variant="standalone" href="/signin">
+          Sign in to your account
+        </Link>
+      }
+    />
+  );
+}
+
+export async function loadSurface(surface: Surface): Promise<ComponentType> {
+  switch (surface) {
+    case 'login':
+      return (await import('./login/LoginShell')).default;
+    case 'account':
+      return (await import('./account/AccountShell')).default;
+    case 'admin':
+      return (await import('./admin/AdminShell')).default;
+    default:
+      return NotFound;
+  }
+}
+
+/**
+ * The theme follows the OS, with System / Light / Dark in the account menu, remembered per browser
+ * (D-066). `index.html` sets the same attribute from the same key before first paint, so nothing
+ * flashes while this loads.
+ */
+export function App({ Surface }: { Surface: ComponentType }) {
+  return (
+    <ThemeProvider>
+      <Surface />
+    </ThemeProvider>
   );
 }

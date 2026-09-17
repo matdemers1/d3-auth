@@ -1,11 +1,12 @@
-import { Alert, Button, Card, FormField, Input, PageHeader, PasswordInput } from '@d3cloud/ui';
+import { Alert, Button, CodeInput, FormActions, FormField, Page, PageHeader, PasswordInput, Section, Stack } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 
 // A-3: change your password (REQ-081).
 //
 // Anyone holding a factor has to use it here as well as their current password. The screen only
-// asks for it once the server says so, so people without a factor never see a step they cannot do.
+// asks for it once it knows there is one, so people without a factor never see a step they cannot
+// do.
 
 interface Factors {
   passkeys: { id: string }[];
@@ -26,6 +27,7 @@ export function Password() {
       .get<Factors>('/api/account/factors')
       .then(setFactors)
       .catch(() => {
+        // Without the list, the form asks for the password alone; the server still asks for more if it needs it.
         setFactors({ passkeys: [], totp: [] });
       });
   }, []);
@@ -58,7 +60,7 @@ export function Password() {
       setDone(
         answer.otherSessionsRevoked > 0
           ? `Password changed. ${String(answer.otherSessionsRevoked)} other sign-in${answer.otherSessionsRevoked === 1 ? ' was' : 's were'} ended.`
-          : 'Password changed.',
+          : 'Password changed. You stay signed in here.',
       );
     } catch (err) {
       if (err instanceof ApiError) {
@@ -74,33 +76,35 @@ export function Password() {
   }
 
   return (
-    <main className="shell">
-      <PageHeader title="Your password" description="At least 12 characters. Length beats punctuation." />
+    <Page width="narrow">
+      <PageHeader title="Password" description="At least 12 characters. A few unrelated words beat a short scramble." />
 
-      {problems.length > 0 ? (
-        <Alert tone="danger" dynamic title="That did not work">
-          <ul className="rows">
-            {problems.map((problem) => (
-              <li key={problem}>{problem}</li>
-            ))}
-          </ul>
-        </Alert>
-      ) : null}
-      {done ? (
-        <Alert tone="success" dynamic title="Done">
-          {done}
-        </Alert>
-      ) : null}
+      <Section title="Change your password" description="Changing it signs you out everywhere else.">
+        {problems.length > 0 ? (
+          <Alert tone="danger" dynamic title="Your password was not changed">
+            <ul>
+              {problems.map((problem) => (
+                <li key={problem}>{problem}</li>
+              ))}
+            </ul>
+          </Alert>
+        ) : null}
+        {done ? (
+          <Alert tone="success" dynamic title="Done">
+            {done}
+          </Alert>
+        ) : null}
 
-      <Card padding="lg">
-        <form
-          className="stack"
+        <Stack
+          as="form"
+          gap="16"
+          aria-label="Change your password"
           onSubmit={(event) => {
             event.preventDefault();
             void change(false);
           }}
         >
-          <FormField label="Current password">
+          <FormField label="Current password" width="lg">
             <PasswordInput
               name="currentPassword"
               autoComplete="current-password"
@@ -111,7 +115,7 @@ export function Password() {
               }}
             />
           </FormField>
-          <FormField label="New password" help="A few unrelated words work well.">
+          <FormField label="New password" width="lg" help="A few unrelated words work well.">
             <PasswordInput
               name="newPassword"
               autoComplete="new-password"
@@ -125,35 +129,33 @@ export function Password() {
 
           {hasTotp ? (
             <FormField label="Code from your authenticator app" help="Confirms it is you, not just someone at your keyboard.">
-              <Input
-                name="code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                value={code}
-                onChange={(event) => {
-                  setCode(event.target.value);
-                }}
-              />
+              <CodeInput name="code" autoComplete="one-time-code" value={code} onValueChange={setCode} />
             </FormField>
           ) : null}
 
-          <Button type="submit" variant="primary" loading={busy}>
-            Change password
-          </Button>
-          {hasPasskey ? (
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => {
-                void change(true);
-              }}
-            >
-              Change it with my passkey
+          <FormActions
+            {...(hasPasskey
+              ? {
+                  leading: (
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        void change(true);
+                      }}
+                    >
+                      Change it with my passkey
+                    </Button>
+                  ),
+                }
+              : {})}
+          >
+            <Button type="submit" variant="primary" loading={busy}>
+              Change password
             </Button>
-          ) : null}
-        </form>
-      </Card>
-    </main>
+          </FormActions>
+        </Stack>
+      </Section>
+    </Page>
   );
 }

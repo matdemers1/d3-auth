@@ -1,251 +1,407 @@
-import { Alert, Badge, Button, Card, EmptyState, FormField, Input, Link, PageHeader, Skeleton } from '@d3cloud/ui';
-import { useEffect, useState } from 'react';
-import { api, ApiError, type InviteCreated, type Me, type PendingInvite, type Person } from '../api';
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  DataList,
+  DataListRow,
+  EmptyState,
+  FilterBar,
+  FormField,
+  IconButton,
+  Input,
+  Link,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  Modal,
+  Page,
+  PageHeader,
+  Section,
+  Stack,
+} from '@d3cloud/ui';
+import { Ellipsis, Mail, Search, UserPlus } from 'lucide-react';
+import { useId, useState } from 'react';
+import { api, type InviteCreated, type PendingInvite, type Person } from '../api';
+import { icon } from '../shared/icons';
+import { messageOf, useLoad } from '../shared/load';
+import { useMe } from '../shared/me';
+import { Denied, LoadFailed, RowsSkeleton } from '../shared/states';
+import { changeKind, ConfirmReset, reactivate, suspend, type ResetResult, ResetOutcome } from './person-actions';
 
-// C-1 and C-3: who can sign in, and how somebody new gets added.
+// C-1 and C-3: who can sign in, and how somebody new gets added (List page pattern).
 
 interface Directory {
   people: Person[];
   pendingInvites: PendingInvite[];
 }
 
-const when = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateString() : 'never');
+const lastSeen = (iso: string | null): string =>
+  iso ? `Signed in ${new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' })}` : 'Never signed in';
 
-export function People() {
-  const [directory, setDirectory] = useState<Directory | undefined>();
-  const [failed, setFailed] = useState<string | undefined>();
+type Outcome =
+  | { kind: 'done'; text: string }
+  | { kind: 'failed'; text: string }
+  | { kind: 'invited'; invite: InviteCreated }
+  | { kind: 'reset'; result: ResetResult };
+
+function Header({ count, onInvite }: { count?: number; onInvite?: () => void }) {
+  return (
+    <PageHeader
+      title="People"
+      {...(count === undefined ? {} : { count })}
+      description="Everyone who can sign in, and the invites you have sent."
+      {...(onInvite
+        ? {
+            actions: (
+              <Button variant="primary" icon={icon(UserPlus)} onClick={onInvite}>
+                Invite someone
+              </Button>
+            ),
+          }
+        : {})}
+    />
+  );
+}
+
+/** C-3 as a Modal: one field, opened by the page's primary action (Forms pattern). */
+function InviteModal({ open, onOpenChange, onInvited }: { open: boolean; onOpenChange: (open: boolean) => void; onInvited: (invite: InviteCreated) => void }) {
+  const formId = useId();
   const [email, setEmail] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [invited, setInvited] = useState<InviteCreated | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
-  const [me, setMe] = useState<Me | undefined>();
-  const [note, setNote] = useState<string | undefined>();
-  // Reset cannot be undone — the old password and factors are gone — so it asks twice.
-  const [confirming, setConfirming] = useState<string | undefined>();
-  const [reset, setReset] = useState<{ email: string; url: string; delivered: boolean } | undefined>();
+  const [busy, setBusy] = useState(false);
 
-  const load = () => {
-    api
-      .get<Directory>('/api/admin/people')
-      .then(setDirectory)
-      .catch((err: unknown) => {
-        setFailed(err instanceof ApiError && err.status === 403 ? 'not-allowed' : 'failed');
-      });
-  };
-
-  useEffect(() => {
-    load();
-    api
-      .get<Me>('/api/me')
-      .then(setMe)
-      .catch(() => {
-        // The directory call decides what this screen shows; knowing who I am is a nicety.
-      });
-  }, []);
-
-  /** One place for the row actions: act, say what happened, reload. */
-  async function act(person: Person, path: string, said: string, body?: unknown) {
-    setProblem(undefined);
-    setReset(undefined);
-    setConfirming(undefined);
-    setBusy(true);
-    try {
-      const answer = await api.post<{ url?: string; mail?: { delivered: boolean } }>(`/api/admin/people/${person.id}/${path}`, body);
-      if (answer.url) setReset({ email: person.email, url: answer.url, delivered: answer.mail?.delivered ?? false });
-      else setProblem(undefined);
-      setNote(said);
-      load();
-    } catch (err) {
-      setProblem(err instanceof ApiError ? err.message : 'That did not work.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function invite(event: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+  async function invite(event: React.SyntheticEvent) {
     event.preventDefault();
     setBusy(true);
     setProblem(undefined);
-    setInvited(undefined);
     try {
       const created = await api.post<InviteCreated>('/api/admin/invites', { email });
-      setInvited(created);
       setEmail('');
-      load();
+      onOpenChange(false);
+      onInvited(created);
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'That did not work.');
+      setProblem(messageOf(err));
     } finally {
       setBusy(false);
     }
   }
 
-  if (failed === 'not-allowed') {
-    return (
-      <main className="shell">
-        <EmptyState kind="no-access" size="page" headingLevel={2} heading="This part of the console is for admins">
-          Your account can sign in to apps, but not manage people.
-        </EmptyState>
-      </main>
-    );
-  }
-
   return (
-    <main className="shell">
-      <PageHeader title="People" description="Everyone who can sign in, and the invites you have sent." />
-
-      <Card padding="lg">
-        <form className="stack" onSubmit={(event) => void invite(event)}>
-          <FormField label="Invite someone" help="They get an email with a link that works once.">
-            <Input
-              name="email"
-              type="email"
-              required
-              placeholder="them@example.com"
-              value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-              }}
-            />
-          </FormField>
-          <Button type="submit" variant="primary" loading={busy}>
+    <Modal
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setProblem(undefined);
+        onOpenChange(next);
+      }}
+      title="Invite someone"
+      description="They get an email with a link that works once, and choose their own username and password. It expires in three days."
+      footer={
+        <>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              onOpenChange(false);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} variant="primary" loading={busy}>
             Send invite
           </Button>
-        </form>
-
+        </>
+      }
+    >
+      <Stack as="form" id={formId} gap="16" aria-label="Invite someone" onSubmit={(event) => void invite(event)}>
         {problem ? (
-          <Alert tone="danger" dynamic title="That did not work">
+          <Alert tone="danger" dynamic title="The invite was not sent">
             {problem}
           </Alert>
         ) : null}
+        <FormField label="Their email address">
+          <Input
+            name="email"
+            type="email"
+            autoComplete="off"
+            required
+            autoFocus
+            value={email}
+            onChange={(event) => {
+              setEmail(event.target.value);
+            }}
+          />
+        </FormField>
+      </Stack>
+    </Modal>
+  );
+}
 
-        {invited ? (
-          invited.mail.delivered ? (
-            <Alert tone="success" dynamic title={`Invite sent to ${invited.email}`}>
-              It expires in three days. They will need a minute to pick a username and a password.
-            </Alert>
-          ) : (
-            <Alert tone="warning" dynamic title={`The invite for ${invited.email} was saved, but the email did not send`}>
-              <p>Send them this link yourself — it works once and expires in three days.</p>
-              <code className="copy-link">{invited.url}</code>
-            </Alert>
-          )
-        ) : null}
+function OutcomeAlert({ outcome }: { outcome: Outcome }) {
+  switch (outcome.kind) {
+    case 'done':
+      return (
+        <Alert tone="success" dynamic title="Done">
+          {outcome.text}
+        </Alert>
+      );
+    case 'failed':
+      return (
+        <Alert tone="danger" dynamic title="That did not work">
+          {outcome.text}
+        </Alert>
+      );
+    case 'reset':
+      return <ResetOutcome result={outcome.result} />;
+    case 'invited':
+      return outcome.invite.mail.delivered ? (
+        <Alert tone="success" dynamic title={`Invite sent to ${outcome.invite.email}`}>
+          It expires in three days. They will need a minute to pick a username and a password.
+        </Alert>
+      ) : (
+        <Alert tone="warning" dynamic title={`The invite for ${outcome.invite.email} was saved, but the email did not send`}>
+          <p>Send them this link yourself. It works once and expires in three days.</p>
+          <code>{outcome.invite.url}</code>
+        </Alert>
+      );
+  }
+}
+
+function PersonRow({
+  person,
+  me,
+  busy,
+  onAct,
+  onReset,
+}: {
+  person: Person;
+  me: ReturnType<typeof useMe>;
+  busy: boolean;
+  onAct: (run: () => Promise<unknown>, said: string) => void;
+  onReset: (person: Person) => void;
+}) {
+  // The owner's row and your own hold no actions the server would refuse. The slot stays empty.
+  const locked = person.kind === 'owner' || person.id === me?.id;
+  return (
+    <DataListRow
+      leading={<Avatar name={person.displayName} size="sm" decorative />}
+      title={<Link href={`/admin/people/${encodeURIComponent(person.id)}`}>{person.displayName}</Link>}
+      description={`@${person.username} · ${person.email}`}
+      meta={
+        <>
+          {person.status === 'suspended' ? (
+            <Badge size="sm" tone="danger">
+              Suspended
+            </Badge>
+          ) : person.status === 'invited' ? (
+            <Badge size="sm">Invited</Badge>
+          ) : null}
+          {person.kind === 'guest' ? null : <Badge size="sm">{person.kind === 'owner' ? 'Owner' : 'Admin'}</Badge>}
+          <span>{lastSeen(person.lastLoginAt)}</span>
+        </>
+      }
+      {...(locked
+        ? {}
+        : {
+            actions: (
+              <>
+                {person.status === 'suspended' ? (
+                  <Button size="sm" disabled={busy} onClick={() => { onAct(() => reactivate(person), `${person.displayName} can sign in again.`); }}>
+                    Let back in
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => { onAct(() => suspend(person), `${person.displayName} is suspended and signed out everywhere.`); }}
+                  >
+                    Suspend
+                  </Button>
+                )}
+                <Menu>
+                  <MenuTrigger>
+                    <IconButton size="sm" label={`More actions for ${person.displayName}`} icon={icon(Ellipsis)} />
+                  </MenuTrigger>
+                  <MenuContent align="end">
+                    {me?.kind === 'owner' ? (
+                      <MenuItem
+                        onSelect={() => {
+                          onAct(
+                            () => changeKind(person),
+                            person.kind === 'admin' ? `${person.displayName} is a guest again.` : `${person.displayName} is an admin.`,
+                          );
+                        }}
+                      >
+                        {person.kind === 'admin' ? 'Make a guest' : 'Make an admin'}
+                      </MenuItem>
+                    ) : null}
+                    <MenuItem
+                      tone="danger"
+                      onSelect={() => {
+                        onReset(person);
+                      }}
+                    >
+                      Reset their account…
+                    </MenuItem>
+                  </MenuContent>
+                </Menu>
+              </>
+            ),
+          })}
+    />
+  );
+}
+
+export function People() {
+  const me = useMe();
+  const { state, reload, retry } = useLoad(() => api.get<Directory>('/api/admin/people'));
+  const [inviting, setInviting] = useState(false);
+  const [resetting, setResetting] = useState<Person | undefined>();
+  const [outcome, setOutcome] = useState<Outcome | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState('');
+
+  /** One place for the row actions: act, say what happened, reload. */
+  function act(run: () => Promise<unknown>, said: string) {
+    setBusy(true);
+    setOutcome(undefined);
+    run()
+      .then(() => {
+        setOutcome({ kind: 'done', text: said });
+        reload();
+      })
+      .catch((err: unknown) => {
+        setOutcome({ kind: 'failed', text: messageOf(err) });
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
+  if (state.status === 'loading') {
+    return (
+      <Page aria-busy="true">
+        <Header />
+        <RowsSkeleton rows={5} leading />
+      </Page>
+    );
+  }
+  if (state.status === 'denied') {
+    return (
+      <Page>
+        <Header />
+        <Denied heading="Managing people is for admins">
+          Your account can sign in to apps, but not change who else can. {me?.operatorDisplayName ?? 'The owner'} can make you an admin.
+        </Denied>
+      </Page>
+    );
+  }
+  if (state.status === 'failed') {
+    return (
+      <Page>
+        <Header />
+        <LoadFailed what="People" message={state.message} onRetry={retry} />
+      </Page>
+    );
+  }
+
+  const { people, pendingInvites } = state.data;
+  const q = query.trim().toLowerCase();
+  const shown = people.filter((person) => !q || [person.displayName, person.username, person.email].some((value) => value.toLowerCase().includes(q)));
+
+  return (
+    <Page>
+      <Header
+        count={people.length}
+        onInvite={() => {
+          setInviting(true);
+        }}
+      />
+
+      {outcome ? <OutcomeAlert outcome={outcome} /> : null}
+
+      <FilterBar aria-label="Filter people" trailing={<span>{`${shown.length} of ${people.length} ${people.length === 1 ? 'person' : 'people'}`}</span>}>
+        <FormField label="Search">
+          <Input
+            type="search"
+            leading={icon(Search)}
+            placeholder="Name, username or email"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+          />
+        </FormField>
+      </FilterBar>
+
+      <Card>
+        <DataList
+          aria-label="People"
+          empty={
+            <EmptyState
+              kind="no-results"
+              size="inline"
+              heading={`No one matches “${query.trim()}”`}
+              action={
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setQuery('');
+                  }}
+                >
+                  Clear the search
+                </Button>
+              }
+            >
+              Search looks at names, usernames and email addresses.
+            </EmptyState>
+          }
+        >
+          {shown.map((person) => (
+            <PersonRow key={person.id} person={person} me={me} busy={busy} onAct={act} onReset={setResetting} />
+          ))}
+        </DataList>
       </Card>
 
-      {note ? (
-        <Alert tone="success" dynamic title="Done">
-          {note}
-        </Alert>
+      {pendingInvites.length > 0 ? (
+        <Section title="Waiting to accept" description="Invites that have not been used yet. Each works once.">
+          <DataList aria-label="Waiting to accept">
+            {pendingInvites.map((pending) => (
+              <DataListRow
+                key={pending.id}
+                leading={icon(Mail, 20)}
+                title={pending.email}
+                description={`Sent ${new Date(pending.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}`}
+                meta={<span>Expires {new Date(pending.expiresAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+              />
+            ))}
+          </DataList>
+        </Section>
       ) : null}
 
-      {reset ? (
-        reset.delivered ? (
-          <Alert tone="success" dynamic title={`A set-up-again link was emailed to ${reset.email}`}>
-            It works once and expires in two hours. Their account, and everything it can reach, is unchanged.
-          </Alert>
-        ) : (
-          <Alert tone="warning" dynamic title={`The account was reset, but the email to ${reset.email} did not send`}>
-            <p>Send them this link yourself — it works once and expires in two hours.</p>
-            <code className="copy-link">{reset.url}</code>
-          </Alert>
-        )
+      <InviteModal
+        open={inviting}
+        onOpenChange={setInviting}
+        onInvited={(invite) => {
+          setOutcome({ kind: 'invited', invite });
+          reload();
+        }}
+      />
+
+      {resetting ? (
+        <ConfirmReset
+          person={resetting}
+          open
+          onOpenChange={(open) => {
+            if (!open) setResetting(undefined);
+          }}
+          onDone={(result) => {
+            setOutcome({ kind: 'reset', result });
+            reload();
+          }}
+        />
       ) : null}
-
-      {!directory ? (
-        <Skeleton height="8rem" />
-      ) : (
-        <>
-          <Card padding="lg">
-            <h2 className="section-title">{directory.people.length} {directory.people.length === 1 ? 'person' : 'people'}</h2>
-            <ul className="rows">
-              {directory.people.map((person) => (
-                <li key={person.id} className="row">
-                  <div>
-                    <strong>
-                      <Link href={`/admin/people/${encodeURIComponent(person.id)}`}>{person.displayName}</Link>
-                    </strong>{' '}
-                    <span className="muted">@{person.username}</span>
-                    <div className="muted">{person.email}</div>
-                  </div>
-                  <div className="row-meta">
-                    <Badge tone={person.kind === 'guest' ? 'neutral' : 'attention'}>{person.kind}</Badge>
-                    {person.status === 'active' ? null : <Badge tone="danger">{person.status}</Badge>}
-                    <span className="muted">last signed in {when(person.lastLoginAt)}</span>
-                    {person.kind === 'owner' || person.id === me?.id ? null : (
-                      <>
-                        {me?.kind === 'owner' ? (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() =>
-                              void act(
-                                person,
-                                'kind',
-                                person.kind === 'admin' ? `${person.displayName} is a guest again.` : `${person.displayName} is an admin.`,
-                                { kind: person.kind === 'admin' ? 'guest' : 'admin' },
-                              )
-                            }
-                          >
-                            {person.kind === 'admin' ? 'Make a guest' : 'Make an admin'}
-                          </Button>
-                        ) : null}
-                        {person.status === 'suspended' ? (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => void act(person, 'reactivate', `${person.displayName} can sign in again.`)}
-                          >
-                            Let them back in
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="danger-ghost"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => void act(person, 'suspend', `${person.displayName} is suspended and signed out everywhere.`)}
-                          >
-                            Suspend
-                          </Button>
-                        )}
-                        <Button
-                          variant={confirming === person.id ? 'danger' : 'danger-ghost'}
-                          size="sm"
-                          disabled={busy}
-                          onClick={() => {
-                            if (confirming === person.id) {
-                              void act(person, 'reset', `${person.displayName} has to set their account up again.`);
-                            } else {
-                              setConfirming(person.id);
-                            }
-                          }}
-                        >
-                          {confirming === person.id ? 'Yes, reset their account' : 'Reset'}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          {directory.pendingInvites.length > 0 ? (
-            <Card padding="lg">
-              <h2 className="section-title">Waiting to accept</h2>
-              <ul className="rows">
-                {directory.pendingInvites.map((pending) => (
-                  <li key={pending.id} className="row">
-                    <span>{pending.email}</span>
-                    <span className="muted">expires {new Date(pending.expiresAt).toLocaleString()}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
-        </>
-      )}
-    </main>
+    </Page>
   );
 }

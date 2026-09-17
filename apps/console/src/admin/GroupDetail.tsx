@@ -1,8 +1,15 @@
-import { Alert, Button, Card, EmptyState, PageHeader, Skeleton } from '@d3cloud/ui';
-import { useEffect, useState } from 'react';
-import { api, ApiError, type App, type Person } from '../api';
+import { Alert, Avatar, Badge, Button, DataList, DataListRow, EmptyState, Link, Page, PageHeader, Section } from '@d3cloud/ui';
+import { ArrowLeft } from 'lucide-react';
+import { useState } from 'react';
+import { api, type App, type Person } from '../api';
+import { Confirm } from '../shared/Confirm';
+import { icon } from '../shared/icons';
+import { messageOf, useLoad } from '../shared/load';
+import { useMe } from '../shared/me';
+import { Denied, LoadFailed, RowsSkeleton } from '../shared/states';
+import { AccessList } from './access';
 
-// One group: who is in it, and what that gets them.
+// One group: who is in it, and what that gets them (Detail page pattern).
 
 interface GroupDetailView {
   id: string;
@@ -12,216 +19,180 @@ interface GroupDetailView {
   grants: { clientId: string; name: string; roles: string[] }[];
 }
 
+type Region = 'members' | 'access';
+
+function Back() {
+  return (
+    <Link variant="muted" href="/admin/groups">
+      {icon(ArrowLeft, 14)}
+      Groups
+    </Link>
+  );
+}
+
 export function GroupDetail({ id }: { id: string }) {
-  const [group, setGroup] = useState<GroupDetailView | undefined>();
-  const [people, setPeople] = useState<Person[]>([]);
-  const [apps, setApps] = useState<App[]>([]);
-  const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | undefined>();
+  const me = useMe();
+  const group = useLoad(() => api.get<GroupDetailView>(`/api/admin/groups/${encodeURIComponent(id)}`), id);
+  const people = useLoad(() => api.get<{ people: Person[] }>('/api/admin/people').then((answer) => answer.people.filter((person) => person.status === 'active')), id);
+  // Apps are owner-only; an admin still sees the access this group already has.
+  const apps = useLoad(() => api.get<{ apps: App[] }>('/api/admin/apps').then((answer) => answer.apps.filter((app) => app.enabled)), id);
+  const [feedback, setFeedback] = useState<{ where: Region; tone: 'success' | 'danger'; text: string } | undefined>();
   const [busy, setBusy] = useState(false);
 
-  const load = () => {
-    api
-      .get<GroupDetailView>(`/api/admin/groups/${encodeURIComponent(id)}`)
-      .then(setGroup)
-      .catch(() => {
-        setMessage({ tone: 'danger', text: 'We could not load that group.' });
-      });
-    api
-      .get<{ people: Person[] }>('/api/admin/people')
-      .then((answer) => {
-        setPeople(answer.people.filter((person) => person.status === 'active'));
-      })
-      .catch(() => {
-        setPeople([]);
-      });
-    api
-      .get<{ apps: App[] }>('/api/admin/apps')
-      .then((answer) => {
-        setApps(answer.apps.filter((app) => app.enabled));
-      })
-      .catch(() => {
-        // Apps are owner-only; an admin still sees the access this group already has.
-        setApps([]);
-      });
-  };
-
-  useEffect(load, [id]);
-
-  /**
-   * Deleting a group is the one action with nowhere to come back to: the page it was on no longer
-   * describes anything. So it goes back to the list, which is where a person's eyes already are.
-   */
-  async function remove() {
+  function act(where: Region, path: string, body: unknown, said: string) {
     setBusy(true);
-    setMessage(undefined);
-    try {
-      await api.post(`/api/admin/groups/${encodeURIComponent(id)}/remove`, {});
-      window.location.assign('/admin/groups');
-    } catch (err) {
-      setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That did not work.' });
-      setBusy(false);
-    }
+    setFeedback(undefined);
+    api
+      .post(path, body)
+      .then(() => {
+        setFeedback({ where, tone: 'success', text: said });
+        group.reload();
+      })
+      .catch((err: unknown) => {
+        setFeedback({ where, tone: 'danger', text: messageOf(err) });
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   }
 
-  async function act(path: string, body: unknown, said: string) {
-    setBusy(true);
-    setMessage(undefined);
-    try {
-      await api.post(path, body);
-      setMessage({ tone: 'success', text: said });
-      load();
-    } catch (err) {
-      setMessage({ tone: 'danger', text: err instanceof ApiError ? err.message : 'That did not work.' });
-    } finally {
-      setBusy(false);
-    }
-  }
+  const alertFor = (where: Region) =>
+    feedback?.where === where ? (
+      <Alert tone={feedback.tone} dynamic title={feedback.tone === 'danger' ? 'That did not work' : 'Done'}>
+        {feedback.text}
+      </Alert>
+    ) : null;
 
-  if (!group) {
+  const state = group.state;
+  if (state.status !== 'ready') {
     return (
-      <main className="shell">
-        {message ? (
-          <Alert tone="danger" title="That did not work">
-            {message.text}
-          </Alert>
+      <Page width="narrow" {...(state.status === 'loading' ? { 'aria-busy': true } : {})}>
+        <PageHeader back={<Back />} title="Group" />
+        {state.status === 'loading' ? (
+          <>
+            <RowsSkeleton rows={3} leading />
+            <RowsSkeleton rows={2} />
+          </>
+        ) : state.status === 'denied' ? (
+          <Denied heading="Groups are for admins">
+            Your account can sign in to apps, but not organise who else can. {me?.operatorDisplayName ?? 'The owner'} can make you an admin.
+          </Denied>
         ) : (
-          <Skeleton height="12rem" />
+          <LoadFailed what="This group" message={state.message} onRetry={group.retry} />
         )}
-      </main>
+      </Page>
     );
   }
 
-  const base = `/api/admin/groups/${encodeURIComponent(group.id)}`;
-  const memberIds = group.members.map((member) => member.userId);
-  const granted = new Map(group.grants.map((grant) => [grant.clientId, grant.roles]));
+  const view = state.data;
+  const base = `/api/admin/groups/${encodeURIComponent(view.id)}`;
+  const memberIds = view.members.map((member) => member.userId);
+  // Members first, then everyone else who could be added.
+  const everyone = people.state.status === 'ready' ? people.state.data : [];
+  const ordered = [...everyone.filter((person) => memberIds.includes(person.id)), ...everyone.filter((person) => !memberIds.includes(person.id))];
 
   return (
-    <main className="shell">
-      <PageHeader title={group.name} description={group.description || 'A group of people who need the same access.'} />
+    <Page width="narrow">
+      <PageHeader back={<Back />} title={view.name} description={view.description || 'A group of people who need the same access.'} />
 
-      {message ? (
-        <Alert tone={message.tone} dynamic title={message.tone === 'danger' ? 'That did not work' : 'Done'}>
-          {message.text}
-        </Alert>
-      ) : null}
-
-      <Card padding="lg">
-        <h2 className="section-title">Who is in it</h2>
-        {people.length === 0 ? (
-          <EmptyState kind="empty" size="inline" headingLevel={3} heading="Nobody to add yet">
-            Invite somebody first.
-          </EmptyState>
-        ) : (
-          <ul className="rows">
-            {people.map((person) => {
-              const inGroup = memberIds.includes(person.id);
-              return (
-                <li key={person.id} className="row">
-                  <div>
-                    <strong>{person.displayName}</strong> <span className="muted">{person.email}</span>
-                  </div>
+      <Section title="Who is in it" description={`${view.members.length} ${view.members.length === 1 ? 'person' : 'people'}. Only active accounts can be added.`}>
+        {alertFor('members')}
+        <DataList
+          aria-label="Who is in it"
+          empty={
+            <EmptyState kind="empty" size="inline" headingLevel={3} heading="Nobody to add yet">
+              Invite somebody first, from People.
+            </EmptyState>
+          }
+        >
+          {ordered.map((person) => {
+            const inGroup = memberIds.includes(person.id);
+            return (
+              <DataListRow
+                key={person.id}
+                leading={<Avatar name={person.displayName} size="sm" decorative />}
+                title={person.displayName}
+                description={person.email}
+                {...(inGroup ? { meta: <Badge size="sm">Member</Badge> } : {})}
+                actions={
                   <Button
                     size="sm"
-                    variant={inGroup ? 'danger-ghost' : 'secondary'}
+                    variant={inGroup ? 'ghost' : 'secondary'}
                     disabled={busy}
-                    onClick={() =>
-                      void act(
+                    onClick={() => {
+                      act(
+                        'members',
                         `${base}/members`,
                         { userIds: inGroup ? memberIds.filter((member) => member !== person.id) : [...memberIds, person.id] },
-                        inGroup ? `${person.displayName} is no longer in ${group.name}.` : `${person.displayName} is in ${group.name}.`,
-                      )
-                    }
+                        inGroup ? `${person.displayName} is no longer in ${view.name}.` : `${person.displayName} is in ${view.name}.`,
+                      );
+                    }}
                   >
                     {inGroup ? 'Remove' : 'Add'}
                   </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
+                }
+              />
+            );
+          })}
+        </DataList>
+      </Section>
 
-      <Card padding="lg">
-        <h2 className="section-title">What that gets them</h2>
-        <p className="muted">These roles add to whatever somebody has been given directly — never instead of it.</p>
-        {apps.length === 0 && group.grants.length === 0 ? (
-          <EmptyState kind="empty" size="inline" headingLevel={3} heading="No access yet">
-            A group with no access changes nothing.
-          </EmptyState>
-        ) : (
-          <ul className="rows">
-            {(apps.length > 0 ? apps : group.grants.map((grant) => ({ clientId: grant.clientId, name: grant.name, roles: [] }))).map((app) => {
-              const roles = granted.get(app.clientId);
-              const hasAccess = roles !== undefined;
-              return (
-                <li key={app.clientId} className="row">
-                  <div>
-                    <strong>{app.name}</strong>
-                    <div className="muted">{hasAccess ? (roles.length > 0 ? roles.join(', ') : 'access, no roles') : 'no access'}</div>
-                  </div>
-                  <div className="row-meta">
-                    {'roles' in app && Array.isArray(app.roles)
-                      ? app.roles.map((role) => {
-                          const on = roles?.includes(role.key) ?? false;
-                          return (
-                            <Button
-                              key={role.key}
-                              size="sm"
-                              variant={on ? 'primary' : 'secondary'}
-                              disabled={busy}
-                              onClick={() =>
-                                void act(
-                                  `${base}/access`,
-                                  {
-                                    clientId: app.clientId,
-                                    roles: on ? (roles ?? []).filter((key) => key !== role.key) : [...(roles ?? []), role.key],
-                                  },
-                                  on ? `${role.displayName} removed from ${group.name}.` : `${role.displayName} given to ${group.name}.`,
-                                )
-                              }
-                            >
-                              {role.displayName}
-                            </Button>
-                          );
-                        })
-                      : null}
-                    {hasAccess ? (
-                      <Button
-                        size="sm"
-                        variant="danger-ghost"
-                        disabled={busy}
-                        onClick={() => void act(`${base}/access/revoke`, { clientId: app.clientId }, `${group.name} no longer reaches ${app.name}.`)}
-                      >
-                        Revoke
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => void act(`${base}/access`, { clientId: app.clientId, roles: [] }, `${group.name} can reach ${app.name}.`)}
-                      >
-                        Give access
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
+      <Section title="What that gets them" description="These roles add to whatever somebody has been given directly — never instead of it.">
+        {alertFor('access')}
+        <AccessList
+          label="What that gets them"
+          apps={apps.state.status === 'ready' ? apps.state.data : []}
+          grants={view.grants}
+          busy={busy}
+          onGrant={(app, roles, said) => {
+            act('access', `${base}/access`, { clientId: app.clientId, roles }, said);
+          }}
+          onRevoke={(app) => {
+            act('access', `${base}/access/revoke`, { clientId: app.clientId }, `${view.name} no longer reaches ${app.name}.`);
+          }}
+          say={{
+            role: (role, on) => (on ? `${role} removed from ${view.name}.` : `${role} given to ${view.name}.`),
+            given: (app) => `${view.name} can reach ${app}.`,
+          }}
+          emptyHeading="No access yet"
+          emptyText="A group with no access changes nothing."
+        />
+      </Section>
 
-      <Card padding="lg">
-        <h2 className="section-title">Danger</h2>
-        <Button
-          variant="danger-ghost"
-          disabled={busy}
-          onClick={() => void remove()}
-        >
-          Delete this group
-        </Button>
-      </Card>
-    </main>
+      <Section title="Delete">
+        <DataList aria-label="Delete">
+          <DataListRow
+            truncate={false}
+            title="Delete this group"
+            description="Everyone in it loses the access it gave them, and keeps anything they were given directly."
+            actions={
+              <Confirm
+                trigger={
+                  <Button size="sm" variant="danger-ghost" disabled={busy}>
+                    Delete {view.name}
+                  </Button>
+                }
+                title={`Delete ${view.name}?`}
+                description={`${
+                  view.members.length === 0
+                    ? 'Nobody is in it, so nobody loses access.'
+                    : view.members.length === 1
+                      ? 'The one person in it loses the access it gave them.'
+                      : `The ${view.members.length} people in it lose the access it gave them.`
+                } Access given to anyone directly stays. This cannot be undone.`}
+                confirm={`Delete ${view.name}`}
+                cancel={`Keep ${view.name}`}
+                onConfirm={async () => {
+                  await api.post(`${base}/remove`, {});
+                  // Nothing is left to look at here, so back to the list, where the group is gone.
+                  window.location.assign('/admin/groups');
+                  await new Promise<void>(() => undefined);
+                }}
+              />
+            }
+          />
+        </DataList>
+      </Section>
+    </Page>
   );
 }

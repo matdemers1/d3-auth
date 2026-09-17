@@ -1,5 +1,6 @@
-import { Alert, Button, Card, FormField, Input, PasswordInput } from '@d3cloud/ui';
+import { Alert, Button, Card, FormActions, FormField, Input, PasswordInput, Stack } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
+import { LoginLayout } from './LoginLayout';
 
 // I-11: first-run setup. Shown only while the instance has no accounts; the server decides that,
 // not this screen. The same form is server-rendered into the page, so it works without JS.
@@ -12,9 +13,9 @@ interface Claim {
 }
 
 const FIELDS = [
-  { id: 'email', label: 'Your email', type: 'email', autoComplete: 'email' },
-  { id: 'username', label: 'Username', type: 'text', autoComplete: 'username', help: 'How you appear to apps.' },
-  { id: 'displayName', label: 'Display name', type: 'text', autoComplete: 'name' },
+  { id: 'email', label: 'Your email', type: 'email', autoComplete: 'email', width: 'lg' },
+  { id: 'username', label: 'Username', type: 'text', autoComplete: 'username', width: 'md', help: 'How you appear to apps. Letters, numbers, dot, dash or underscore.' },
+  { id: 'displayName', label: 'Display name', type: 'text', autoComplete: 'name', width: 'lg' },
 ] as const;
 
 export function Setup() {
@@ -39,7 +40,7 @@ export function Setup() {
     setValues((current) => ({ ...current, [id]: value }));
   };
 
-  async function onSubmit(event: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+  async function onSubmit(event: React.SyntheticEvent) {
     event.preventDefault();
     setBusy(true);
     setProblems([]);
@@ -63,52 +64,44 @@ export function Setup() {
   }
 
   if (available === false) {
-    return (
-      <main className="shell shell--narrow">
-        <h1 className="signin-title">Setup is finished</h1>
-        <p className="signin-identity">This instance already has an account. Sign in from the app you want to use.</p>
-      </main>
-    );
+    return <LoginLayout title="Setup is finished" description="This instance already has an account. Sign in from the app you want to use." />;
   }
 
   return (
-    <main className="shell shell--narrow">
-      <h1 className="signin-title">Set up D3 Auth</h1>
-      <p className="signin-identity">This instance has no accounts yet. Create the owner account to finish setting it up.</p>
-      {problems.length > 0 ? (
-        <Alert tone="danger" dynamic title="That did not work">
-          <ul>
-            {problems.map((problem) => (
-              <li key={problem}>{problem}</li>
-            ))}
-          </ul>
-        </Alert>
-      ) : null}
-      <Card padding="lg">
-        <form method="post" action="/api/setup" onSubmit={(event) => void onSubmit(event)} className="signin-form">
-          <FormField label="Setup code" help="Printed in the server log at startup: docker compose logs server.">
+    <LoginLayout
+      title="Set up D3 Auth"
+      description="This instance has no accounts yet. Create the owner account to finish setting it up."
+      focusOnMount={false}
+    >
+      <Card>
+        <Stack as="form" gap="16" method="post" action="/api/setup" aria-label="Set up D3 Auth" onSubmit={(event) => void onSubmit(event)}>
+          {problems.length > 0 ? (
+            <Alert tone="danger" dynamic title="The owner account was not created">
+              <ul>
+                {problems.map((problem) => (
+                  <li key={problem}>{problem}</li>
+                ))}
+              </ul>
+            </Alert>
+          ) : null}
+          <FormField label="Setup code" width="md" help="Printed in the server log when the service started: docker compose logs server.">
             <Input name="code" autoFocus required autoComplete="off" spellCheck={false} value={values.code} onChange={set('code')} />
           </FormField>
           {FIELDS.map((field) => (
-            <FormField key={field.id} label={field.label} {...('help' in field ? { help: field.help } : {})}>
-              <Input
-                name={field.id}
-                type={field.type}
-                required
-                autoComplete={field.autoComplete}
-                value={values[field.id] ?? ''}
-                onChange={set(field.id)}
-              />
+            <FormField key={field.id} label={field.label} width={field.width} {...('help' in field ? { help: field.help } : {})}>
+              <Input name={field.id} type={field.type} required autoComplete={field.autoComplete} value={values[field.id] ?? ''} onChange={set(field.id)} />
             </FormField>
           ))}
           <FormField label="Password" help="At least 12 characters. A few words you can remember beats a short scramble.">
             <PasswordInput name="password" required autoComplete="new-password" value={values.password} onChange={set('password')} />
           </FormField>
-          <Button type="submit" variant="primary" loading={busy}>
-            Create the owner account
-          </Button>
-        </form>
+          <FormActions layout="stack">
+            <Button type="submit" variant="primary" loading={busy}>
+              Create the owner account
+            </Button>
+          </FormActions>
+        </Stack>
       </Card>
-    </main>
+    </LoginLayout>
   );
 }

@@ -1,13 +1,17 @@
-import { Alert, Button, Card, FormField, Input, PageHeader, Select, Skeleton } from '@d3cloud/ui';
-import { useEffect, useState } from 'react';
+import { Alert, Button, FormActions, FormField, Input, Page, PageHeader, PasswordInput, Section, Select, Stack } from '@d3cloud/ui';
+import { useState } from 'react';
 import { api, ApiError } from '../api';
-import { StepUp } from './StepUp';
+import { messageOf, useLoad } from '../shared/load';
+import { useMe } from '../shared/me';
+import { useStepUp } from '../shared/StepUp';
+import { Denied, FactsSkeleton, LoadFailed } from '../shared/states';
 
-// C-10: settings (REQ-071, REQ-109).
+// C-10: settings (REQ-071, REQ-109), as a settings page: one Section per concern, each its own form
+// with its own save, and the result where the button was pressed.
 //
-// The test send is the important control here. Mail either works or it does not, and the only
-// way to know is to send one — so this screen reports the driver's own error word for word.
-// "Could not send" tells an operator nothing; "relay answered 401" tells them what to fix.
+// The test send is the important control here. Mail either works or it does not, and the only way
+// to know is to send one — so this screen reports the driver's own error word for word. "Could not
+// send" tells an operator nothing; "relay answered 401" tells them what to fix.
 
 interface SettingsView {
   mail: { driver: 'worker' | 'smtp' | 'log'; from?: string; relayUrl?: string; smtpHost?: string; secretSet: boolean } | null;
@@ -16,119 +20,95 @@ interface SettingsView {
   fromEnvironment: { mailDriver: string | null; mailConfigured: boolean };
 }
 
-export function Settings() {
-  const [view, setView] = useState<SettingsView | undefined>();
-  const [failed, setFailed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: 'danger' | 'success'; title: string; text: string } | undefined>();
-  const [pending, setPending] = useState<{ describe: string; retry: () => void } | undefined>();
+type Concern = 'mail' | 'alerts' | 'lifetimes';
+type Result = { where: Concern; tone: 'success' | 'danger'; title: string; text: string };
 
-  const [driver, setDriver] = useState<'worker' | 'smtp' | 'log'>('log');
-  const [from, setFrom] = useState('');
-  const [relayUrl, setRelayUrl] = useState('');
+const DESCRIPTION = 'How this system sends mail, who it warns, and how long it trusts a browser.';
+
+function ResultAlert({ result, where }: { result: Result | undefined; where: Concern }) {
+  if (result?.where !== where) return null;
+  return (
+    <Alert tone={result.tone} dynamic title={result.title}>
+      {result.text}
+    </Alert>
+  );
+}
+
+function Loaded({ view, reload }: { view: SettingsView; reload: () => void }) {
+  const { ask, prompt } = useStepUp();
+  const [busy, setBusy] = useState<Concern | undefined>();
+  const [result, setResult] = useState<Result | undefined>();
+
+  const [driver, setDriver] = useState<'worker' | 'smtp' | 'log'>(view.mail?.driver ?? 'log');
+  const [from, setFrom] = useState(view.mail?.from ?? '');
+  const [relayUrl, setRelayUrl] = useState(view.mail?.relayUrl ?? '');
   const [secret, setSecret] = useState('');
-  const [recipients, setRecipients] = useState('');
-  const [trustedDeviceDays, setTrustedDeviceDays] = useState(30);
-  const [sessionDays, setSessionDays] = useState(30);
+  const [recipients, setRecipients] = useState(view.alerts.recipients.join(', '));
+  const [trustedDeviceDays, setTrustedDeviceDays] = useState(view.lifetimes.trustedDeviceDays);
+  const [sessionDays, setSessionDays] = useState(view.lifetimes.sessionDays);
 
-  const load = () => {
-    api
-      .get<SettingsView>('/api/admin/settings')
-      .then((loaded) => {
-        setView(loaded);
-        setDriver(loaded.mail?.driver ?? 'log');
-        setFrom(loaded.mail?.from ?? '');
-        setRelayUrl(loaded.mail?.relayUrl ?? '');
-        setRecipients(loaded.alerts.recipients.join(', '));
-        setTrustedDeviceDays(loaded.lifetimes.trustedDeviceDays);
-        setSessionDays(loaded.lifetimes.sessionDays);
-      })
-      .catch(() => {
-        setFailed(true);
-      });
-  };
-
-  useEffect(load, []);
-
-  async function save(path: string, body: unknown, said: string, describe: string) {
-    setBusy(true);
-    setMessage(undefined);
+  async function save(where: Concern, path: string, body: unknown, said: string, describe: string) {
+    setBusy(where);
+    setResult(undefined);
     try {
       await api.post(path, body);
-      setPending(undefined);
-      setMessage({ tone: 'success', title: 'Saved', text: said });
-      load();
+      setResult({ where, tone: 'success', title: 'Saved', text: said });
+      if (where === 'mail') setSecret('');
+      reload();
     } catch (err) {
-      if (err instanceof ApiError && err.body.error === 'step_up_required') {
-        setPending({ describe, retry: () => void save(path, body, said, describe) });
-        return;
-      }
-      setMessage({ tone: 'danger', title: 'That did not work', text: err instanceof ApiError ? err.message : 'Try again.' });
+      if (ask(err, describe, () => void save(where, path, body, said, describe))) return;
+      setResult({ where, tone: 'danger', title: 'Not saved', text: `${messageOf(err)} Nothing else on this page was affected.` });
     } finally {
-      setBusy(false);
+      setBusy(undefined);
     }
   }
 
   async function testSend() {
-    setBusy(true);
-    setMessage(undefined);
+    setBusy('mail');
+    setResult(undefined);
     try {
-      const result = await api.post<{ driver: string }>('/api/admin/settings/mail/test');
-      setMessage({ tone: 'success', title: 'Sent', text: `Delivered with the ${result.driver} driver. Check the inbox.` });
+      const sent = await api.post<{ driver: string }>('/api/admin/settings/mail/test');
+      setResult({ where: 'mail', tone: 'success', title: 'Sent', text: `Delivered with the ${sent.driver} driver. Check the inbox.` });
     } catch (err) {
       // Verbatim, on purpose (REQ-109).
-      setMessage({
+      setResult({
+        where: 'mail',
         tone: 'danger',
         title: 'It did not send',
         text: err instanceof ApiError ? (typeof err.body.error === 'string' ? err.body.error : err.message) : 'No answer from the server.',
       });
     } finally {
-      setBusy(false);
+      setBusy(undefined);
     }
   }
 
-  if (failed) {
-    return (
-      <main className="shell">
-        <Alert tone="info" title="Settings are the owner's">
-          They decide how this system reaches people and how long it trusts them.
-        </Alert>
-      </main>
-    );
-  }
-  if (!view) return <Skeleton height="14rem" />;
-
   return (
-    <main className="shell">
-      <PageHeader title="Settings" description="How this system sends mail, who it warns, and how long it trusts a browser." />
-
-      {message ? (
-        <Alert tone={message.tone} dynamic title={message.title}>
-          {message.text}
-        </Alert>
-      ) : null}
-
-      {pending ? (
-        <StepUp
-          action={pending.describe}
-          onProved={() => {
-            pending.retry();
+    <>
+      <Section
+        title="Mail"
+        description={
+          view.mail === null && view.fromEnvironment.mailDriver
+            ? `Invites, resets and alerts go out this way. Set in the container as ${view.fromEnvironment.mailDriver}; saving here overrides that.`
+            : 'Invites, resets and alerts go out this way.'
+        }
+      >
+        <ResultAlert result={result} where="mail" />
+        <Stack
+          as="form"
+          gap="16"
+          aria-label="Mail"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save(
+              'mail',
+              '/api/admin/settings/mail',
+              { settings: { driver, ...(from ? { from } : {}), ...(relayUrl ? { relayUrl } : {}) }, ...(secret ? { secret } : {}) },
+              'Mail settings saved. Send a test to be sure they work.',
+              'changing how mail is sent',
+            );
           }}
-          onCancel={() => {
-            setPending(undefined);
-          }}
-        />
-      ) : null}
-
-      <Card padding="lg">
-        <h2 className="section-title">Mail</h2>
-        {view.mail === null && view.fromEnvironment.mailDriver ? (
-          <p className="muted">
-            Configured in the container as <strong>{view.fromEnvironment.mailDriver}</strong>. Saving here overrides that.
-          </p>
-        ) : null}
-        <div className="stack">
-          <FormField label="Driver" help="The Worker relay in production; SMTP if you have one; log for development.">
+        >
+          <FormField label="Driver" help="The Worker relay in production; SMTP if you have a mail server; log while developing.">
             <Select
               value={driver}
               onValueChange={(value) => {
@@ -136,12 +116,12 @@ export function Settings() {
               }}
               options={[
                 { value: 'worker', label: 'Cloudflare Worker relay' },
-                { value: 'smtp', label: 'SMTP' },
-                { value: 'log', label: 'Log only (no mail is sent)' },
+                { value: 'smtp', label: 'SMTP server' },
+                { value: 'log', label: 'Log only — nothing is sent' },
               ]}
             />
           </FormField>
-          <FormField label="From address">
+          <FormField label="From address" width="lg" optional>
             <Input
               name="from"
               type="email"
@@ -152,9 +132,11 @@ export function Settings() {
             />
           </FormField>
           {driver === 'worker' ? (
-            <FormField label="Relay URL">
+            <FormField label="Relay URL" optional>
               <Input
                 name="relayUrl"
+                type="url"
+                spellCheck={false}
                 value={relayUrl}
                 onChange={(event) => {
                   setRelayUrl(event.target.value);
@@ -165,11 +147,12 @@ export function Settings() {
           {driver !== 'log' ? (
             <FormField
               label={driver === 'worker' ? 'Relay secret' : 'SMTP URL'}
-              help={view.mail?.secretSet ? 'One is stored. Leave blank to keep it.' : 'Stored sealed; it is never shown again.'}
+              optional
+              help={view.mail?.secretSet ? 'One is stored. Leave this blank to keep it — it is never shown again.' : 'Stored sealed; it is never shown again.'}
             >
-              <Input
+              <PasswordInput
                 name="secret"
-                type="password"
+                autoComplete="new-password"
                 value={secret}
                 onChange={(event) => {
                   setSecret(event.target.value);
@@ -177,33 +160,35 @@ export function Settings() {
               />
             </FormField>
           ) : null}
-          <Button
-            variant="primary"
-            loading={busy}
-            onClick={() =>
-              void save(
-                '/api/admin/settings/mail',
-                {
-                  settings: { driver, ...(from ? { from } : {}), ...(relayUrl ? { relayUrl } : {}) },
-                  ...(secret ? { secret } : {}),
-                },
-                'Mail settings saved. Send a test to be sure.',
-                'changing how mail is sent',
-              )
-            }
-          >
-            Save mail settings
-          </Button>
-          <Button variant="secondary" disabled={busy} onClick={() => void testSend()}>
-            Send a test message to me
-          </Button>
-        </div>
-      </Card>
+          <FormActions>
+            <Button disabled={busy !== undefined} onClick={() => void testSend()}>
+              Send a test message to me
+            </Button>
+            <Button type="submit" loading={busy === 'mail'} disabled={busy !== undefined && busy !== 'mail'}>
+              Save mail settings
+            </Button>
+          </FormActions>
+        </Stack>
+      </Section>
 
-      <Card padding="lg">
-        <h2 className="section-title">Alerts</h2>
-        <div className="stack">
-          <FormField label="Who to warn" help="Comma-separated. They hear when this system cannot reach something it needs.">
+      <Section title="Alerts" description="Who hears about it when this system cannot reach something it needs.">
+        <ResultAlert result={result} where="alerts" />
+        <Stack
+          as="form"
+          gap="16"
+          aria-label="Alerts"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save(
+              'alerts',
+              '/api/admin/settings/alerts',
+              { settings: { recipients: recipients.split(',').map((value) => value.trim()).filter(Boolean) } },
+              'Alert recipients saved.',
+              'changing who gets warned',
+            );
+          }}
+        >
+          <FormField label="Who to warn" help="Email addresses, separated by commas.">
             <Input
               name="recipients"
               value={recipients}
@@ -212,32 +197,39 @@ export function Settings() {
               }}
             />
           </FormField>
-          <Button
-            variant="secondary"
-            loading={busy}
-            onClick={() =>
-              void save(
-                '/api/admin/settings/alerts',
-                { settings: { recipients: recipients.split(',').map((value) => value.trim()).filter(Boolean) } },
-                'Alert recipients saved.',
-                'changing who gets warned',
-              )
-            }
-          >
-            Save recipients
-          </Button>
-        </div>
-      </Card>
+          <FormActions>
+            <Button type="submit" loading={busy === 'alerts'} disabled={busy !== undefined && busy !== 'alerts'}>
+              Save recipients
+            </Button>
+          </FormActions>
+        </Stack>
+      </Section>
 
-      <Card padding="lg">
-        <h2 className="section-title">Lifetimes</h2>
-        <div className="stack">
-          <FormField label="Trust a browser for (days)" help="How long “don’t ask again on this browser” lasts.">
+      <Section title="Lifetimes" description="How long this system trusts a browser before it asks again.">
+        <ResultAlert result={result} where="lifetimes" />
+        <Stack
+          as="form"
+          gap="16"
+          aria-label="Lifetimes"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save(
+              'lifetimes',
+              '/api/admin/settings/lifetimes',
+              { settings: { trustedDeviceDays, sessionDays } },
+              'Lifetimes saved. They apply to new sign-ins and newly trusted browsers.',
+              'changing how long this system trusts a browser',
+            );
+          }}
+        >
+          <FormField label="Trust a browser for" width="xs" help="How long “don’t ask again on this browser” lasts. 1 to 365 days.">
             <Input
               name="trustedDeviceDays"
               type="number"
+              inputMode="numeric"
               min={1}
               max={365}
+              trailing="days"
               value={String(trustedDeviceDays)}
               onChange={(event) => {
                 setTrustedDeviceDays(Number(event.target.value));
@@ -245,36 +237,58 @@ export function Settings() {
             />
           </FormField>
           <FormField
-            label="Sign somebody out after this many idle days"
-            help="However busy a sign-in is, it ends ninety days after the person last proved who they are."
+            label="Sign someone out after"
+            width="xs"
+            help="Days with no activity, 1 to 90. However busy a sign-in is, it ends ninety days after they last proved who they are."
           >
             <Input
               name="sessionDays"
               type="number"
+              inputMode="numeric"
               min={1}
               max={90}
+              trailing="days"
               value={String(sessionDays)}
               onChange={(event) => {
                 setSessionDays(Number(event.target.value));
               }}
             />
           </FormField>
-          <Button
-            variant="secondary"
-            loading={busy}
-            onClick={() =>
-              void save(
-                '/api/admin/settings/lifetimes',
-                { settings: { trustedDeviceDays, sessionDays } },
-                'Lifetimes saved. They apply to new sessions and newly trusted browsers.',
-                'changing how long this system trusts a browser',
-              )
-            }
-          >
-            Save lifetimes
-          </Button>
-        </div>
-      </Card>
-    </main>
+          <FormActions>
+            <Button type="submit" loading={busy === 'lifetimes'} disabled={busy !== undefined && busy !== 'lifetimes'}>
+              Save lifetimes
+            </Button>
+          </FormActions>
+        </Stack>
+      </Section>
+
+      {prompt}
+    </>
+  );
+}
+
+export function Settings() {
+  const me = useMe();
+  const { state, reload, retry } = useLoad(() => api.get<SettingsView>('/api/admin/settings'));
+
+  return (
+    <Page width="narrow" {...(state.status === 'loading' ? { 'aria-busy': true } : {})}>
+      <PageHeader title="Settings" description={DESCRIPTION} />
+      {state.status === 'loading' ? (
+        <>
+          <FactsSkeleton title="Mail" rows={3} />
+          <FactsSkeleton title="Alerts" rows={1} />
+          <FactsSkeleton title="Lifetimes" rows={2} />
+        </>
+      ) : state.status === 'denied' ? (
+        <Denied heading="Settings are the owner’s">
+          They decide how this system reaches people and how long it trusts them. Ask {me?.operatorDisplayName ?? 'the owner'} if one needs changing.
+        </Denied>
+      ) : state.status === 'failed' ? (
+        <LoadFailed what="Settings" message={state.message} onRetry={retry} />
+      ) : (
+        <Loaded view={state.data} reload={reload} />
+      )}
+    </Page>
   );
 }

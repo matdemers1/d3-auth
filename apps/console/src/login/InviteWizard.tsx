@@ -1,6 +1,7 @@
-import { Alert, Button, Card, FormField, Input, PasswordInput } from '@d3cloud/ui';
+import { Alert, Button, Card, FormActions, FormField, Input, PasswordInput, Skeleton, Stack } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
+import { LoginLayout } from './LoginLayout';
 
 // I-6: the invite wizard. Step one is the account; protecting it with a passkey or a code comes
 // next, on the security screen. The same form is server-rendered into the page, so a guest on a
@@ -35,7 +36,7 @@ export function InviteWizard({ token }: Props) {
     setValues((current) => ({ ...current, [key]: value }));
   };
 
-  async function submit(event: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+  async function submit(event: React.SyntheticEvent) {
     event.preventDefault();
     setBusy(true);
     setProblems([]);
@@ -53,48 +54,68 @@ export function InviteWizard({ token }: Props) {
     }
   }
 
-  if (!invite) return <main className="shell shell--narrow" aria-busy="true" />;
-
-  if (!invite.valid) {
+  if (!invite) {
     return (
-      <main className="shell shell--narrow">
-        <h1 className="signin-title">This invite has expired</h1>
-        <p className="signin-identity">Invites last a few days and can be used once. Ask for a new one.</p>
-      </main>
+      <LoginLayout title="Create your account" focusOnMount={false} busy>
+        <Card>
+          <Stack gap="16" aria-hidden="true">
+            <Skeleton variant="block" height="2.5rem" />
+            <Skeleton variant="block" height="2.5rem" />
+            <Skeleton variant="block" height="2.5rem" />
+          </Stack>
+        </Card>
+      </LoginLayout>
     );
   }
 
+  if (!invite.valid) {
+    return <LoginLayout title="This invite has expired" description="Invites last a few days and can be used once. Ask for a new one." />;
+  }
+
   return (
-    <main className="shell shell--narrow">
-      <h1 className="signin-title">Create your account</h1>
-      <p className="signin-identity">
-        Signing up as <strong>{invite.email}</strong>
-      </p>
-      {problems.length > 0 ? (
-        <Alert tone="danger" dynamic title="Check these">
-          <ul>
-            {problems.map((problem) => (
-              <li key={problem}>{problem}</li>
-            ))}
-          </ul>
-        </Alert>
-      ) : null}
-      <Card padding="lg">
-        <form className="signin-form" method="post" action={`/api/invite/${encodeURIComponent(token)}/accept`} onSubmit={(event) => void submit(event)}>
-          <FormField label="Your name">
+    <LoginLayout
+      title="Create your account"
+      description={
+        <>
+          Signing up as <strong>{invite.email}</strong>
+        </>
+      }
+      focusOnMount={false}
+    >
+      <Card>
+        <Stack
+          as="form"
+          gap="16"
+          method="post"
+          action={`/api/invite/${encodeURIComponent(token)}/accept`}
+          aria-label="Create your account"
+          onSubmit={(event) => void submit(event)}
+        >
+          {problems.length > 0 ? (
+            <Alert tone="danger" dynamic title="Your account was not created yet">
+              <ul>
+                {problems.map((problem) => (
+                  <li key={problem}>{problem}</li>
+                ))}
+              </ul>
+            </Alert>
+          ) : null}
+          <FormField label="Your name" width="lg">
             <Input name="displayName" autoComplete="name" required autoFocus value={values.displayName} onChange={set('displayName')} />
           </FormField>
-          <FormField label="Username" help="How you appear to apps. Letters, numbers, dot, dash or underscore.">
-            <Input name="username" autoComplete="username" required value={values.username} onChange={set('username')} />
+          <FormField label="Username" width="md" help="How you appear to apps. Letters, numbers, dot, dash or underscore.">
+            <Input name="username" autoComplete="username" spellCheck={false} required value={values.username} onChange={set('username')} />
           </FormField>
           <FormField label="Password" help="At least 12 characters. A few words you can remember beats a short scramble.">
             <PasswordInput name="password" autoComplete="new-password" required value={values.password} onChange={set('password')} />
           </FormField>
-          <Button type="submit" variant="primary" loading={busy}>
-            Create my account
-          </Button>
-        </form>
+          <FormActions layout="stack">
+            <Button type="submit" variant="primary" loading={busy}>
+              Create my account
+            </Button>
+          </FormActions>
+        </Stack>
       </Card>
-    </main>
+    </LoginLayout>
   );
 }

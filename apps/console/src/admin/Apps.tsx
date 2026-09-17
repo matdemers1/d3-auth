@@ -1,94 +1,113 @@
-import { Alert, Badge, Button, Card, EmptyState, Link, PageHeader, Skeleton } from '@d3cloud/ui';
-import { useEffect, useState } from 'react';
-import { api, ApiError, type App } from '../api';
+import { Badge, Button, Card, DataList, DataListRow, EmptyState, Page, PageHeader } from '@d3cloud/ui';
+import { AppWindow, Plus } from 'lucide-react';
+import { api, type App } from '../api';
+import { icon } from '../shared/icons';
+import { useLoad } from '../shared/load';
+import { useMe } from '../shared/me';
+import { Denied, LoadFailed, RowsSkeleton } from '../shared/states';
 
-// C-4: the apps people can sign in to. Owner-only, because registering an app decides who can
-// ask for tokens at all — a different kind of power from managing the people who already have
-// accounts.
+// C-4: the apps people can sign in to (List page pattern). Owner-only, because registering an app
+// decides who can ask for tokens at all — a different kind of power from managing the people who
+// already have accounts.
+
+const DESCRIPTION = 'Everything that can ask this system who somebody is.';
+
+export const clientTypeLabel = (type: App['clientType']): string =>
+  type === 'public_native' ? 'Native app, PKCE with no secret' : 'Web app with a client secret';
+
+function register(label = 'Register an app') {
+  return (
+    <Button
+      variant="primary"
+      icon={icon(Plus)}
+      onClick={() => {
+        window.location.assign('/admin/apps/new');
+      }}
+    >
+      {label}
+    </Button>
+  );
+}
 
 export function Apps() {
-  const [apps, setApps] = useState<App[] | undefined>();
-  const [failed, setFailed] = useState<'not-allowed' | 'failed' | undefined>();
+  const me = useMe();
+  const { state, retry } = useLoad(() => api.get<{ apps: App[] }>('/api/admin/apps').then((answer) => answer.apps));
 
-  useEffect(() => {
-    api
-      .get<{ apps: App[] }>('/api/admin/apps')
-      .then((answer) => {
-        setApps(answer.apps);
-      })
-      .catch((err: unknown) => {
-        setFailed(err instanceof ApiError && err.status === 403 ? 'not-allowed' : 'failed');
-      });
-  }, []);
-
-  if (failed === 'not-allowed') {
+  if (state.status === 'loading') {
     return (
-      <main className="shell">
-        <EmptyState kind="no-access" size="page" headingLevel={2} heading="Apps are the owner's to manage">
-          You can invite people and give them access to apps, but only the owner registers them.
-        </EmptyState>
-      </main>
+      <Page aria-busy="true">
+        <PageHeader title="Apps" description={DESCRIPTION} actions={register()} />
+        <RowsSkeleton rows={3} leading />
+      </Page>
+    );
+  }
+  if (state.status === 'denied') {
+    return (
+      <Page>
+        <PageHeader title="Apps" description={DESCRIPTION} />
+        <Denied heading="Apps are the owner’s to manage">
+          You can invite people and give them access to apps, but only {me?.operatorDisplayName ?? 'the owner'} registers them.
+        </Denied>
+      </Page>
+    );
+  }
+  if (state.status === 'failed') {
+    return (
+      <Page>
+        <PageHeader title="Apps" description={DESCRIPTION} />
+        <LoadFailed what="The apps" message={state.message} onRetry={retry} />
+      </Page>
+    );
+  }
+
+  const apps = state.data;
+  if (apps.length === 0) {
+    return (
+      <Page>
+        <PageHeader title="Apps" count={0} description={DESCRIPTION} />
+        <Card>
+          <EmptyState kind="empty" headingLevel={2} heading="No apps yet" icon={icon(AppWindow, 24)} action={register()}>
+            Register one from its manifest — its name, where it may send people back to, and the roles it understands. Then give people access to it.
+          </EmptyState>
+        </Card>
+      </Page>
     );
   }
 
   return (
-    <main className="shell">
-      <PageHeader title="Apps" description="Everything that can ask this system who somebody is." />
-
-      {failed ? (
-        <Alert tone="danger" title="We could not load the apps">
-          Try again in a moment.
-        </Alert>
-      ) : null}
-
-      <Card padding="lg">
-        <p className="muted">An app is registered from its manifest: what it is called, where it may be sent back to, and the roles it understands.</p>
-        <Button
-          variant="primary"
-          onClick={() => {
-            window.location.assign('/admin/apps/new');
-          }}
-        >
-          Register an app
-        </Button>
+    <Page>
+      <PageHeader title="Apps" count={apps.length} description={DESCRIPTION} actions={register()} />
+      <Card>
+        <DataList aria-label="Apps">
+          {apps.map((app) => (
+            <DataListRow
+              key={app.id}
+              href={`/admin/apps/${encodeURIComponent(app.clientId)}`}
+              leading={icon(AppWindow, 20)}
+              title={app.name}
+              description={`${app.clientId} · ${clientTypeLabel(app.clientType)}`}
+              meta={
+                <>
+                  {app.enabled ? null : (
+                    <Badge size="sm" tone="danger">
+                      Disabled
+                    </Badge>
+                  )}
+                  {/* Without a back-channel endpoint, revoking access waits for tokens to expire. */}
+                  {app.backchannelLogoutUri ? null : (
+                    <Badge size="sm" tone="attention">
+                      Slow revoke
+                    </Badge>
+                  )}
+                  <span>
+                    {app.people === 1 ? '1 person' : `${app.people} people`} · {app.roles.length === 1 ? '1 role' : `${app.roles.length} roles`}
+                  </span>
+                </>
+              }
+            />
+          ))}
+        </DataList>
       </Card>
-
-      {!apps ? (
-        <Skeleton height="8rem" />
-      ) : apps.length === 0 ? (
-        <Card padding="lg">
-          <EmptyState kind="empty" size="inline" headingLevel={2} heading="No apps yet">
-            Register one, then give people access to it.
-          </EmptyState>
-        </Card>
-      ) : (
-        <Card padding="lg">
-          <h2 className="section-title">
-            {apps.length} {apps.length === 1 ? 'app' : 'apps'}
-          </h2>
-          <ul className="rows">
-            {apps.map((app) => (
-              <li key={app.id} className="row">
-                <div>
-                  <strong>
-                    <Link href={`/admin/apps/${encodeURIComponent(app.clientId)}`}>{app.name}</Link>
-                  </strong>{' '}
-                  <span className="muted">{app.clientId}</span>
-                  <div className="muted">
-                    {app.people} {app.people === 1 ? 'person' : 'people'} · {app.roles.length}{' '}
-                    {app.roles.length === 1 ? 'role' : 'roles'}
-                  </div>
-                </div>
-                <div className="row-meta">
-                  {app.enabled ? null : <Badge tone="danger">disabled</Badge>}
-                  {app.backchannelLogoutUri ? null : <Badge tone="attention">slow revoke</Badge>}
-                  <span className="muted">{app.clientType === 'public_native' ? 'native' : 'web'}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-    </main>
+    </Page>
   );
 }

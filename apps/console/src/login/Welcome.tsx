@@ -1,13 +1,12 @@
-import { EmptyState } from '@d3cloud/ui';
+import { LoginLayout } from './LoginLayout';
 
-// Where the invite wizard lands. Phase 2's security screen adds "protect your account" here.
+// Where the invite wizard lands.
 export function Welcome() {
   return (
-    <main className="shell shell--narrow">
-      <EmptyState kind="empty" size="page" headingLevel={2} heading="Your account is ready">
-        Go back to the app you were invited to and sign in. Your username and password work everywhere that uses this
-        sign-in.
-      </EmptyState>
-    </main>
+    <LoginLayout
+      title="Your account is ready"
+      description="Go back to the app you were invited to and sign in. Your username and password work everywhere that uses D3 Auth."
+      footer={<>You can add a passkey from Security in your account at any time.</>}
+    />
   );
 }
