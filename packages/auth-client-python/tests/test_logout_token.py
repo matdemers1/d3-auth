@@ -151,3 +151,4 @@ def test_seen_events_forgets_the_oldest_rather_than_growing_without_end():
         seen.add(jti)
     assert "a" not in seen
     assert "c" in seen
+

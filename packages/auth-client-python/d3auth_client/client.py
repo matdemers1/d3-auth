@@ -117,11 +117,15 @@ class D3AuthClient:
             sid=claims.get("sid"),
         )
 
-    async def roles_now(self, access_token: str) -> list[str]:
-        """The roles this person has in this app right now (REQ-097)."""
+    async def _userinfo(self, access_token: str) -> dict[str, Any]:
+        """What the provider says about the holder of this access token, right now."""
         metadata = await self.app.load_server_metadata()
         response = await self.app.get(metadata["userinfo_endpoint"], token={"access_token": access_token, "token_type": "Bearer"})
-        return _roles_of(response.json())
+        return response.json()
+
+    async def roles_now(self, access_token: str) -> list[str]:
+        """The roles this person has in this app right now (REQ-097)."""
+        return _roles_of(await self._userinfo(access_token))
 
     async def refresh(self, refresh_token: str) -> Session:
         """Renews the access token *and* the roles, because roles change between renewals."""
@@ -129,10 +133,16 @@ class D3AuthClient:
         tokens = await self.app.fetch_access_token(
             url=metadata["token_endpoint"], grant_type="refresh_token", refresh_token=refresh_token
         )
-        roles = await self.roles_now(tokens["access_token"])
-        claims: dict[str, Any] = {}
+        # Userinfo answers both halves at once: whose token this is, and what they may do with
+        # it. Asking only for the roles left every renewed session identified as `sub=""`, which
+        # an app keying anything off the returned identity would have keyed off nothing.
+        claims = await self._userinfo(tokens["access_token"])
+        sub = claims.get("sub") or ""
+        if not sub:
+            raise ValueError("the provider returned no subject for this access token")
+        roles = _roles_of(claims)
         return Session(
-            identity=Identity(iss=self.issuer, sub=claims.get("sub", ""), claims=claims, roles=roles),
+            identity=Identity(iss=self.issuer, sub=sub, claims=claims, roles=roles),
             access_token=tokens["access_token"],
             id_token=tokens.get("id_token", ""),
             refresh_token=tokens.get("refresh_token"),

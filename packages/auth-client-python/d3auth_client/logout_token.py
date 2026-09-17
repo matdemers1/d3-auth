@@ -53,17 +53,73 @@ class KeySet:
     the day it stopped. ``refresh()`` is called when a token names a key this set does not have.
     """
 
-    def __init__(self, issuer: str, *, client: httpx.Client | None = None) -> None:
+    #: How often the keys may be refetched. A forged token naming a key nobody has is not a
+    #: reason to call the provider once per request.
+    DEFAULT_MIN_REFETCH_SECONDS = 30
+
+    def __init__(
+        self,
+        issuer: str,
+        *,
+        client: httpx.Client | None = None,
+        min_refetch_seconds: int = DEFAULT_MIN_REFETCH_SECONDS,
+    ) -> None:
         self._url = f"{issuer.rstrip('/')}/oidc/jwks"
         self._client = client or httpx.Client(timeout=5.0)
         self._keys: Any | None = None
+        self._min_refetch_seconds = min_refetch_seconds
+        self._fetched_at = 0.0
 
     def refresh(self) -> Any:
         self._keys = JoseKeySet.import_key_set(self._client.get(self._url).json())
+        self._fetched_at = time.monotonic()
         return self._keys
 
-    def keys(self) -> Any:
-        return self._keys if self._keys is not None else self.refresh()
+    def refresh_if_stale(self) -> Any:
+        """Refetch unless the keys were fetched a moment ago. Returns whatever is current."""
+        if self._keys is None:
+            return self.refresh()
+        if time.monotonic() - self._fetched_at < self._min_refetch_seconds:
+            return self._keys
+        return self.refresh()
+
+    def keys(self, kid: str | None = None) -> Any:
+        """The keys, refetched once when the token names one this set has never seen.
+
+        Without the ``kid`` argument this is a plain cache, which is what it was: on the day the
+        provider rotated its signing key every logout token became unverifiable until the process
+        restarted. A rejected logout token is a 400, so the failure is silent from here — the
+        provider retries twice and records ``logout.slow_revoke``.
+        """
+        current = self._keys if self._keys is not None else self.refresh()
+        if kid is None or _holds(current, kid):
+            return current
+        # Unknown key id: either the provider rotated, or the token is forged. Refetching settles
+        # it. It is not a reason to trust the signature — the verification still has to pass
+        # against whatever comes back, and the cooldown stops a forged `kid` costing a request
+        # per delivery.
+        return self.refresh_if_stale()
+
+
+def _holds(keys: Any, kid: str) -> bool:
+    try:
+        return keys.get_by_kid(kid) is not None
+    except Exception:
+        return False
+
+
+def _key_id(token: str) -> str | None:
+    """The ``kid`` from the token's header, or None if it says nothing legible."""
+    import base64
+    import json
+
+    try:
+        header_segment = token.split(".")[0]
+        header = json.loads(base64.urlsafe_b64decode(header_segment + "=" * (-len(header_segment) % 4)))
+        kid = header.get("kid")
+        return kid if isinstance(kid, str) else None
+    except Exception:
+        return None
 
 
 def verify_logout_token(
@@ -76,15 +132,28 @@ def verify_logout_token(
 ) -> VerifiedLogout:
     """Check a logout token completely, or raise saying which rule it broke."""
     keys = key_set if key_set is not None else KeySet(issuer)
-    resolved = keys.keys() if isinstance(keys, KeySet) else keys
+    resolved = keys.keys(_key_id(token)) if isinstance(keys, KeySet) else keys
 
-    try:
-        decoded = jwt.decode(token, resolved, algorithms=ALLOWED_ALGORITHMS)
+    def decode(against: Any) -> Any:
+        decoded = jwt.decode(token, against, algorithms=ALLOWED_ALGORITHMS)
         # Expiry is the only claim registry check worth making here; the rest are below, where
         # the error message can say which rule was broken.
         jwt.JWTClaimsRegistry().validate(decoded.claims)
+        return decoded
+
+    try:
+        decoded = decode(resolved)
     except (JoseError, ValueError) as err:  # signature, algorithm, or a malformed token
-        raise LogoutTokenError(str(err)) from err
+        # A signature that does not verify may be a forgery, or may be the first token signed by
+        # a key we have not fetched yet — a rotated key is not obliged to announce itself in a
+        # `kid`. One refetch settles which, and the cooldown keeps forgeries cheap.
+        retry = keys.refresh_if_stale() if isinstance(keys, KeySet) else None
+        if retry is None or retry is resolved:
+            raise LogoutTokenError(str(err)) from err
+        try:
+            decoded = decode(retry)
+        except (JoseError, ValueError) as second:
+            raise LogoutTokenError(str(second)) from second
 
     claims = decoded.claims
     if claims.get("iss") != issuer:
