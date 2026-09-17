@@ -6,7 +6,7 @@ list, identity by (iss, sub), roles refreshed on every renewal, and a back-chann
 that is idempotent by jti.
 """
 
-from .client import D3AuthClient, Session, SsoMode, SsoUnavailable
+from .client import D3AuthClient, Session, SignInStart, SsoMode, SsoUnavailable
 from .identity import Identity, identity_key, is_same_identity
 from .logout_token import (
     ALLOWED_ALGORITHMS,
@@ -31,6 +31,7 @@ __all__ = [
     "LogoutTokenError",
     "SeenEvents",
     "Session",
+    "SignInStart",
     "SsoMode",
     "SsoUnavailable",
     "VerifiedLogout",
