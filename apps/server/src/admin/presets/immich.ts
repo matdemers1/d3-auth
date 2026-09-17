@@ -1,4 +1,4 @@
-import { authMethodFor, SECRET_NOT_SHOWN } from '../connection.js';
+import { authMethodFor, SECRET_NOT_SHOWN, SECRET_ON_REGISTER } from '../connection.js';
 import { ID_TOKEN_SIGNING_ALG, ROLES_CLAIM, ROLES_SCOPE } from '../../oidc/protocol.js';
 import type { Preset, PresetInputs } from './types.js';
 
@@ -19,6 +19,7 @@ export const immich: Preset = {
   docsUrl: 'https://immich.app/docs/administration/oauth',
   where: 'Administration → Settings → Authentication → OAuth',
   checked: '17 September 2026',
+  ownerRole: 'admin',
   inputs: [
     {
       key: 'address',
@@ -44,6 +45,7 @@ export const immich: Preset = {
   cautions: [
     'The first sign-in links an existing Immich account by email address. Immich does not check that the address was verified.',
     'Signing out of Immich ends the whole D3 Auth session, not just Immich’s.',
+    'If Immich answers a sign-in with “Error: 500”, that person has not been given Immich in D3 Auth: Immich shows D3 Auth’s refusal as a server error.',
   ],
 
   manifest(inputs) {
@@ -63,7 +65,7 @@ export const immich: Preset = {
     };
   },
 
-  sheet({ issuer, app, inputs, secret }) {
+  sheet({ issuer, app, inputs, secret, preview }) {
     const at = address(inputs);
     return [
       { id: 'enabled', label: 'Login with OAuth', value: null, action: 'on' },
@@ -75,7 +77,7 @@ export const immich: Preset = {
         value: secret ?? null,
         action: 'set',
         secret: true,
-        ...(secret ? {} : { why: SECRET_NOT_SHOWN }),
+        ...(secret ? {} : { why: preview ? SECRET_ON_REGISTER : SECRET_NOT_SHOWN }),
       },
       {
         id: 'token_endpoint_auth_method',
@@ -102,6 +104,14 @@ export const immich: Preset = {
       { id: 'userinfo_signed_response_alg', label: 'userinfo_signed_response_alg', value: 'none', action: 'leave' },
       { id: 'prompt', label: 'prompt', value: null, action: 'leave', why: 'Leave it empty.' },
       { id: 'end_session_endpoint', label: 'end_session_endpoint', value: null, action: 'leave', why: 'Leave it empty. Immich discovers it from D3 Auth.' },
+      { id: 'request_timeout', label: 'Request Timeout', value: '30000', action: 'leave' },
+      {
+        id: 'allow_insecure_requests',
+        label: 'Allow insecure requests',
+        value: null,
+        action: 'leave',
+        why: 'Keep it off. D3 Auth is served over HTTPS with a real certificate.',
+      },
       {
         id: 'storage_label_claim',
         label: 'Storage label claim',
@@ -121,9 +131,30 @@ export const immich: Preset = {
         label: 'Storage quota claim',
         value: 'immich_quota',
         action: 'leave',
-        why: 'D3 Auth sends none, so Immich’s default quota applies.',
+        why: 'D3 Auth sends none, so the next field decides everyone’s quota.',
+      },
+      {
+        id: 'default_storage_quota',
+        label: 'Default storage quota (GiB)',
+        value: null,
+        action: 'leave',
+        why: 'Empty means no limit. Set a number here if you want one for everybody.',
+      },
+      {
+        id: 'button_text',
+        label: 'Button text',
+        value: 'Sign in with D3 Auth',
+        action: 'set',
+        why: 'Optional. What the button on Immich’s sign-in page says.',
       },
       { id: 'auto_register', label: 'Auto register', value: null, action: 'leave', why: 'On. Only people given Immich in D3 Auth can reach it.' },
+      {
+        id: 'auto_launch',
+        label: 'Auto launch',
+        value: null,
+        action: 'leave',
+        why: 'Off for now. Turn it on once D3 Auth sign-in works, to skip Immich’s own sign-in page.',
+      },
       {
         id: 'mobile_override',
         label: 'Mobile redirect URI override',

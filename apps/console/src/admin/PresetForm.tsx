@@ -1,12 +1,13 @@
-import { Alert, Badge, Button, DescriptionItem, DescriptionList, EmptyState, FormActions, FormField, Input, Link, Page, PageHeader, Section, Stack } from '@d3cloud/ui';
+import { Alert, Badge, Button, Checkbox, DescriptionItem, DescriptionList, EmptyState, FormActions, FormField, Input, Link, Page, PageHeader, Section, Select, Stack } from '@d3cloud/ui';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError, type Manifest, type ManifestDiff, type PresetSummary, type Problem, type Registration } from '../api';
+import { api, ApiError, type Manifest, type ManifestDiff, type PresetSheet, type PresetSummary, type Problem, type Registration } from '../api';
 import { icon } from '../shared/icons';
 import { useLoad } from '../shared/load';
 import { useMe } from '../shared/me';
 import { useStepUp } from '../shared/StepUp';
 import { Denied, FactsSkeleton, LoadFailed } from '../shared/states';
+import { PresetSheetSection } from './connection';
 import { Registered } from './Registered';
 
 // C-6 for an app D3 Auth knows (REQ-143): the one or two questions only the owner can answer, then
@@ -30,6 +31,8 @@ interface Preview {
   sent: Record<string, string>;
   manifest: Manifest;
   diff: ManifestDiff;
+  /** What goes into the other app, before anything is registered. */
+  sheet: PresetSheet;
 }
 
 function UriList({ uris }: { uris: string[] }) {
@@ -43,29 +46,29 @@ function UriList({ uris }: { uris: string[] }) {
 }
 
 function WhatItRegisters({ preview }: { preview: Preview }) {
-  const { manifest, diff } = preview;
+  const { manifest, diff, sheet } = preview;
   return (
     <Section
-      title="What D3 Auth will register"
-      description="Only these addresses can receive a sign-in. Nobody can sign in until you give them access."
+      title="On D3 Auth’s side"
+      description={`What D3 Auth records for ${sheet.name}. You do not type any of this into ${sheet.name}: these are the only addresses D3 Auth will send a sign-in or a sign-out to, and nobody can sign in until you give them access.`}
     >
       {diff.isNew ? null : (
         <Alert tone="danger" dynamic title={`An app called ${manifest.client_id} is already registered`}>
           Pick a different client ID, or change the existing app from its page.
         </Alert>
       )}
-      <DescriptionList aria-label="What D3 Auth will register">
+      <DescriptionList aria-label="On D3 Auth’s side">
         <DescriptionItem term="Client ID">
           <code>{manifest.client_id}</code>
         </DescriptionItem>
         <DescriptionItem term="Type">Web app with a client secret</DescriptionItem>
-        <DescriptionItem term="Returns to">
+        <DescriptionItem term="Redirect URIs">
           <UriList uris={manifest.redirect_uris} />
         </DescriptionItem>
-        <DescriptionItem term="After sign-out">
+        <DescriptionItem term="Post-logout redirect URI">
           <UriList uris={manifest.post_logout_redirect_uris} />
         </DescriptionItem>
-        <DescriptionItem term="Sign-out notice">
+        <DescriptionItem term="Back-channel logout">
           {manifest.backchannel_logout_uri ? (
             <code>{manifest.backchannel_logout_uri}</code>
           ) : (
@@ -102,6 +105,10 @@ function Form({ preset }: { preset: PresetSummary }) {
   const [preview, setPreview] = useState<Preview | undefined>();
   const [registration, setRegistration] = useState<Registration | undefined>();
   const [busy, setBusy] = useState(false);
+  // Deny by default holds for the owner too. Offering access here, on by default, is what stops the
+  // first sign-in from being refused — Immich shows that refusal as a bare "Error: 500".
+  const [grantMe, setGrantMe] = useState(true);
+  const [myRole, setMyRole] = useState(preset.ownerRole ?? '');
   const top = useRef<HTMLDivElement>(null);
 
   // A form-level failure takes focus, so it is read before anything else (Forms pattern).
@@ -126,11 +133,13 @@ function Form({ preset }: { preset: PresetSummary }) {
     setProblems([]);
     setFailure(undefined);
     try {
-      const answer = await api.post<{ inputs: Record<string, string>; manifest: Manifest; diff: ManifestDiff }>(
+      const answer = await api.post<{ inputs: Record<string, string>; manifest: Manifest; diff: ManifestDiff; sheet: PresetSheet }>(
         `/api/admin/app-presets/${encodeURIComponent(preset.key)}/preview`,
         { inputs: trimmed },
       );
-      setPreview({ sent: trimmed, manifest: answer.manifest, diff: answer.diff });
+      setPreview({ sent: trimmed, manifest: answer.manifest, diff: answer.diff, sheet: answer.sheet });
+      // With no preferred role, the owner is offered the app's highest: the first its manifest lists.
+      setMyRole((before) => before || (answer.manifest.roles[0]?.key ?? ''));
     } catch (err) {
       setPreview(undefined);
       readFailure(err);
@@ -144,7 +153,13 @@ function Form({ preset }: { preset: PresetSummary }) {
     setProblems([]);
     setFailure(undefined);
     try {
-      setRegistration(await api.post<Registration>('/api/admin/apps/from-preset', { preset: preset.key, inputs: trimmed }));
+      setRegistration(
+        await api.post<Registration>('/api/admin/apps/from-preset', {
+          preset: preset.key,
+          inputs: trimmed,
+          ...(grantMe ? { grantMe: { roles: myRole ? [myRole] : [] } } : {}),
+        }),
+      );
     } catch (err) {
       // Hold the click: once they have proved it is them, it registers.
       if (ask(err, `registering ${preset.name}`, () => void register())) return;
@@ -161,7 +176,7 @@ function Form({ preset }: { preset: PresetSummary }) {
 
   return (
     <Page width="narrow">
-      <PageHeader back={<Back />} title={`Add ${preset.name}`} description={`${preset.summary}. Answer this, check what it registers, then register it.`} />
+      <PageHeader back={<Back />} title={`Add ${preset.name}`} description={`${preset.summary}. Give its address and check: you will see every ${preset.name} setting to change, top to bottom, then register it.`} />
 
       <Stack
         as="form"
@@ -219,7 +234,37 @@ function Form({ preset }: { preset: PresetSummary }) {
           })}
         </Section>
 
-        {current ? <WhatItRegisters preview={preview} /> : null}
+        {current ? (
+          <>
+            <Alert tone="info" title={`Nothing is registered yet`}>
+              This is what you will set in {preset.name}. Press <strong>Register {preset.name}</strong> at the bottom first: that creates
+              the client secret, and the next screen shows this same list with the secret filled in, ready to copy. It is shown once.
+            </Alert>
+            <PresetSheetSection sheet={preview.sheet} title={`What you will set in ${preset.name}`} />
+            <WhatItRegisters preview={preview} />
+            <Section
+              title="Your own access"
+              description={`Nobody can sign in to ${preset.name} until they are given it here — you included.`}
+            >
+              <Checkbox
+                label={`Give me access to ${preset.name}`}
+                checked={grantMe}
+                onCheckedChange={(checked) => {
+                  setGrantMe(checked === true);
+                }}
+              />
+              {grantMe && preview.manifest.roles.length > 0 ? (
+                <FormField label="As" width="sm">
+                  <Select
+                    value={myRole}
+                    onValueChange={setMyRole}
+                    options={preview.manifest.roles.map((role) => ({ value: role.key, label: role.display }))}
+                  />
+                </FormField>
+              ) : null}
+            </Section>
+          </>
+        ) : null}
 
         <FormActions
           leading={
@@ -235,7 +280,7 @@ function Form({ preset }: { preset: PresetSummary }) {
           }
         >
           <Button type="submit" variant="primary" loading={busy}>
-            {current && preview.diff.isNew ? `Register ${preset.name}` : 'Check what it registers'}
+            {current && preview.diff.isNew ? `Register ${preset.name}` : `Show the ${preset.name} settings`}
           </Button>
         </FormActions>
       </Stack>

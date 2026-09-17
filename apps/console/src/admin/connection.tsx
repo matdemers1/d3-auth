@@ -117,11 +117,19 @@ export function SheetRows({ rows, secretCopyable = false, label }: { rows: Sheet
 }
 
 /** The other app's settings screen, in its order and its words. */
-export function PresetSheetSection({ sheet, secretCopyable = false }: { sheet: PresetSheet; secretCopyable?: boolean }) {
+export function PresetSheetSection({
+  sheet,
+  secretCopyable = false,
+  title = `In ${sheet.name}`,
+}: {
+  sheet: PresetSheet;
+  secretCopyable?: boolean;
+  title?: string;
+}) {
   return (
     <Section
-      title={`In ${sheet.name}`}
-      description={`${sheet.where}. Each field as ${sheet.name} labels it, in the order it shows them — checked against ${sheet.name} on ${sheet.checked}.`}
+      title={title}
+      description={`Open ${sheet.where} in ${sheet.name} and go down the page. Each field as ${sheet.name} labels it, in the order it shows them — checked against ${sheet.name} on ${sheet.checked}.`}
       actions={
         <Link variant="standalone" href={sheet.docsUrl} target="_blank" rel="noreferrer">
           {sheet.name}’s OAuth guide

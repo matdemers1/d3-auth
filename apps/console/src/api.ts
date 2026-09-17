@@ -197,6 +197,8 @@ export interface PresetSummary {
   name: string;
   summary: string;
   docsUrl: string;
+  /** The role the owner is offered for themselves at registration. */
+  ownerRole?: string;
   inputs: PresetInput[];
 }
 
@@ -206,6 +208,10 @@ export interface Registration {
   secret?: string;
   diff: ManifestDiff;
   connection: Connection;
+  /** Present on preset registrations: the owner's own grant, when they asked for one. */
+  grantedYou?: { roles: string[] } | null;
+  /** Why the owner's own grant could not be made. The app is registered regardless. */
+  grantProblem?: string | null;
 }
 
 export interface Problem {

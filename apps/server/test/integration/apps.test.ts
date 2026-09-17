@@ -166,7 +166,8 @@ describe('re-registering a manifest', () => {
   it('blocks removing a role somebody holds until it is confirmed (REQ-048)', async () => {
     const call = await consoleSession();
     const clientId = `fresh-${Date.now()}`;
-    await call('/api/admin/apps', { manifest: manifestFor(clientId) });
+    // No automatic owner grant (ADR-007): this test makes the grant itself.
+    await call('/api/admin/apps', { manifest: manifestFor(clientId), grantMe: false });
 
     // Give somebody the role that is about to disappear.
     const app = await h.service.db.app.findUniqueOrThrow({ where: { clientId }, include: { roles: true } });

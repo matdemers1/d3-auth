@@ -21,6 +21,7 @@ export const describePreset = (preset: Preset) => ({
   name: preset.name,
   summary: preset.summary,
   docsUrl: preset.docsUrl,
+  ...(preset.ownerRole ? { ownerRole: preset.ownerRole } : {}),
   inputs: preset.inputs.map(({ key, label, kind, help, placeholder, default: fallback }) => ({
     key,
     label,
@@ -136,6 +137,30 @@ export interface Connection {
  * The whole sheet for one app. Stored answers are read again through the same validators before
  * any URL is built from them: an imported state file can carry answers nobody typed here.
  */
+/** The paste sheet before anything is registered: from the manifest the answers build, with no secret yet. */
+export function previewSheet(issuer: string, preset: Preset, inputs: PresetInputs, manifest: Manifest): PresetSheet {
+  const app: SheetApp = {
+    clientId: manifest.client_id,
+    clientType: manifest.client_type,
+    redirectUris: manifest.redirect_uris,
+    postLogoutRedirectUris: manifest.post_logout_redirect_uris,
+    backchannelLogoutUri: manifest.backchannel_logout_uri ?? null,
+    roles: manifest.roles,
+  };
+  return describeSheet(preset, preset.sheet({ issuer, app, inputs, preview: true }));
+}
+
+const describeSheet = (preset: Preset, rows: SheetRow[]): PresetSheet => ({
+  preset: preset.key,
+  name: preset.name,
+  docsUrl: preset.docsUrl,
+  where: preset.where,
+  checked: preset.checked,
+  steps: preset.steps,
+  cautions: preset.cautions,
+  rows,
+});
+
 export function connectionFor(
   issuer: string,
   app: SheetApp & { preset: string | null; presetInputs: unknown },
@@ -148,17 +173,6 @@ export function connectionFor(
     clientId: app.clientId,
     rows,
     preset:
-      preset && built?.ok
-        ? {
-            preset: preset.key,
-            name: preset.name,
-            docsUrl: preset.docsUrl,
-            where: preset.where,
-            checked: preset.checked,
-            steps: preset.steps,
-            cautions: preset.cautions,
-            rows: preset.sheet({ issuer, app, inputs: built.inputs, secret }),
-          }
-        : null,
+      preset && built?.ok ? describeSheet(preset, preset.sheet({ issuer, app, inputs: built.inputs, secret })) : null,
   };
 }

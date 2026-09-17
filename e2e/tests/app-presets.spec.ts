@@ -55,12 +55,20 @@ test.describe('adding an app D3 Auth knows', () => {
 
     // A path after the address is refused, naming the input.
     await page.getByLabel('Immich address').fill('https://photos.example.com/photos');
-    await page.getByRole('button', { name: 'Check what it registers' }).click();
+    await page.getByRole('button', { name: 'Show the Immich settings' }).click();
     await expect(page.getByText(/^Immich address: /)).toBeVisible();
 
     await page.getByLabel('Immich address').fill('https://photos.example.com');
-    await page.getByRole('button', { name: 'Check what it registers' }).click();
-    const preview = page.getByRole('region', { name: 'What D3 Auth will register' });
+    await page.getByRole('button', { name: 'Show the Immich settings' }).click();
+    // Before anything is registered: Immich's own settings, top to bottom, and when the secret appears.
+    const walkthrough = page.getByRole('region', { name: 'What you will set in Immich' });
+    await expect(walkthrough.getByText('issuer_url', { exact: true })).toBeVisible();
+    await expect(walkthrough.getByText('Allow insecure requests', { exact: true })).toBeVisible();
+    await expect(walkthrough.getByText(/Created when you press Register/)).toBeVisible();
+    await expect(walkthrough.locator('code', { hasText: /^ES256$/ })).toBeVisible();
+    await expect(page.getByText('Nothing is registered yet')).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: 'Give me access to Immich' })).toBeChecked();
+    const preview = page.getByRole('region', { name: 'On D3 Auth’s side' });
     await expect(preview.getByText('https://photos.example.com/user-settings', { exact: true })).toBeVisible();
     await expect(preview.getByText('https://photos.example.com/api/oauth/backchannel-logout')).toBeVisible();
     await expectNoViolations(page, 'the Immich form with its preview');
@@ -76,6 +84,7 @@ test.describe('adding an app D3 Auth knows', () => {
     }
     await expect(registered).toBeVisible();
     await expect(page.getByText('This is the only time the client secret is shown')).toBeVisible();
+    await expect(page.getByText('You can sign in to Immich')).toBeVisible();
 
     // Immich's own fields, with the values that make it work.
     const immich = page.getByRole('region', { name: 'In Immich' });

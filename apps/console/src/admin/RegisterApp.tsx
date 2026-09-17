@@ -1,4 +1,4 @@
-import { Alert, Button, FormActions, FormField, Link, Page, PageHeader, Section, Stack, Textarea } from '@d3cloud/ui';
+import { Checkbox, Alert, Button, FormActions, FormField, Link, Page, PageHeader, Section, Stack, Textarea } from '@d3cloud/ui';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { api, ApiError, type ManifestDiff, type Registration } from '../api';
@@ -40,6 +40,8 @@ export function RegisterApp() {
   const [diff, setDiff] = useState<ManifestDiff | undefined>();
   const [created, setCreated] = useState<Registration | undefined>();
   const [busy, setBusy] = useState(false);
+  // The owner is given the app's highest role by default (ADR-007); untick to register without it.
+  const [grantMe, setGrantMe] = useState(true);
   const { ask, prompt } = useStepUp();
 
   const readProblems = (err: unknown): string[] => {
@@ -53,7 +55,7 @@ export function RegisterApp() {
     setBusy(true);
     setProblems([]);
     try {
-      onDone(await api.post<Registration>(path, { manifest }));
+      onDone(await api.post<Registration>(path, { manifest, ...(grantMe ? {} : { grantMe: false }) }));
     } catch (err) {
       // Registering needs fresh proof; hold the click until they have given it.
       if (ask(err, 'registering an app', () => void act(path, onDone))) return;
@@ -121,6 +123,16 @@ export function RegisterApp() {
               }}
             />
           </FormField>
+        </Section>
+
+        <Section title="Your own access" description="Nobody can sign in to a new app until they are given it — you included.">
+          <Checkbox
+            label="Give me access, with the first role the manifest lists"
+            checked={grantMe}
+            onCheckedChange={(checked) => {
+              setGrantMe(checked === true);
+            }}
+          />
         </Section>
 
         <FormActions

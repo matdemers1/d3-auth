@@ -54,6 +54,7 @@ export const authMethodFor = (clientType: string): string =>
 /** The scopes an app should ask for: who somebody is, and its roles when it declares any. */
 export const scopesFor = (app: Pick<SheetApp, 'roles'>): string[] => [...IDENTITY_SCOPES, ...(app.roles.length > 0 ? [ROLES_SCOPE] : [])];
 
+export const SECRET_ON_REGISTER = 'Created when you press Register below, and shown once on the next screen, in this same list. Paste it in then.';
 export const SECRET_NOT_SHOWN = 'Shown once, when the app is registered or its secret is rotated. Rotate it to see a new one.';
 
 /** The sheet for any app. `secret` only when it has just been generated. */

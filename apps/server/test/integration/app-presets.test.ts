@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { immich } from '../../src/admin/presets/immich.js';
 import { exportState, importState, stateSchema } from '../../src/admin/state.js';
 import { AUDIT_EVENTS } from '../../src/audit/events.js';
+import { effectiveAccess } from '../../src/authz/effective-roles.js';
 import { STEP_UP_WINDOW_MS } from '../../src/console/auth.js';
 import { authorize, Browser, discover, ISSUER, startHarness, USER, webClientConfig, type Harness } from './oidc-harness.js';
 
@@ -99,15 +100,85 @@ describe('the preset list', () => {
   });
 });
 
+describe('giving yourself access while registering', () => {
+  it('grants the owner the chosen roles, audited, and only when asked', async () => {
+    const call = await consoleSession();
+    const withGrant = await call('/api/admin/apps/from-preset', {
+      preset: 'immich',
+      inputs: { address: 'https://grant-me.example.com', client_id: 'preset-grant-me' },
+      grantMe: { roles: ['admin'] },
+    });
+    expect(withGrant.status).toBe(201);
+    const body = (await withGrant.json()) as { grantedYou: { roles: string[] } | null; grantProblem: string | null };
+    expect(body.grantProblem).toBeNull();
+    expect(body.grantedYou?.roles).toEqual(['admin']);
+    const owner = await h.service.db.user.findUniqueOrThrow({ where: { email: USER.email } });
+    const access = await effectiveAccess(h.service.db, { userId: owner.id, clientId: 'preset-grant-me' });
+    expect(access).toMatchObject({ hasGrant: true, roles: ['admin'] });
+    expect(await h.service.db.auditEvent.count({ where: { event: 'grant.created', actorUserId: owner.id } })).toBeGreaterThan(0);
+
+    const without = await call('/api/admin/apps/from-preset', {
+      preset: 'immich',
+      inputs: { address: 'https://no-grant.example.com', client_id: 'preset-no-grant' },
+      grantMe: false,
+    });
+    expect(without.status).toBe(201);
+    expect(((await without.json()) as { grantedYou: unknown }).grantedYou).toBeNull();
+    expect((await effectiveAccess(h.service.db, { userId: owner.id, clientId: 'preset-no-grant' })).hasGrant).toBe(false);
+  });
+
+  it('gives the owner the app’s highest role by default, for presets and manifests alike', async () => {
+    const call = await consoleSession();
+    const owner = await h.service.db.user.findUniqueOrThrow({ where: { email: USER.email } });
+    expect((await call('/api/admin/apps/from-preset', { preset: 'immich', inputs: { address: 'https://default-grant.example.com', client_id: 'preset-default-grant' } })).status).toBe(201);
+    expect(await effectiveAccess(h.service.db, { userId: owner.id, clientId: 'preset-default-grant' })).toMatchObject({ hasGrant: true, roles: ['admin'] });
+
+    const manifest = {
+      client_id: 'manifest-default-grant',
+      name: 'Manifest app',
+      client_type: 'confidential_web',
+      redirect_uris: ['https://manifest-default.example.com/cb'],
+      roles: [
+        { key: 'editor', display: 'Editor' },
+        { key: 'viewer', display: 'Viewer', default: true },
+      ],
+    };
+    const registered = await call('/api/admin/apps', { manifest });
+    expect(registered.status).toBe(201);
+    expect(((await registered.json()) as { grantedYou: { roles: string[] } | null }).grantedYou?.roles).toEqual(['editor']);
+    expect(await effectiveAccess(h.service.db, { userId: owner.id, clientId: 'manifest-default-grant' })).toMatchObject({ hasGrant: true, roles: ['editor'] });
+  });
+
+  it('registers the app but reports a role that is not the app’s', async () => {
+    const call = await consoleSession();
+    const answer = await call('/api/admin/apps/from-preset', {
+      preset: 'immich',
+      inputs: { address: 'https://bad-role.example.com', client_id: 'preset-bad-role' },
+      grantMe: { roles: ['superuser'] },
+    });
+    expect(answer.status).toBe(201);
+    const body = (await answer.json()) as { grantedYou: unknown; grantProblem: string | null };
+    expect(body.grantedYou).toBeNull();
+    expect(body.grantProblem).toBeTruthy();
+  });
+});
+
 describe('previewing a preset', () => {
   it('builds the manifest and the same diff a manifest preview gives, and registers nothing', async () => {
     const call = await consoleSession();
     const answer = await call('/api/admin/app-presets/immich/preview', { inputs: { address: `${ADDRESS}/`, client_id: 'preset-preview' } });
     expect(answer.status).toBe(200);
-    const body = (await answer.json()) as { inputs: Record<string, string>; manifest: { redirect_uris: string[] }; diff: { isNew: boolean } };
+    const body = (await answer.json()) as { inputs: Record<string, string>; manifest: { redirect_uris: string[] }; diff: { isNew: boolean }; sheet: { rows: { id: string; value: unknown; why?: string }[] } };
     expect(body.inputs).toEqual({ address: ADDRESS, client_id: 'preset-preview' });
     expect(body.manifest.redirect_uris).toEqual([`${ADDRESS}/auth/login`, `${ADDRESS}/user-settings`, `${ADDRESS}/api/oauth/mobile-redirect`]);
     expect(body.diff.isNew).toBe(true);
+    // The paste sheet comes with the preview, in Immich's order, with no secret yet.
+    const sheet = body.sheet;
+    expect(sheet.rows[0]?.id).toBe('enabled');
+    const secretRow = sheet.rows.find((row) => row.id === 'client_secret');
+    expect(secretRow?.value).toBeNull();
+    expect(secretRow?.why).toMatch(/Created when you press Register/);
+    expect(sheet.rows.find((row) => row.id === 'client_id')?.value).toBe('preset-preview');
     expect(await h.service.db.app.findUnique({ where: { clientId: 'preset-preview' } })).toBeNull();
   });
 

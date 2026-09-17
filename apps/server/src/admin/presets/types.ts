@@ -34,6 +34,8 @@ export interface SheetContext {
   inputs: PresetInputs;
   /** Only at registration or rotation. */
   secret?: string | undefined;
+  /** Before registering: there is no secret yet, and the sheet says when one appears. */
+  preview?: boolean | undefined;
 }
 
 export interface Preset {
@@ -50,6 +52,8 @@ export interface Preset {
   steps: readonly string[];
   /** What the owner should know before people start signing in. */
   cautions: readonly string[];
+  /** The role the owner usually wants for themselves, offered at registration: Immich's `admin`. */
+  ownerRole?: string;
   /** The ordinary manifest. Unvalidated on purpose: the caller parses it like any other. */
   manifest(inputs: PresetInputs): unknown;
   /** The other app's settings screen, in order, in its own labels. */

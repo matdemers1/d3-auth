@@ -35,6 +35,20 @@ export function Registered({ registration }: { registration: Registration }) {
         </Alert>
       )}
 
+      {registration.grantedYou ? (
+        <Alert tone="success" title={`You can sign in to ${app.name}`}>
+          {registration.grantedYou.roles.length > 0
+            ? `As ${registration.grantedYou.roles.map((key) => app.roles.find((role) => role.key === key)?.displayName ?? key).join(', ')}. `
+            : ''}
+          Give anyone else access from {app.name}’s page once these settings are in.
+        </Alert>
+      ) : (
+        <Alert tone="warning" title={`Nobody can sign in to ${app.name} yet — you included`}>
+          {registration.grantProblem ? `${registration.grantProblem} ` : ''}Give people access from {app.name}’s page. Until then
+          every sign-in is refused, and {app.name} may show that as an error rather than saying so.
+        </Alert>
+      )}
+
       {connection.preset ? <PresetSheetSection sheet={connection.preset} secretCopyable /> : null}
       <ConnectionSection
         connection={connection}

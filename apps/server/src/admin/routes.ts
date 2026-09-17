@@ -17,7 +17,7 @@ import { GroupError, type Groups } from './groups.js';
 import type { MailAdapter } from '../mail/adapter.js';
 import type { Invites } from './invites.js';
 import { parseManifest, type Manifest } from './manifest.js';
-import { buildFromPreset, connectionFor, describePreset, findPreset, PRESETS } from './presets/index.js';
+import { buildFromPreset, connectionFor, describePreset, findPreset, PRESETS, previewSheet } from './presets/index.js';
 
 // The console's API for the people side of the house (C-1, C-3). Phase 3 adds apps, grants and
 // groups here; this is the part Phase 2 needs to put a real person on the system.
@@ -44,6 +44,20 @@ export interface AdminDeps {
   readiness: ReadinessProbe;
   /** Whether nightly offsite backups are set up, so the home page can say when they are not. */
   backupsConfigured?: boolean;
+}
+
+/**
+ * What the owner asked for themselves when registering (ADR-007): `false` for nothing, `{ roles }`
+ * for those roles, and anything else — including leaving it out — for the default: the app's
+ * highest role, which is the first one its manifest lists.
+ */
+function rolesForOwner(value: unknown, defaultRoles: string[]): string[] | undefined {
+  if (value === false) return undefined;
+  if (typeof value !== 'object' || value === null) return defaultRoles;
+  const roles: unknown = (value as { roles?: unknown }).roles;
+  if (!Array.isArray(roles)) return defaultRoles;
+  const strings = roles.filter((role): role is string => typeof role === 'string');
+  return strings.length === roles.length ? strings : defaultRoles;
 }
 
 export function adminRouter({
@@ -452,6 +466,29 @@ export function adminRouter({
     }),
   );
 
+  /**
+   * The owner's own access to an app they just registered (ADR-007). Deny by default still holds:
+   * this is an ordinary, audited grant they can see on the app's page and take away. It is made by
+   * default because an owner who registers an app wants into it, and the refusal otherwise waiting
+   * for them is one some apps show only as "Error: 500".
+   */
+  const grantOwner = async (
+    requested: unknown,
+    app: { clientId: string },
+    defaultRoles: string[],
+    ownerId: string,
+    req: Request,
+  ): Promise<{ grantedYou: Awaited<ReturnType<typeof grants.set>> | null; grantProblem: string | null }> => {
+    const roles = rolesForOwner(requested, defaultRoles);
+    if (!roles) return { grantedYou: null, grantProblem: null };
+    try {
+      return { grantedYou: await grants.set({ userId: ownerId, clientId: app.clientId, roles, actorUserId: ownerId, ip: clientIp(req) }), grantProblem: null };
+    } catch (err) {
+      if (!(err instanceof GrantError)) throw err;
+      return { grantedYou: null, grantProblem: err.message };
+    }
+  };
+
   router.post(
     `${ADMIN_API}/apps`,
     auth.requireFreshOwner,
@@ -464,8 +501,9 @@ export function adminRouter({
         ip: clientIp(req),
         userAgent: req.get('user-agent'),
       });
+      const own = await grantOwner((req.body as { grantMe?: unknown }).grantMe, created.app, manifest.roles.slice(0, 1).map((role) => role.key), user.id, req);
       // The secret is in this response and nowhere else, ever again — here and in the sheet.
-      res.status(201).json({ ...created, connection: connectionFor(issuer, created.app, created.secret) });
+      res.status(201).json({ ...created, connection: connectionFor(issuer, created.app, created.secret), ...own });
     }),
   );
 
@@ -488,7 +526,13 @@ export function adminRouter({
           res.status(400).json({ error: 'invalid_inputs', problems: built.problems });
           return;
         }
-        res.json({ inputs: built.inputs, manifest: built.manifest, diff: await apps.preview(built.manifest) });
+        res.json({
+          inputs: built.inputs,
+          manifest: built.manifest,
+          diff: await apps.preview(built.manifest),
+          // What goes into the other app, in its order, before anything exists — the secret row says when it will.
+          sheet: previewSheet(issuer, preset, built.inputs, built.manifest),
+        });
       } catch (err) {
         next(err);
       }
@@ -500,7 +544,7 @@ export function adminRouter({
   router.post(`${ADMIN_API}/apps/from-preset`, auth.requireFreshOwner, body, (req, res, next) => {
     void (async () => {
       try {
-        const input = (req.body ?? {}) as { preset?: unknown; inputs?: unknown };
+        const input = (req.body ?? {}) as { preset?: unknown; inputs?: unknown; grantMe?: unknown };
         const preset = typeof input.preset === 'string' ? findPreset(input.preset) : undefined;
         if (!preset) {
           res.status(404).json({ error: 'preset_not_found', message: 'There is no preset by that name.' });
@@ -519,7 +563,12 @@ export function adminRouter({
           ip: clientIp(req),
           userAgent: req.get('user-agent'),
         });
-        res.status(201).set('Cache-Control', 'no-store').json({ ...created, connection: connectionFor(issuer, created.app, created.secret) });
+        const defaultRoles = preset.ownerRole ? [preset.ownerRole] : built.manifest.roles.slice(0, 1).map((role) => role.key);
+        const own = await grantOwner(input.grantMe, created.app, defaultRoles, user.id, req);
+        res
+          .status(201)
+          .set('Cache-Control', 'no-store')
+          .json({ ...created, connection: connectionFor(issuer, created.app, created.secret), ...own });
       } catch (err) {
         if (err instanceof AppError) {
           res.status(err.code === 'already_exists' ? 409 : 404).json({ error: err.code, message: err.message });

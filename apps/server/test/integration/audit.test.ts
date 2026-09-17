@@ -156,7 +156,7 @@ describe('what gets written (REQ-110)', () => {
       roles: [{ key: 'member', display: 'Member' }],
     };
 
-    expect(await eventsFrom(() => call('/api/admin/apps', { manifest }))).toContain(AUDIT_EVENTS.appRegistered);
+    expect(await eventsFrom(() => call('/api/admin/apps', { manifest, grantMe: false }))).toContain(AUDIT_EVENTS.appRegistered);
     expect(await eventsFrom(() => call(`/api/admin/people/${ownerId}/access`, { clientId, roles: ['member'] }))).toContain(
       AUDIT_EVENTS.grantCreated,
     );

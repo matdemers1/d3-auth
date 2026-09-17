@@ -142,10 +142,15 @@ describe('the Immich paste sheet', () => {
       'userinfo_signed_response_alg',
       'prompt',
       'end_session_endpoint',
+      'Request Timeout',
+      'Allow insecure requests',
       'Storage label claim',
       'Role Claim',
       'Storage quota claim',
+      'Default storage quota (GiB)',
+      'Button text',
       'Auto register',
+      'Auto launch',
       'Mobile redirect URI override',
       'Mobile redirect URI',
     ]);
@@ -168,6 +173,17 @@ describe('the Immich paste sheet', () => {
     expect(rows.mobile_redirect_uri).toMatchObject({ value: 'https://photos.example.com/api/oauth/mobile-redirect', action: 'set' });
     // Every redirect Immich will use is one the manifest registered.
     expect(manifest.redirect_uris).toContain(rows.mobile_redirect_uri?.value);
+  });
+
+  it('says, before registering, when the secret will appear', () => {
+    const before = byId(immich.sheet({ issuer: ISSUER, app, inputs, preview: true })).client_secret;
+    expect(before).toMatchObject({ value: null, secret: true });
+    expect(before?.why).toMatch(/Created when you press Register/);
+    expect(byId(immich.sheet({ issuer: ISSUER, app, inputs })).client_secret?.why).toMatch(/Rotate it/);
+  });
+
+  it('never tells anyone to allow insecure requests', () => {
+    expect(byId(immich.sheet({ issuer: ISSUER, app, inputs })).allow_insecure_requests).toMatchObject({ value: null, action: 'leave' });
   });
 
   it('carries the secret only when one is given', () => {
