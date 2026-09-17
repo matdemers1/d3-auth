@@ -95,14 +95,35 @@ reachable through the tunnel. Read the token back at any time with
 
 ---
 
-## 5. WAF rate rules (REQ-019, R-07)
+## 5. WAF rate limit (REQ-019, R-07)
 
-In the dashboard, Security → WAF → Rate limiting rules, on the `d3cloud.io` zone. (An API token
-needs *Zone → Firewall Services → Edit* to add these; the deploy token does not have it, so these
-three are added by hand.)
+`d3cloud.io` is on Cloudflare's **Free** plan: one rate limiting rule, a 10-second window, IP only,
+path only. So there is one rule, not the three first planned (ADR-006 in the vault):
 
 | Rule | Match | Limit | Action |
 |---|---|---|---|
+| `d3auth sign-in, authorize and token` | `starts_with(http.request.uri.path, "/api/interaction/") or http.request.uri.path eq "/oidc/auth" or http.request.uri.path eq "/oidc/token"` | 30 requests / 10 s / IP | Block for 10 s |
+
+No other site on the zone uses those paths, so path-only matching is effectively `auth.d3cloud.io`.
+It lives in the zone's `http_ratelimit` entrypoint ruleset (Security → WAF → Rate limiting rules).
+The deploy token has no firewall scope; change it in the dashboard or with the account's global key.
+
+It absorbs floods. The in-app throttle (4 free per account, 20 per IP, then doubling) is what protects
+an individual account, and it works whether or not Cloudflare is in front.
+
+**Check it** from any machine — the first ~30 answer 400 from the provider, then Cloudflare's 429 for
+ten seconds:
+
+```bash
+for i in $(seq 1 40); do curl -s -o /dev/null -w "%{http_code} " https://auth.d3cloud.io/oidc/auth; done
+```
+
+> [!warning] Block, not challenge, on the sign-in POST
+> A challenge page instead of a JSON response breaks sign-in on a phone. If the zone is upgraded and
+> the rules are split again, keep sign-in on a limit well above a real person's behaviour, and test it
+> from mobile data after any change.
+
+---|---|---|---|
 | `d3auth login` | `http.host eq "auth.d3cloud.io" and http.request.uri.path contains "/api/interaction/" and http.request.method eq "POST"` | 20 requests / 10 min / IP | Managed challenge |
 | `d3auth token` | `http.host eq "auth.d3cloud.io" and http.request.uri.path eq "/oidc/token"` | 120 requests / 1 min / IP | Block |
 | `d3auth authorize` | `http.host eq "auth.d3cloud.io" and http.request.uri.path eq "/oidc/auth"` | 60 requests / 1 min / IP | Managed challenge |
