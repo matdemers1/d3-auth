@@ -1,10 +1,13 @@
 # The mail relay Worker (REQ-106).
 #
 #   wrangler secret put RELAY_SECRET      # the same value as MAIL_RELAY_SECRET on the server
+#   wrangler secret put ALERT_TO          # comma-separated; who hears that /readyz is down. A secret
+#                                         # rather than a var so no address is committed here.
 #   wrangler deploy
 #
-# Email Sending requires a paid Workers plan, and the destination address must be verified in
-# Cloudflare (Email → Email Routing → Destination addresses) before anything will send.
+# Sending to anyone needs the sender's domain onboarded for Cloudflare Email Sending (Compute →
+# Email Service → Email Sending). no-reply.d3cloud.io is, with its cf-bounce MX/SPF/DKIM and DMARC.
+# Before a domain is onboarded, only verified destination addresses receive mail.
 name = "d3auth-mail-relay"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
@@ -14,7 +17,6 @@ workers_dev = true
 DEFAULT_FROM = "no-reply@no-reply.d3cloud.io"
 # The readiness probe (T-6.4). No secret: /readyz is public.
 READYZ_URL = "https://auth.d3cloud.io/readyz"
-ALERT_TO = ""
 
 # Every minute; one email after five minutes down, one on recovery.
 [triggers]
@@ -24,7 +26,9 @@ crons = ["* * * * *"]
 #   wrangler kv namespace create PROBE_STATE   → put the id below
 [[kv_namespaces]]
 binding = "PROBE_STATE"
-id = "REPLACE_WITH_NAMESPACE_ID"
+id = "4f932d3e64c04ca7b2af629fedc6b6d8"
 
 [[send_email]]
 name = "EMAIL"
+# Whoever holds the relay secret can send, but only as this address.
+allowed_sender_addresses = ["no-reply@no-reply.d3cloud.io"]

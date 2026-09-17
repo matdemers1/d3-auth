@@ -237,6 +237,48 @@ clicks:
 A missing or malformed seed file is logged and the service starts anyway — a seed is a
 convenience, not a precondition for serving.
 
+## 10a. Mail and alerts (REQ-106, REQ-114, REQ-115)
+
+Invites, account resets and alerts go out through the **mail relay Worker**, `d3auth-mail-relay`
+(`workers/mail-relay`), which sends with Cloudflare Email Sending as `no-reply@no-reply.d3cloud.io`.
+`no-reply.d3cloud.io` is onboarded for Email Sending (its `cf-bounce` MX/SPF/DKIM and DMARC records
+exist), so it can send to anyone. The binding refuses any other sender, so the relay secret alone
+cannot send as another address.
+
+**The Worker** (from `workers/mail-relay`; the scoped d3-qr token has no KV or Email scope, so these
+use the account's global key):
+
+```bash
+wrangler deploy
+printf '%s' "$SECRET" | wrangler secret put RELAY_SECRET     # the server's MAIL_RELAY_SECRET
+printf '%s' "you@example.com" | wrangler secret put ALERT_TO # who hears that /readyz is down
+```
+
+Every minute it probes `https://auth.d3cloud.io/readyz`: one email after five minutes down, one on
+recovery. That is the alert that still arrives when the Zima itself is off.
+
+**The server** — in `/DATA/d3auth/.env`, then `up -d`:
+
+```ini
+MAIL_DRIVER=worker
+MAIL_RELAY_URL=https://d3auth-mail-relay.matthew-67a.workers.dev/send
+MAIL_FROM=no-reply@no-reply.d3cloud.io
+MAIL_RELAY_SECRET=<the same value as the Worker's RELAY_SECRET>
+```
+
+Settings → Mail in the console overrides these when saved; leave it unsaved to keep the container's.
+
+**Alert recipients** live in Settings → Alerts. The rules (refresh-token reuse, someone made admin or
+owner, failed-login spikes, mail failures, backup and drill failures, no backup for 36 hours, the
+sealed admin signing in) are checked every five minutes and email each recipient at most once an hour
+per rule.
+
+**Rotating the relay secret:** generate a new one, `wrangler secret put RELAY_SECRET`, update
+`MAIL_RELAY_SECRET` on the host, `up -d`. Mail fails with 401 between the two steps, so do them together.
+
+**Checks:** Settings → Mail → *Send a test message to me* (the Mail tile on Home turns OK); a wrong
+secret gets `401` from `/send`.
+
 ## 11. If sign-in is down
 
 1. `curl https://auth.d3cloud.io/readyz` — the JSON names which check failed (database, signingKeys, migrations).
