@@ -8,8 +8,10 @@ to do when the provider is unreachable.
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from authlib.integrations.starlette_client import OAuth
@@ -38,6 +40,23 @@ class Session:
     expires_at: int | None = None
     #: The session identifier the provider knows this by, for back-channel logout.
     sid: str | None = None
+
+
+@dataclass(frozen=True)
+class SignInStart:
+    """A sign-in that has begun, and the three secrets the callback will need back.
+
+    The app stores these **with the browser that started the sign-in** — its session, or a short
+    random id in a short-lived ``HttpOnly`` cookie — and never in a server-wide table keyed on
+    ``state``. A table keyed on ``state`` can be read by whoever supplies the state, which is the
+    attacker: that is finding F-12, and it allowed login-CSRF and, through account linking, role
+    theft.
+    """
+
+    url: str
+    verifier: str
+    state: str
+    nonce: str
 
 
 def _roles_of(claims: dict[str, Any] | None) -> list[str]:
@@ -87,8 +106,92 @@ class D3AuthClient:
             return False
 
     async def begin_sign_in(self, request: Request, redirect_uri: str, **extra: Any) -> Any:
-        """Redirects to the provider. Authlib keeps state, nonce and the PKCE verifier."""
+        """Redirects to the provider. Authlib keeps state, nonce and the PKCE verifier.
+
+        Convenient when the app already has Starlette's ``SessionMiddleware``. When it does not —
+        or when it would rather bind the transaction to a cookie of its own — use
+        :meth:`start_sign_in` and :meth:`finish_sign_in`, which keep nothing.
+        """
         return await self.app.authorize_redirect(request, redirect_uri, **extra)
+
+    async def start_sign_in(self, redirect_uri: str, **extra: Any) -> SignInStart:
+        """Begin a sign-in and hand the app everything it must remember. Stores nothing.
+
+        The twin of the TypeScript SDK's ``beginSignIn``. An app with its own session cookies —
+        most apps that already have a login — should not have to mount a second session just to
+        hold three strings for ninety seconds.
+        """
+        metadata = await self.app.load_server_metadata()
+        verifier = secrets.token_urlsafe(64)
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        prepared = await self.app.create_authorization_url(
+            redirect_uri, state=state, nonce=nonce, code_verifier=verifier, **extra
+        )
+        url = prepared["url"] if isinstance(prepared, dict) else prepared[0]
+        return SignInStart(url=url, verifier=verifier, state=state, nonce=nonce)
+
+    async def finish_sign_in(
+        self, callback_url: str, *, start: SignInStart, redirect_uri: str
+    ) -> Session:
+        """Complete a sign-in begun by :meth:`start_sign_in`, checking it is the same one.
+
+        ``start`` comes from wherever the app put it for this browser. A callback whose ``state``
+        does not match is refused before anything is exchanged: that check is the whole defence
+        against a sign-in somebody else began.
+        """
+        query = parse_qs(urlparse(str(callback_url)).query)
+        first = lambda name: (query.get(name) or [None])[0]  # noqa: E731
+
+        error = first("error")
+        if error:
+            raise ValueError(f"the provider refused the sign-in: {first('error_description') or error}")
+
+        returned_state = first("state") or ""
+        if not secrets.compare_digest(returned_state, start.state):
+            raise ValueError("this callback belongs to a different sign-in")
+
+        # RFC 9207: the provider names itself in the response, so a code cannot be passed off as
+        # having come from somewhere else.
+        returned_issuer = first("iss")
+        if returned_issuer and returned_issuer.rstrip("/") != self.issuer:
+            raise ValueError("the callback names a different issuer")
+
+        code = first("code")
+        if not code:
+            raise ValueError("the callback carries no authorization code")
+
+        metadata = await self.app.load_server_metadata()
+        tokens = await self.app.fetch_access_token(
+            url=metadata["token_endpoint"],
+            grant_type="authorization_code",
+            code=code,
+            code_verifier=start.verifier,
+            redirect_uri=redirect_uri,
+        )
+
+        id_token = tokens.get("id_token") or ""
+        if not id_token:
+            raise ValueError("the provider returned no ID token")
+        _check_algorithm(id_token)
+        claims = dict(await self.app.parse_id_token(tokens, nonce=start.nonce))
+
+        sub = claims.get("sub") or ""
+        if not sub:
+            raise ValueError("the ID token has no subject")
+
+        roles = _roles_of(claims)
+        if not roles and tokens.get("access_token"):
+            roles = await self.roles_now(tokens["access_token"])
+
+        return Session(
+            identity=Identity(iss=claims.get("iss") or self.issuer, sub=sub, claims=claims, roles=roles),
+            access_token=tokens.get("access_token", ""),
+            id_token=id_token,
+            refresh_token=tokens.get("refresh_token"),
+            expires_at=tokens.get("expires_at"),
+            sid=claims.get("sid"),
+        )
 
     async def complete_sign_in(self, request: Request) -> Session:
         """Exchanges the code and verifies the ID token, then reads the roles."""
