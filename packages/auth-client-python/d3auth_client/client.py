@@ -76,6 +76,7 @@ class D3AuthClient:
         scope: str = DEFAULT_SCOPE,
         sso_mode: SsoMode = "optional",
         http: httpx.Client | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.issuer = issuer.rstrip("/")
         self.client_id = client_id
@@ -93,6 +94,10 @@ class D3AuthClient:
                 "code_challenge_method": "S256",
                 # The pinned list (REQ-094, REQ-095): never `none`, never symmetric.
                 "token_endpoint_auth_method": "client_secret_basic" if client_secret else "none",
+                # A seam, and the reason it exists: without it the only way to test a sign-in is
+                # to stand in for Authlib, and a stand-in that accepts `**kwargs` is exactly how
+                # a call the real library refuses reached production.
+                **({"transport": transport} if transport is not None else {}),
             },
         )
         self._oauth = oauth
@@ -161,13 +166,16 @@ class D3AuthClient:
         if not code:
             raise ValueError("the callback carries no authorization code")
 
-        metadata = await self.app.load_server_metadata()
+        # No `url=`: Authlib resolves the token endpoint from the metadata itself and passes it
+        # to `fetch_token` *positionally*, so a `url` keyword arrives as a second value for the
+        # same parameter and every exchange dies with "got multiple values for argument 'url'".
+        # It reached production because the test double accepted `**kwargs` and the real one
+        # does not — see `tests/test_real_exchange.py`, which drives Authlib itself.
         tokens = await self.app.fetch_access_token(
-            url=metadata["token_endpoint"],
+            redirect_uri=redirect_uri,
             grant_type="authorization_code",
             code=code,
             code_verifier=start.verifier,
-            redirect_uri=redirect_uri,
         )
 
         id_token = tokens.get("id_token") or ""
@@ -232,9 +240,9 @@ class D3AuthClient:
 
     async def refresh(self, refresh_token: str) -> Session:
         """Renews the access token *and* the roles, because roles change between renewals."""
-        metadata = await self.app.load_server_metadata()
+        # As in `finish_sign_in`: the endpoint comes from the metadata, never as a `url` kwarg.
         tokens = await self.app.fetch_access_token(
-            url=metadata["token_endpoint"], grant_type="refresh_token", refresh_token=refresh_token
+            grant_type="refresh_token", refresh_token=refresh_token
         )
         # Userinfo answers both halves at once: whose token this is, and what they may do with
         # it. Asking only for the roles left every renewed session identified as `sub=""`, which
