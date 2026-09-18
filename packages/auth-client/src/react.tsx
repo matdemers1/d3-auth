@@ -1,8 +1,10 @@
-import { Button } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import type { SsoMode } from './client.js';
 
 // The *Sign in with D3 Auth* button (REQ-089).
+//
+// Plain elements and two class names, no design system: an app installing this SDK should not have
+// to install somebody else's components to render one button. Style `.d3auth-signin` to taste.
 //
 // The interesting part is what it does when the provider is unreachable. An app in `required`
 // mode has nothing else to offer, so the button says so plainly instead of throwing people at a
@@ -45,24 +47,31 @@ export interface SignInButtonProps {
   ssoMode?: SsoMode;
   operatorDisplayName?: string;
   children?: React.ReactNode;
+  /**
+   * Styling is yours. The button carries `d3auth-signin` and, while the provider is unreachable,
+   * `d3auth-signin--unavailable`; anything passed here is added to both.
+   */
+  className?: string;
 }
 
-export function SignInWithD3Auth({ href, issuer, ssoMode = 'optional', operatorDisplayName = 'D3 Auth', children }: SignInButtonProps) {
+export function SignInWithD3Auth({ href, issuer, ssoMode = 'optional', operatorDisplayName = 'D3 Auth', children, className }: SignInButtonProps) {
   const { checking, healthy } = useProviderHealth(issuer);
 
   if (ssoMode === 'off') return null;
   // Optional mode: the app has its own login, so a dead provider is best said with silence.
   if (!checking && !healthy && ssoMode === 'optional') return null;
 
+  const unavailable = !checking && !healthy;
   return (
-    <Button
-      variant="secondary"
+    <button
+      type="button"
+      className={['d3auth-signin', unavailable ? 'd3auth-signin--unavailable' : '', className ?? ''].filter(Boolean).join(' ')}
       disabled={checking || !healthy}
       onClick={() => {
         window.location.assign(href);
       }}
     >
-      {!checking && !healthy ? `${operatorDisplayName} is unavailable` : (children ?? `Sign in with ${operatorDisplayName}`)}
-    </Button>
+      {unavailable ? `${operatorDisplayName} is unavailable` : (children ?? `Sign in with ${operatorDisplayName}`)}
+    </button>
   );
 }

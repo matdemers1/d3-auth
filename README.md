@@ -35,7 +35,7 @@ Running in production since September 2026 behind a Cloudflare Tunnel on a home 
   restores last night's bundle into a throwaway database, decrypts the keys with the host's KEK, and
   boots a second copy of the service against it. Alert rules read the audit trail and email you;
   a Cloudflare Worker watches `/readyz` from outside, so the alert still arrives when the host is off.
-- **Two SDKs and runnable examples**: `@d3cloud/auth-client` (TypeScript, with a React button) and
+- **Two SDKs and runnable examples**: `@d3cloudio/auth-client` (TypeScript, with a React button) and
   `d3auth-client` (Python/FastAPI), plus Express, FastAPI and iOS examples.
 
 ## What it refuses to do

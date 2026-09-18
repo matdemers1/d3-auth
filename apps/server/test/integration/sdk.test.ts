@@ -1,7 +1,7 @@
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createAuthClient, createBackchannelHandler, identityKey, SsoUnavailable } from '@d3cloud/auth-client';
+import { createAuthClient, createBackchannelHandler, identityKey, SsoUnavailable } from '@d3cloudio/auth-client';
 import { createLocalJWKSet, type JSONWebKeySet } from 'jose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Browser, grantAccess, ISSUER, markVisited, RP_CALLBACK, startHarness, USER, WEB_CLIENT, type Harness } from './oidc-harness.js';

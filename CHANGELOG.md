@@ -73,5 +73,5 @@ authenticated ZAP scan with no High.
 
 - Not certified by the OpenID Foundation; the conformance plans are run, not submitted.
 - One operator, one instance: no multi-tenancy, no organisations.
-- `@d3cloud/auth-client` and `d3auth-client` are installed from this repository; neither is published
+- `@d3cloudio/auth-client` and `d3auth-client` are installed from this repository; neither is published
   to npm or PyPI yet.

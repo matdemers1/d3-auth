@@ -19,7 +19,7 @@ Node 22 (ESM, TypeScript strict) · Express · `oidc-provider` 9.x · Prisma + P
 ```
 apps/server            provider + interaction UI routes + console/account API + CLI (recover, backup, export, import, seed, rotate-keys)
 apps/console           React app: /login/* (phone-first), /account/*, /admin/*
-packages/auth-client   @d3cloud/auth-client (TS SDK + React button)
+packages/auth-client   @d3cloudio/auth-client (TS SDK + React button)
 packages/auth-client-python   d3auth-client (Authlib Starlette wrapper for FastAPI)
 workers/mail-relay     Cloudflare Worker: POST /send via send_email; cron readiness probe
 examples/              express (dual-login), fastapi, ios

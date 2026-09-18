@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { createAuthClient, createBackchannelHandler, identityKey, type AuthClient, type SsoMode } from '@d3cloud/auth-client';
+import { createAuthClient, createBackchannelHandler, identityKey, type AuthClient, type SsoMode } from '@d3cloudio/auth-client';
 import express, { type Request, type Response } from 'express';
 
 // A dual-login relying party, written the way the consumer contract asks (docs/consumer-contract.md).

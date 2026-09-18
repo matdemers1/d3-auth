@@ -39,7 +39,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@d3cloud/auth-client": "workspace:*",
+    "@d3cloudio/auth-client": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/nodemailer": "^8.0.2",
     "@types/oidc-provider": "^9.12.1",

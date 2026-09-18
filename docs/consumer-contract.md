@@ -1,7 +1,7 @@
 # The consumer contract
 
 What an app has to do to sign people in with D3 Auth, and why each rule is there. Ten rules; the
-SDKs (`@d3cloud/auth-client`, `d3auth-client`) implement most of them for you, and the ones they
+SDKs (`@d3cloudio/auth-client`, `d3auth-client`) implement most of them for you, and the ones they
 cannot are called out below.
 
 This mirrors §2 of the API Contract in the vault. If the two ever disagree, the vault is the
@@ -111,7 +111,7 @@ If your app has no login of its own:
 ## The shortest conformant app
 
 ```ts
-import { createAuthClient, createBackchannelHandler } from '@d3cloud/auth-client';
+import { createAuthClient, createBackchannelHandler } from '@d3cloudio/auth-client';
 
 const auth = await createAuthClient({
   issuer: 'https://auth.d3cloud.io',

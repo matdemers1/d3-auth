@@ -15,7 +15,7 @@
   "dependencies": {
     "express": "^5.2.1",
     "openid-client": "^6.8.8",
-    "@d3cloud/auth-client": "workspace:*"
+    "@d3cloudio/auth-client": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

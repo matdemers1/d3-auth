@@ -3,7 +3,7 @@
 A relying party in about a hundred lines: discovery, authorization code + PKCE with `state` and
 `nonce`, identity by `(iss, sub)`, its own session cookie, and RP-initiated logout. It is what the
 [consumer contract](../../docs/) asks every app to do, written out longhand. Phase 3 replaces the
-hand-rolled parts with `@d3cloud/auth-client`.
+hand-rolled parts with `@d3cloudio/auth-client`.
 
 ## Against the local dev stack
 
