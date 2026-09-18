@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { genericSheet, type SheetApp, type SheetRow } from '../../src/admin/connection.js';
 import { parseManifest } from '../../src/admin/manifest.js';
 import { buildFromPreset, connectionFor, describePreset, findPreset, PRESETS, readAddress } from '../../src/admin/presets/index.js';
+import { bindery } from '../../src/admin/presets/bindery.js';
 import { immich } from '../../src/admin/presets/immich.js';
 
 // REQ-142, REQ-143, REQ-144.
@@ -241,5 +242,55 @@ describe('the connection for a stored app', () => {
     expect(text).not.toContain('argon2');
     const rows = connectionFor(ISSUER, { ...app, preset: 'immich', presetInputs: inputs }).rows.filter((row) => row.secret);
     expect(rows.every((row) => row.value === null)).toBe(true);
+  });
+});
+
+describe('the Bindery preset', () => {
+  const build = (raw: unknown) => {
+    const result = buildFromPreset(bindery, raw);
+    if (!result.ok) throw new Error(`expected the preset to build: ${JSON.stringify(result.problems)}`);
+    return result;
+  };
+
+  it('builds every URI from the one address, so the http/https mistake cannot be made', () => {
+    // The first real registration was refused with invalid_redirect_uri: the https address was
+    // registered and Bindery sent the http form. One answer, three URIs, one scheme.
+    const { manifest } = build({ address: 'https://bindery.example.com' });
+    expect(manifest.redirect_uris).toEqual(['https://bindery.example.com/api/auth/oidc/callback']);
+    expect(manifest.post_logout_redirect_uris).toEqual(['https://bindery.example.com/']);
+    expect(manifest.backchannel_logout_uri).toBe('https://bindery.example.com/api/auth/oidc/backchannel-logout');
+  });
+
+  it('refuses an address that is not one origin over https', () => {
+    for (const address of ['http://bindery.example.com', 'https://bindery.example.com/app', 'https://*.example.com', '']) {
+      const result = buildFromPreset(bindery, { address });
+      expect(result.ok, address).toBe(false);
+    }
+  });
+
+  it('declares the three roles Bindery maps, with member as the default', () => {
+    const { manifest } = build({ address: 'https://bindery.example.com' });
+    expect(manifest.roles.map((role) => role.key)).toEqual(['admin', 'member', 'guest']);
+    expect(manifest.roles.filter((role) => role.default).map((role) => role.key)).toEqual(['member']);
+  });
+
+  it('is a sheet of Bindery’s own fields, and the secret is never in it before there is one', () => {
+    const { inputs, manifest } = build({ address: 'https://bindery.example.com' });
+    const rows = byId(bindery.sheet({ issuer: ISSUER, app: sheetApp(manifest), inputs, preview: true }));
+    // The card asks for exactly these, in this order, and nothing else is a Bindery setting.
+    expect(rows.issuer?.value).toBe(ISSUER);
+    expect(rows.client_id?.value).toBe('bindery');
+    expect(rows.client_secret?.value).toBeNull();
+    expect(rows.client_secret?.secret).toBe(true);
+    expect(rows.sso_mode?.value).toBe('Optional');
+    // Shown to be checked against what Bindery builds, not to be typed.
+    expect(rows.redirect_uri?.action).toBe('leave');
+    expect(rows.redirect_uri?.value).toBe('https://bindery.example.com/api/auth/oidc/callback');
+  });
+
+  it('carries the secret once, when there is one', () => {
+    const { inputs, manifest } = build({ address: 'https://bindery.example.com' });
+    const rows = byId(bindery.sheet({ issuer: ISSUER, app: sheetApp(manifest), inputs, secret: 'a-secret' }));
+    expect(rows.client_secret?.value).toBe('a-secret');
   });
 });
