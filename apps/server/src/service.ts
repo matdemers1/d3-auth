@@ -72,6 +72,7 @@ type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' |
       | 'CONSOLE_DIST'
       | 'BACKUP_S3_BUCKET'
       | 'CONFORMANCE_PKCE_EXEMPT_CLIENTS'
+      | 'RESOURCE_SERVERS'
       | 'OPERATOR_DISPLAY_NAME'
       | 'MAIL_DRIVER'
       | 'MAIL_RELAY_URL'
@@ -131,6 +132,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     cookieKeys: config.COOKIE_KEYS,
     interactionPath: loginPath,
     pkceExemptClientIds: config.CONFORMANCE_PKCE_EXEMPT_CLIENTS ?? [],
+    resourceServers: config.RESOURCE_SERVERS ?? [],
     operatorDisplayName: config.OPERATOR_DISPLAY_NAME ?? 'D3 Auth',
     secureCookies: config.ISSUER.startsWith('https://'),
   });

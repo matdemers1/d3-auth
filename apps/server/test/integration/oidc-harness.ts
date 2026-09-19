@@ -35,7 +35,9 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function startHarness(options: { pkceExemptClientIds?: string[] } = {}): Promise<Harness> {
+export async function startHarness(
+  options: { pkceExemptClientIds?: string[]; resourceServers?: string[] } = {},
+): Promise<Harness> {
   const passwordVerifications = { count: 0 };
   const databaseUrl = process.env.DATABASE_URL ?? '';
   const pepper = randomBytes(32);
@@ -81,6 +83,7 @@ export async function startHarness(options: { pkceExemptClientIds?: string[] } =
     PEPPER: pepper,
     COOKIE_KEYS: [randomBytes(32).toString('base64')],
     CONFORMANCE_PKCE_EXEMPT_CLIENTS: options.pkceExemptClientIds ?? [],
+    RESOURCE_SERVERS: options.resourceServers ?? [],
     OPERATOR_DISPLAY_NAME: 'Matthew',
   }, logger, {
     passwords: (real) => ({

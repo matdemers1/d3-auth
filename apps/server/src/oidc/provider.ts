@@ -1,6 +1,6 @@
 import { isConsoleClient } from '../console/console-client.js';
 import { renderSignedOut, renderSignOutQuestion } from '../interaction/signout-pages.js';
-import Provider, { type AdapterFactory, type Configuration } from 'oidc-provider';
+import Provider, { errors, type AdapterFactory, type Configuration } from 'oidc-provider';
 import type { Db } from '../db.js';
 import type { SecretHasher } from '../security/hash.js';
 import { createFindAccount } from './account.js';
@@ -66,6 +66,12 @@ export interface ProviderOptions {
   pkceExemptClientIds?: readonly string[];
   /** Idle session lifetime in days, read when a session is saved (Settings → Lifetimes). */
   sessionIdleDays?: () => number;
+  /**
+   * Resource servers that may be named in an RFC 8707 `resource` parameter — an **allowlist**, not
+   * a pattern. Foreman's remote MCP endpoint is the first (Foreman ADR-013). Empty keeps resource
+   * indicators off entirely, which is the behaviour every existing deployment already has.
+   */
+  resourceServers?: readonly string[];
 }
 
 /** Everything goes to the payload table except `Client`, which is served from the App table. */
@@ -80,6 +86,7 @@ const escapeHtml = (value: unknown): string =>
 
 export function createProvider(options: ProviderOptions): Provider {
   const pkceExempt = new Set(options.pkceExemptClientIds ?? []);
+  const resourceServers = new Set(options.resourceServers ?? []);
   const consoleDist = options.consoleDist ?? '';
   const configuration: Configuration = {
     // Clients come from the App table through the adapter (T-3.1), so registering an app takes
@@ -109,15 +116,41 @@ export function createProvider(options: ProviderOptions): Provider {
       // the continue-as interstitial gets its one chance to be seen (REQ-059).
       if (access.firstSignInAt === null) return undefined;
 
+      const requested = ctx.oidc.params?.scope;
+      const scope = typeof requested === 'string' && requested !== '' ? requested : 'openid';
+
+      /**
+       * A grant must cover the **resource** as well as the scope, or the provider keeps raising an
+       * interaction for something a granted user has already been allowed — which presents as an
+       * endless redirect loop rather than as a refusal, and says nothing about why.
+       *
+       * Only allowlisted resources are added. An unknown one is left off deliberately, so the
+       * token endpoint refuses it in `getResourceServerInfo` rather than being quietly granted here.
+       */
+      const addResources = (grant: InstanceType<typeof ctx.oidc.provider.Grant>): void => {
+        const asked = ctx.oidc.params?.['resource'];
+        for (const resource of Array.isArray(asked) ? asked : [asked]) {
+          if (typeof resource === 'string' && resourceServers.has(resource)) {
+            grant.addResourceScope(resource, scope);
+          }
+        }
+      };
+
       const grantId = ctx.oidc.result?.consent?.grantId ?? ctx.oidc.session?.grantIdFor(client.clientId);
       if (grantId) {
         const existing = await ctx.oidc.provider.Grant.find(grantId);
-        if (existing) return existing;
+        if (existing) {
+          // A grant from before this request may predate the resource being asked for — a returning
+          // user hitting a new resource server for the first time.
+          addResources(existing);
+          await existing.save();
+          return existing;
+        }
       }
 
       const grant = new ctx.oidc.provider.Grant({ accountId, clientId: client.clientId });
-      const requested = ctx.oidc.params?.scope;
-      grant.addOIDCScope(typeof requested === 'string' && requested !== '' ? requested : 'openid');
+      grant.addOIDCScope(scope);
+      addResources(grant);
       await grant.save();
       return grant;
     },
@@ -251,7 +284,37 @@ export function createProvider(options: ProviderOptions): Provider {
       // Available later as flags, off until a consumer needs them (ADR-001).
       pushedAuthorizationRequests: { enabled: false },
       dPoP: { enabled: false },
-      resourceIndicators: { enabled: false },
+
+      /**
+       * RFC 8707 resource indicators — the consumer this was waiting for is Foreman's remote MCP
+       * endpoint (Foreman ADR-013), which as an OAuth 2.1 resource server **MUST** reject any token
+       * not issued for it. That only works if the token says who it is for, so tokens for a
+       * resource are **JWTs with `aud` set to the resource**.
+       *
+       * The allowlist is the load-bearing part. Without it any client could ask for a token
+       * audienced at any string it liked, and every resource server in the ecosystem would be one
+       * careless audience check away from accepting it.
+       */
+      resourceIndicators: {
+        enabled: resourceServers.size > 0,
+        // No default: a request that names no resource keeps getting today's opaque token, so
+        // nothing that exists now changes shape underneath it.
+        defaultResource: () => undefined,
+        useGrantedResource: () => true,
+        getResourceServerInfo: (_ctx, resourceIndicator) => {
+          if (!resourceServers.has(resourceIndicator)) {
+            throw new errors.InvalidTarget('unknown resource server');
+          }
+          return {
+            audience: resourceIndicator,
+            // The scopes a resource server may be granted. Narrower than the provider's full set
+            // on purpose: `offline_access` is a grant property, not something a resource needs.
+            scope: 'openid profile email d3:roles',
+            accessTokenTTL: ACCESS_TOKEN_TTL,
+            accessTokenFormat: 'jwt',
+          };
+        },
+      },
     },
 
     renderError: (ctx, out) => {

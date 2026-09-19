@@ -70,6 +70,16 @@ const schema = z
       .string()
       .optional()
       .transform((v) => (v ?? '').split(',').map((c) => c.trim()).filter(Boolean)),
+    /**
+     * Resource servers that may be named in an RFC 8707 `resource` parameter, comma-separated.
+     * An allowlist: a client may only obtain an audience-bound token for a URI listed here, and
+     * unset leaves resource indicators off entirely. First consumer is Foreman's remote MCP
+     * endpoint (Foreman ADR-013), e.g. `https://foreman.d3cloud.io/mcp`.
+     */
+    RESOURCE_SERVERS: z
+      .string()
+      .optional()
+      .transform((v) => (v ?? '').split(',').map((r) => r.trim()).filter(Boolean)),
     MAIL_DRIVER: z.enum(['worker', 'smtp', 'log']).default('log'),
     MAIL_FROM: z.string().optional(),
     MAIL_RELAY_SECRET: z.string().optional(),
