@@ -144,7 +144,18 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     // Every name here has the same (ctx, OIDCProviderError) listener signature.
     provider.on(event as 'grant.error', (ctx, err) => {
       logger.warn(
-        { event, error: err.error, description: err.error_description, route: ctx.oidc.route, client_id: ctx.oidc.client?.clientId },
+        {
+          event,
+          error: err.error,
+          description: err.error_description,
+          // The client is told something deliberately vague; `error_detail` is where the provider
+          // puts the actual reason, and without it in the log an `invalid_client` could equally be
+          // a wrong secret or an auth method this provider does not accept. It is never sent to the
+          // client and carries no credential material — only which check failed.
+          detail: (err as { error_detail?: string }).error_detail,
+          route: ctx.oidc.route,
+          client_id: ctx.oidc.client?.clientId,
+        },
         'protocol error',
       );
     });
