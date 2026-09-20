@@ -23,6 +23,7 @@ import { Confirm } from '../shared/Confirm';
 import { icon } from '../shared/icons';
 import { messageOf, useLoad } from '../shared/load';
 import { useMe } from '../shared/me';
+import { useStepUp } from '../shared/StepUp';
 import { Denied, FactsSkeleton, LoadFailed, RowsSkeleton } from '../shared/states';
 import { clientTypeLabel } from './Apps';
 import { ConnectionSection } from './connection';
@@ -79,6 +80,11 @@ function UriList({ uris, none }: { uris: string[]; none: string }) {
 
 export function AppDetail({ clientId }: { clientId: string }) {
   const me = useMe();
+  // Every owner action on this screen is step-up protected, and none of them asked for the proof:
+  // outside the five-minute window the server answered `step_up_required` and nothing caught it,
+  // so the button simply did nothing. `ask` holds the click until the proof is given, then repeats
+  // it — they came here to do this.
+  const { ask, prompt } = useStepUp();
   const base = `/api/admin/apps/${encodeURIComponent(clientId)}`;
   const app = useLoad(() => api.get<App>(base), clientId);
   const access = useLoad(() => api.get<{ access: AccessRow[] }>(`${base}/access`).then((answer) => answer.access), clientId);
@@ -117,6 +123,7 @@ export function AppDetail({ clientId }: { clientId: string }) {
         setBlocking((err.body.detail as ManifestDiff['blocking'] | undefined) ?? []);
         return;
       }
+      if (ask(err, 'changing this app', () => void act(where, path, body, said))) return;
       setFeedback({ where, tone: 'danger', title: 'That did not work', text: messageOf(err) });
     } finally {
       setBusy(false);
@@ -350,9 +357,16 @@ export function AppDetail({ clientId }: { clientId: string }) {
         confirm="Remove roles and their access"
         cancel="Keep the roles"
         onConfirm={async () => {
-          await api.post(`${base}/manifest`, { manifest, confirmRoleRemoval: true });
-          setFeedback({ where: 'manifest', tone: 'success', title: 'Manifest applied', text: 'The roles were removed, and the access they carried with them.' });
-          reload();
+          const apply = async (): Promise<void> => {
+            await api.post(`${base}/manifest`, { manifest, confirmRoleRemoval: true });
+            setFeedback({ where: 'manifest', tone: 'success', title: 'Manifest applied', text: 'The roles were removed, and the access they carried with them.' });
+            reload();
+          };
+          try {
+            await apply();
+          } catch (err) {
+            if (!ask(err, 'applying a manifest', () => void apply())) throw err;
+          }
         }}
       />
 
@@ -375,9 +389,16 @@ export function AppDetail({ clientId }: { clientId: string }) {
                   confirm="Rotate secret"
                   cancel="Keep the current secret"
                   onConfirm={async () => {
-                    const answer = await api.post<{ secret: string; connection?: Connection }>(`${base}/secret`);
-                    setSecret(answer.secret);
-                    setRotated(answer.connection);
+                    const rotate = async (): Promise<void> => {
+                      const answer = await api.post<{ secret: string; connection?: Connection }>(`${base}/secret`);
+                      setSecret(answer.secret);
+                      setRotated(answer.connection);
+                    };
+                    try {
+                      await rotate();
+                    } catch (err) {
+                      if (!ask(err, 'rotating a client secret', () => void rotate())) throw err;
+                    }
                   }}
                 />
               }
@@ -400,7 +421,14 @@ export function AppDetail({ clientId }: { clientId: string }) {
                   confirm={`Disable ${view.name}`}
                   cancel={`Keep ${view.name} on`}
                   onConfirm={async () => {
-                    await api.post(`${base}/enabled`, { enabled: false });
+                    const disable = async (): Promise<void> => {
+                      await api.post(`${base}/enabled`, { enabled: false });
+                    };
+                    try {
+                      await disable();
+                    } catch (err) {
+                      if (!ask(err, 'disabling sign-in', () => void disable())) throw err;
+                    }
                     setFeedback({ where: 'page', tone: 'success', title: 'App disabled', text: 'Its tokens were revoked and nobody can sign in to it.' });
                     reload();
                   }}
@@ -427,6 +455,7 @@ export function AppDetail({ clientId }: { clientId: string }) {
           )}
         </DataList>
       </Section>
+      {prompt}
     </Page>
   );
 }
