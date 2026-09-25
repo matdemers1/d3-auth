@@ -122,6 +122,24 @@ describe('searching the trail', () => {
     expect(JSON.parse(fields[7] ?? '{}')).toMatchObject({ note: 'a "quoted", comma-ridden thing' });
   });
 
+  it('answers a filter it cannot use with 400, not a 500', async () => {
+    const call = await consoleSession();
+    for (const [query, field] of [
+      ['limit=abc', 'limit'],
+      ['actor=zap', 'actor'],
+      ['cursor=zap', 'cursor'],
+      ['event=a&event=b', 'event'],
+    ] as const) {
+      for (const path of ['/api/admin/audit', '/api/admin/audit/export']) {
+        const answer = await call(`${path}?${query}`);
+        expect(answer.status, `${path}?${query}`).toBe(400);
+        expect(await answer.json()).toMatchObject({ error: 'invalid_filter', field });
+      }
+    }
+    // The shapes that are fine still are.
+    expect((await call(`/api/admin/audit?actor=${ownerId}&limit=5&cursor=999`)).status).toBe(200);
+  });
+
   it('is refused to a guest', async () => {
     await h.service.db.user.update({ where: { id: ownerId }, data: { kind: 'guest' } });
     try {

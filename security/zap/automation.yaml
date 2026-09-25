@@ -2,6 +2,9 @@
 #
 #   security/zap/run.sh              (brings the dev stack's session, runs this, writes security/zap/report/)
 #
+# Not runnable as it stands: run.sh writes the session into ${ZAP_COOKIE} before ZAP sees it,
+# because ZAP leaves variables in a replacer rule unsubstituted and would send the placeholder.
+#
 # Three decisions shape it:
 #
 # - Authenticated by header, not by teaching ZAP to sign in. The sign-in is a state machine with
@@ -52,7 +55,8 @@ jobs:
         replacementString: same-origin
 
   # A scan that silently lost its session would scan the sign-in page and call everything clean. The
-  # first three requests must come back 200, or the run fails before any scanning starts.
+  # first three requests must come back 200. ZAP itself only warns on a mismatch, so run.sh is what
+  # turns it into a failure.
   - type: requestor
     requests:
       - url: ${ZAP_TARGET}/api/me
