@@ -73,12 +73,35 @@ export function cached(probe: ReadinessProbe, ttlMs = 5_000): ReadinessProbe {
 export const allPass = (checks: ReadinessChecks): boolean => Object.values(checks).every(Boolean);
 
 /** The newest migration this image ships — the same value CI stamps on the image as
- * `dev.d3cloud.shipyard.schema`, so Shipyard can compare the running schema to the label. */
+ * `dev.d3cloud.shipyard.schema`. */
 export function newestMigration(migrations: string[] = shippedMigrations()): string | null {
   return migrations.at(-1) ?? null;
 }
 
-export function healthRouter(readiness?: ReadinessProbe, migrations: string[] = shippedMigrations()): Router {
+/** The schema the database is actually on: null when it cannot be read. */
+export type SchemaProbe = () => Promise<string | null>;
+
+/**
+ * The newest migration *applied* to the database — what /health reports, so Shipyard compares
+ * the label against the database rather than against what the image merely ships. After an
+ * image-only rollback past an expand migration the two differ, and the database is the truth.
+ * Names sort in the same order CI uses to pick the label.
+ */
+export function appliedSchema(db: Db): SchemaProbe {
+  return async () => {
+    try {
+      const rows = await withTimeout(db.$queryRaw<{ migration_name: string }[]>`
+        SELECT migration_name FROM _prisma_migrations
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+        ORDER BY migration_name DESC LIMIT 1`);
+      return rows[0]?.migration_name ?? null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+export function healthRouter(readiness?: ReadinessProbe, schemaProbe?: SchemaProbe): Router {
   const router = Router();
 
   router.use(['/healthz', '/readyz', '/health'], (_req, res, next) => {
@@ -99,9 +122,9 @@ export function healthRouter(readiness?: ReadinessProbe, migrations: string[] = 
   // /health (SHP-D-019, SHP-D-022): the Shipyard deploy contract. No auth, no secrets — just
   // whether the database answers, migrations are applied, and which schema is running.
   router.get('/health', async (_req, res) => {
-    const checks = readiness ? await readiness() : {};
-    const ok = (checks.database ?? false) && (checks.migrations ?? false);
-    res.status(ok ? 200 : 503).json({ ok, schema: ok ? newestMigration(migrations) : null });
+    const [checks, schema] = await Promise.all([readiness ? readiness() : Promise.resolve<ReadinessChecks>({}), schemaProbe ? schemaProbe() : null]);
+    const ok = (checks.database ?? false) && (checks.migrations ?? false) && schema !== null;
+    res.status(ok ? 200 : 503).json({ ok, schema: ok ? schema : null });
   });
 
   return router;

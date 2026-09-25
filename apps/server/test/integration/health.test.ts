@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { createDb } from '../../src/db.js';
-import { databaseReadiness, shippedMigrations, type ReadinessProbe } from '../../src/health.js';
+import { appliedSchema, databaseReadiness, shippedMigrations, type ReadinessProbe, type SchemaProbe } from '../../src/health.js';
 import { loadSigningKeys } from '../../src/oidc/keys.js';
 import { createKekCrypto } from '../../src/security/kek.js';
 import { testDb } from './helpers.js';
@@ -28,8 +28,11 @@ async function readyz(readiness: ReadinessProbe): Promise<{ status: number; body
   }
 }
 
-async function health(readiness: ReadinessProbe): Promise<{ status: number; body: { ok: boolean; schema: string | null } }> {
-  const server: Server = createApp({ readiness }).listen(0, '127.0.0.1');
+async function health(
+  readiness: ReadinessProbe,
+  schema: SchemaProbe = appliedSchema(db),
+): Promise<{ status: number; body: { ok: boolean; schema: string | null } }> {
+  const server: Server = createApp({ readiness, schema }).listen(0, '127.0.0.1');
   await once(server, 'listening');
   try {
     const { port } = server.address() as AddressInfo;
@@ -86,6 +89,14 @@ describe('/health (SHP-D-019, SHP-D-022)', () => {
     expect(res.body).toEqual({ ok: true, schema: shippedMigrations().at(-1) });
   });
 
+  it('reports the database, not the image, after an image-only rollback past a migration', async () => {
+    // An older image ships one migration fewer; the database keeps the newer one applied.
+    const older = shippedMigrations().slice(0, -1);
+    const res = await health(databaseReadiness(db, older));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, schema: shippedMigrations().at(-1) });
+  });
+
   it('does not require a signing key, unlike /readyz', async () => {
     await db.signingKey.deleteMany();
     const readiness = databaseReadiness(db);
@@ -98,7 +109,7 @@ describe('/health (SHP-D-019, SHP-D-022)', () => {
   it('is unavailable when the database is down', async () => {
     const unreachable = createDb('postgresql://d3auth:d3auth@127.0.0.1:1/d3auth_test');
     try {
-      const res = await health(databaseReadiness(unreachable));
+      const res = await health(databaseReadiness(unreachable), appliedSchema(unreachable));
       expect(res.status).toBe(503);
       expect(res.body).toEqual({ ok: false, schema: null });
     } finally {

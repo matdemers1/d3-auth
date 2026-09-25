@@ -13,7 +13,7 @@ import { accountRouter } from './account/routes.js';
 import { createConsoleAuth } from './console/auth.js';
 import type { Config } from './config.js';
 import { createDb, type Db } from './db.js';
-import { cached, databaseReadiness, type ReadinessProbe } from './health.js';
+import { appliedSchema, cached, databaseReadiness, type ReadinessProbe } from './health.js';
 import { inviteRouter } from './interaction/invite-routes.js';
 import { interactionRouter, loginPath } from './interaction/routes.js';
 import { recordSessions } from './interaction/sessions.js';
@@ -328,6 +328,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     ],
     beforeRouters: [unavailableGate(readiness)],
     readiness,
+    schema: appliedSchema(db),
     logger,
     hsts: config.ISSUER.startsWith('https://'),
   });

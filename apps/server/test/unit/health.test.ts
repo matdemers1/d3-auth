@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
-import { newestMigration, shippedMigrations, type ReadinessProbe } from '../../src/health.js';
+import type { ReadinessProbe } from '../../src/health.js';
 
 describe('health endpoints', () => {
   let server: Server;
@@ -45,8 +45,11 @@ describe('health endpoints', () => {
 });
 
 describe('/health (SHP-D-019, SHP-D-022)', () => {
-  async function health(readiness: ReadinessProbe): Promise<{ status: number; body: { ok: boolean; schema: string | null } }> {
-    const server: Server = createApp({ readiness }).listen(0, '127.0.0.1');
+  async function health(
+    readiness: ReadinessProbe,
+    schema: string | null = '0042_applied',
+  ): Promise<{ status: number; body: { ok: boolean; schema: string | null } }> {
+    const server: Server = createApp({ readiness, schema: () => Promise.resolve(schema) }).listen(0, '127.0.0.1');
     await once(server, 'listening');
     try {
       const { port } = server.address() as AddressInfo;
@@ -57,11 +60,16 @@ describe('/health (SHP-D-019, SHP-D-022)', () => {
     }
   }
 
-  it('is ok with the newest shipped migration when the database answers and migrations are applied', async () => {
+  it('is ok with the schema the database reports when it answers and migrations are applied', async () => {
     const res = await health(() => Promise.resolve({ database: true, signingKeys: false, migrations: true }));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, schema: newestMigration() });
-    expect(res.body.schema).toBe(shippedMigrations().at(-1));
+    expect(res.body).toEqual({ ok: true, schema: '0042_applied' });
+  });
+
+  it('is unavailable when the applied schema cannot be read', async () => {
+    const res = await health(() => Promise.resolve({ database: true, signingKeys: true, migrations: true }), null);
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ ok: false, schema: null });
   });
 
   it('ignores signingKeys — /health only cares about the database and migrations', async () => {

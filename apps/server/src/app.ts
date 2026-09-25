@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import express, { type ErrorRequestHandler, type Express, type RequestHandler, type Router } from 'express';
 import type Provider from 'oidc-provider';
-import { healthRouter, type ReadinessProbe } from './health.js';
+import { healthRouter, type ReadinessProbe, type SchemaProbe } from './health.js';
 import type { Logger } from './log.js';
 import { securityHeaders } from './security/headers.js';
 
@@ -12,6 +12,8 @@ export interface AppOptions {
   /** Gates that run before anything else, such as the readiness page. */
   beforeRouters?: RequestHandler[];
   readiness?: ReadinessProbe;
+  /** The schema /health reports: the database's newest applied migration. */
+  schema?: SchemaProbe;
   logger?: Logger;
   /** Off for a local http issuer, where HSTS would be meaningless and sticky. */
   hsts?: boolean;
@@ -54,7 +56,7 @@ export function createApp(options: AppOptions = {}): Express {
   if (options.logger) app.use(requestLog(options.logger));
   // Headers first, so they are present on every response including errors (REQ-132).
   app.use(securityHeaders({ hsts: options.hsts ?? true }));
-  app.use(healthRouter(options.readiness));
+  app.use(healthRouter(options.readiness, options.schema));
   for (const gate of options.beforeRouters ?? []) app.use(gate);
   for (const router of options.routers ?? []) app.use(router);
 
