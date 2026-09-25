@@ -183,6 +183,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The Shipyard deploy contract (AUTH-T-002, SHP-D-019, SHP-D-022): the migration posture
+      # from the HEAD commit's `Shipyard-Migration:` trailer, and the schema this image ships —
+      # the same value /health reports once it has run.
+      - id: shipyard-labels
+        run: ./scripts/shipyard-labels.sh "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
@@ -190,6 +195,9 @@ jobs:
           tags: |
             type=sha,format=long
             type=raw,value=latest
+          labels: |
+            dev.d3cloud.shipyard.migration=${{ steps.shipyard-labels.outputs.migration }}
+            dev.d3cloud.shipyard.schema=${{ steps.shipyard-labels.outputs.schema }}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .

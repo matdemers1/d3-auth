@@ -28,6 +28,18 @@ async function readyz(readiness: ReadinessProbe): Promise<{ status: number; body
   }
 }
 
+async function health(readiness: ReadinessProbe): Promise<{ status: number; body: { ok: boolean; schema: string | null } }> {
+  const server: Server = createApp({ readiness }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const { port } = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${port}/health`);
+    return { status: res.status, body: (await res.json()) as { ok: boolean; schema: string | null } };
+  } finally {
+    server.close();
+  }
+}
+
 describe('/readyz (REQ-113)', () => {
   it('is ready when the database answers, keys exist and migrations are applied', async () => {
     await db.signingKey.deleteMany();
@@ -63,5 +75,40 @@ describe('/readyz (REQ-113)', () => {
 
   it('knows the migrations this build ships', () => {
     expect(shippedMigrations()).toContain('0001_init');
+  });
+});
+
+describe('/health (SHP-D-019, SHP-D-022)', () => {
+  it('is ok with the newest migration schema when the database answers and migrations are applied', async () => {
+    await db.signingKey.deleteMany();
+    const res = await health(databaseReadiness(db));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, schema: shippedMigrations().at(-1) });
+  });
+
+  it('does not require a signing key, unlike /readyz', async () => {
+    await db.signingKey.deleteMany();
+    const readiness = databaseReadiness(db);
+    const [ready, health200] = await Promise.all([readyz(readiness), health(readiness)]);
+    expect(ready.status).toBe(503);
+    expect(ready.body.checks.signingKeys).toBe(false);
+    expect(health200.status).toBe(200);
+  });
+
+  it('is unavailable when the database is down', async () => {
+    const unreachable = createDb('postgresql://d3auth:d3auth@127.0.0.1:1/d3auth_test');
+    try {
+      const res = await health(databaseReadiness(unreachable));
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ ok: false, schema: null });
+    } finally {
+      await unreachable.$disconnect();
+    }
+  });
+
+  it('is unavailable when the image ships a migration the database has not applied', async () => {
+    const res = await health(databaseReadiness(db, [...shippedMigrations(), '9999_not_applied']));
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ ok: false, schema: null });
   });
 });

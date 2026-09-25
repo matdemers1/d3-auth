@@ -72,10 +72,16 @@ export function cached(probe: ReadinessProbe, ttlMs = 5_000): ReadinessProbe {
 
 export const allPass = (checks: ReadinessChecks): boolean => Object.values(checks).every(Boolean);
 
-export function healthRouter(readiness?: ReadinessProbe): Router {
+/** The newest migration this image ships — the same value CI stamps on the image as
+ * `dev.d3cloud.shipyard.schema`, so Shipyard can compare the running schema to the label. */
+export function newestMigration(migrations: string[] = shippedMigrations()): string | null {
+  return migrations.at(-1) ?? null;
+}
+
+export function healthRouter(readiness?: ReadinessProbe, migrations: string[] = shippedMigrations()): Router {
   const router = Router();
 
-  router.use(['/healthz', '/readyz'], (_req, res, next) => {
+  router.use(['/healthz', '/readyz', '/health'], (_req, res, next) => {
     res.set('Cache-Control', 'no-store');
     next();
   });
@@ -88,6 +94,14 @@ export function healthRouter(readiness?: ReadinessProbe): Router {
     const checks = readiness ? await readiness() : {};
     const ready = allPass(checks);
     res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'unavailable', checks });
+  });
+
+  // /health (SHP-D-019, SHP-D-022): the Shipyard deploy contract. No auth, no secrets — just
+  // whether the database answers, migrations are applied, and which schema is running.
+  router.get('/health', async (_req, res) => {
+    const checks = readiness ? await readiness() : {};
+    const ok = (checks.database ?? false) && (checks.migrations ?? false);
+    res.status(ok ? 200 : 503).json({ ok, schema: ok ? newestMigration(migrations) : null });
   });
 
   return router;

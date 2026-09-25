@@ -17,7 +17,7 @@ export interface AppOptions {
   hsts?: boolean;
 }
 
-const QUIET_PATHS = new Set(['/healthz', '/readyz']);
+const QUIET_PATHS = new Set(['/healthz', '/readyz', '/health']);
 
 function requestLog(logger: Logger): RequestHandler {
   return (req, res, next) => {

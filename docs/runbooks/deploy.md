@@ -300,6 +300,36 @@ per rule.
 **Checks:** Settings → Mail → *Send a test message to me* (the Mail tile on Home turns OK); a wrong
 secret gets `401` from `/send`.
 
+## 10.5 Shipyard deploy contract
+
+Shipyard, the deploy tool for this host, verifies a release after swapping it in: the running
+digest, the `org.opencontainers.image.revision` label, and `GET /health`, which answers
+`{ ok: true, schema: <the newest applied migration> }` once the database answers and every
+shipped migration has run, else `503 { ok: false, schema: null }`. `/health` carries no auth and
+touches nothing beyond the database, so it is safe on the open internet alongside `/healthz` and
+`/readyz` (§11).
+
+Every push to `main` that changes `apps/server/prisma/migrations/` should carry a
+**`Shipyard-Migration:` trailer** on the commit, read by `scripts/shipyard-labels.sh` and stamped
+on the `server` image as `dev.d3cloud.shipyard.migration`:
+
+- `Shipyard-Migration: expand` — additive, safe to run ahead of the new code (new nullable column, new table).
+- `Shipyard-Migration: contract` — drops or renames something the previous release still reads. Shipyard never auto-rolls this back; a bad `contract` release is a forward fix, not an image swap.
+- No trailer (or `none`) — no migration, or one so small the distinction does not matter.
+
+The same script also stamps `dev.d3cloud.shipyard.schema` with the newest migration directory —
+the value `/health` reports once it has run, so Shipyard can tell a running container apart from
+one still catching up.
+
+```bash
+git commit -m "$(cat <<'EOF'
+Add the invites.expires_at index
+
+Shipyard-Migration: expand
+EOF
+)"
+```
+
 ## 11. If sign-in is down
 
 1. `curl https://auth.d3cloud.io/readyz` — the JSON names which check failed (database, signingKeys, migrations).
