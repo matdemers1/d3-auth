@@ -201,3 +201,22 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # The Express example, published so Shipyard can deploy demo.d3cloud.io like any other app
+      # (AUTH-T-001, SHP-T-1.13): a sha- tag and a revision label, from main only.
+      - id: demo-meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/${{ github.repository }}/demo
+          tags: |
+            type=sha,format=long
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: examples/express
+          file: examples/express/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: REVISION=${{ github.sha }}
+          tags: ${{ steps.demo-meta.outputs.tags }}
+          labels: ${{ steps.demo-meta.outputs.labels }}
+          cache-from: type=gha,scope=demo
+          cache-to: type=gha,scope=demo,mode=max

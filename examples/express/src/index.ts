@@ -97,6 +97,12 @@ const startSession = (res: Response, session: Session): void => {
   res.append('Set-Cookie', `example_session=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
 };
 
+// The deploy contract Shipyard checks after every deploy (SHP-D-019): ok, and a schema revision.
+// The demo keeps its accounts in memory, so it has no schema to report beyond "none".
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ ok: true, schema: 'none' });
+});
+
 app.get('/', (req: Request, res: Response) => {
   const found = sessionOf(req);
   if (!found) {
