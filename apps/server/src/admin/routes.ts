@@ -868,22 +868,47 @@ export function adminRouter({
   );
 
   // The audit trail (C-8, REQ-069). Admin-level reading; the table itself refuses writes.
-  const filterFrom = (req: Request): AuditFilter => {
-    const query = req.query as Record<string, string | undefined>;
+  //
+  // A filter that cannot mean anything is a 400, not a query: `limit=abc` became NaN and `take: NaN`,
+  // an actor that is not a UUID failed Postgres's cast, and a cursor that is not a number threw in
+  // BigInt — each a 500, found by the first ZAP scan that was actually signed in.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const filterFrom = (req: Request): AuditFilter | string => {
+    const query = req.query as Record<string, unknown>;
+    const text = (name: string): string | undefined => {
+      const value = query[name];
+      if (value === undefined || value === '') return undefined;
+      if (typeof value !== 'string') throw new TypeError(name);
+      return value;
+    };
     const date = (value: string | undefined): Date | undefined => {
       if (!value) return undefined;
       const parsed = new Date(value);
       return Number.isNaN(parsed.getTime()) ? undefined : parsed;
     };
-    return {
-      actorUserId: query.actor,
-      targetId: query.target,
-      event: query.event,
-      from: date(query.from),
-      to: date(query.to),
-      limit: query.limit ? Number(query.limit) : undefined,
-      cursor: query.cursor,
-    };
+    try {
+      const actor = text('actor');
+      const limit = text('limit');
+      const cursor = text('cursor');
+      if (actor !== undefined && !UUID.test(actor)) return 'actor';
+      if (limit !== undefined && !/^\d{1,4}$/.test(limit)) return 'limit';
+      if (cursor !== undefined && !/^\d{1,19}$/.test(cursor)) return 'cursor';
+      return {
+        actorUserId: actor,
+        targetId: text('target'),
+        event: text('event'),
+        from: date(text('from')),
+        to: date(text('to')),
+        limit: limit === undefined ? undefined : Number(limit),
+        cursor,
+      };
+    } catch (err) {
+      if (err instanceof TypeError) return err.message;
+      throw err;
+    }
+  };
+  const refuseFilter = (res: Response, field: string): void => {
+    res.status(400).json({ error: 'invalid_filter', field, message: `The ${field} filter is not one this search understands.` });
   };
 
   // The console's front page (REQ-073). Admins see it; it is the first thing after signing in.
@@ -900,7 +925,12 @@ export function adminRouter({
   router.get(`${ADMIN_API}/audit`, auth.requireAdmin, (req, res, next) => {
     void (async () => {
       try {
-        const page = await searchAudit(db, filterFrom(req));
+        const filter = filterFrom(req);
+        if (typeof filter === 'string') {
+          refuseFilter(res, filter);
+          return;
+        }
+        const page = await searchAudit(db, filter);
         res.set('Cache-Control', 'no-store').json(page);
       } catch (err) {
         next(err);
@@ -922,7 +952,12 @@ export function adminRouter({
   router.get(`${ADMIN_API}/audit/export`, auth.requireAdmin, (req, res, next) => {
     void (async () => {
       try {
-        const filter = { ...filterFrom(req), limit: 200 };
+        const parsed = filterFrom(req);
+        if (typeof parsed === 'string') {
+          refuseFilter(res, parsed);
+          return;
+        }
+        const filter = { ...parsed, limit: 200 };
         const page = await searchAudit(db, filter);
         const stamp = new Date().toISOString().slice(0, 10);
         if ((req.query as { format?: string }).format === 'json') {
