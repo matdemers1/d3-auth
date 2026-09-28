@@ -1,6 +1,7 @@
 # The mail relay Worker (REQ-106).
 #
 #   wrangler secret put RELAY_SECRET      # the same value as MAIL_RELAY_SECRET on the server
+#   wrangler secret put RELAY_SECRET_<CLIENT>   # one per other caller, e.g. RELAY_SECRET_POSTROOM
 #   wrangler secret put ALERT_TO          # comma-separated; who hears that /readyz is down. A secret
 #                                         # rather than a var so no address is committed here.
 #   wrangler deploy
