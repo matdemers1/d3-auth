@@ -297,6 +297,10 @@ per rule.
 **Rotating the relay secret:** generate a new one, `wrangler secret put RELAY_SECRET`, update
 `MAIL_RELAY_SECRET` on the host, `up -d`. Mail fails with 401 between the two steps, so do them together.
 
+**Other callers get their own secret** (AUTH-T-004): `wrangler secret put RELAY_SECRET_<CLIENT>` (for
+example `RELAY_SECRET_POSTROOM`) and give that value to the caller only. Deleting that one secret
+revokes that one caller; the Worker logs the client name on each send, never the message.
+
 **Checks:** Settings → Mail → *Send a test message to me* (the Mail tile on Home turns OK); a wrong
 secret gets `401` from `/send`.
 

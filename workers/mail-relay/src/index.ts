@@ -12,8 +12,13 @@ import { runProbe, type ProbeEnv } from './probe.js';
 export interface Env extends Partial<Omit<ProbeEnv, 'EMAIL'>> {
   /** The send_email binding, configured in wrangler.toml. */
   EMAIL: { send(message: EmailMessage): Promise<void> };
-  /** Shared secret, set with `wrangler secret put RELAY_SECRET`. */
+  /** Shared secret, set with `wrangler secret put RELAY_SECRET` (D3 Auth, Shipyard). */
   RELAY_SECRET: string;
+  /**
+   * Per-client secrets, `wrangler secret put RELAY_SECRET_<CLIENT>` (e.g. RELAY_SECRET_POSTROOM), so a
+   * new caller gets its own revocable secret instead of a copy of the shared one (AUTH-T-004).
+   */
+  [clientSecret: `RELAY_SECRET_${string}`]: string | undefined;
   /** Verified sender, e.g. no-reply@no-reply.d3cloud.io */
   DEFAULT_FROM?: string;
 }
@@ -39,13 +44,30 @@ function secretMatches(expected: string, received: string): boolean {
   return diff === 0;
 }
 
+/**
+ * The client a bearer belongs to: 'default' for RELAY_SECRET, the lowercased suffix for
+ * RELAY_SECRET_<CLIENT>, or null. Every configured secret is compared (no early exit on a match), and
+ * an empty secret never matches.
+ */
+export function clientFor(env: Env, offered: string): string | null {
+  const candidates: [string, unknown][] = [['default', env.RELAY_SECRET]];
+  for (const [key, value] of Object.entries(env)) {
+    if (key.startsWith('RELAY_SECRET_') && key.length > 'RELAY_SECRET_'.length) candidates.push([key.slice('RELAY_SECRET_'.length).toLowerCase(), value]);
+  }
+  let client: string | null = null;
+  for (const [name, secret] of candidates) {
+    if (typeof secret !== 'string' || secret === '') continue;
+    if (secretMatches(secret, offered) && client === null) client = name;
+  }
+  return client;
+}
+
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export async function handleSend(request: Request, env: Env): Promise<Response> {
   const offered = (request.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
-  if (!env.RELAY_SECRET || !secretMatches(env.RELAY_SECRET, offered)) {
-    return json(401, { error: 'unauthorized' });
-  }
+  const client = clientFor(env, offered);
+  if (client === null) return json(401, { error: 'unauthorized' });
 
   let payload: Partial<SendRequest>;
   try {
@@ -72,6 +94,8 @@ export async function handleSend(request: Request, env: Env): Promise<Response> 
     return json(502, { error: 'send_failed', detail: err instanceof Error ? err.message : 'unknown' });
   }
 
+  // Which caller sent, never what: no addresses, subjects or bodies in the log.
+  console.log(JSON.stringify({ event: 'relay-sent', client }));
   return json(202, { accepted: true });
 }
 

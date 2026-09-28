@@ -79,6 +79,26 @@ describe('mail relay (REQ-106)', () => {
     expect((await handleSend(post(message, ''), e)).status).toBe(401);
   });
 
+  it('accepts a named client secret beside the shared one (AUTH-T-004)', async () => {
+    const { env: e, sent } = env({ RELAY_SECRET_POSTROOM: 'postroom-own-secret' });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    expect((await handleSend(post(message, 'postroom-own-secret'), e)).status).toBe(202);
+    expect((await handleSend(post(message), e)).status).toBe(202);
+    expect(sent).toHaveLength(2);
+    const lines = log.mock.calls.map((c) => String(c[0]));
+    expect(lines).toEqual([JSON.stringify({ event: 'relay-sent', client: 'postroom' }), JSON.stringify({ event: 'relay-sent', client: 'default' })]);
+    expect(lines.join('')).not.toContain('guest@example.com');
+    log.mockRestore();
+  });
+
+  it('never matches an empty named secret, and refuses a wrong one', async () => {
+    const { env: e, sent } = env({ RELAY_SECRET: '', RELAY_SECRET_EMPTY: '', RELAY_SECRET_POSTROOM: 'postroom-own-secret' });
+    expect((await handleSend(post(message, ''), e)).status).toBe(401);
+    expect((await handleSend(post(message, 'postroom-own'), e)).status).toBe(401);
+    expect((await handleSend(post(message, 'the-shared-secret'), e)).status).toBe(401);
+    expect(sent).toHaveLength(0);
+  });
+
   it.each([
     [{ ...message, to: 'not-an-address' }, 'invalid_address'],
     [{ to: 'a@b.test', subject: '', text: 'x' }, 'missing_subject_or_text'],
