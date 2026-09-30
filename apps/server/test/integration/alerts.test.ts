@@ -1,5 +1,5 @@
 import type * as client from 'openid-client';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { alertRules, evaluateAlerts, FAILED_LOGIN_SPIKE, type AlertDeps } from '../../src/audit/alerts.js';
 import { createLogger } from '../../src/log.js';
 import type { MailMessage } from '../../src/mail/adapter.js';
@@ -80,7 +80,12 @@ describe('a refresh token used twice', () => {
     const reused = await tokenRequest(h, { grant_type: 'refresh_token', refresh_token: refresh });
     expect(reused.body.error).toBe('invalid_grant');
 
-    const row = await h.service.db.auditEvent.findFirstOrThrow({ where: { event: 'token.refresh_reused' }, orderBy: { id: 'desc' } });
+    // The provider answers before the audit row lands: the grant.error listener writes it without
+    // awaiting (the client's answer never waits on the audit trail), so wait for it here.
+    const row = await vi.waitFor(
+      () => h.service.db.auditEvent.findFirstOrThrow({ where: { event: 'token.refresh_reused' }, orderBy: { id: 'desc' } }),
+      { timeout: 5_000, interval: 25 },
+    );
     expect(row.detail).toMatchObject({ clientId: WEB_CLIENT.clientId });
     // Move the reuse into this test's clock.
     await h.service.db.auditEvent.create({ data: { event: 'token.refresh_reused', at: later(1), detail: { clientId: WEB_CLIENT.clientId } } });
