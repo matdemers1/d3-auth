@@ -1,4 +1,4 @@
-import { Alert, Button, Card, CodeInput, FormActions, FormField, Input, PasswordInput, Section, Skeleton, Stack } from '@d3cloud/ui';
+import { Alert, Button, CodeInput, FormActions, FormField, Input, PasswordInput, Section, Skeleton, Stack } from '@d3cloud/ui';
 import { useEffect, useRef, useState } from 'react';
 import { ContinueAs } from './ContinueAs';
 import { answerTrust, loadInteraction, signInWithPasskey, submitCode, submitEmail, submitPassword, type InteractionView, type StepResult } from './api';
@@ -119,17 +119,15 @@ export function SignIn({ uid }: Props) {
     );
   }
 
-  // The frame is known before the step is: skeletons the shape of the form, inside the Card.
+  // The frame is known before the step is: skeletons the shape of the form, where the form will be.
   if (!view) {
     return (
       <LoginLayout title="Sign in" focusOnMount={false} busy>
-        <Card>
-          <Stack gap="16" aria-hidden="true">
-            <Skeleton variant="text" width="6rem" />
-            <Skeleton variant="block" height="2.5rem" />
-            <Skeleton variant="block" height="2.5rem" />
-          </Stack>
-        </Card>
+        <Stack gap="16" aria-hidden="true">
+          <Skeleton variant="text" width="6rem" />
+          <Skeleton variant="block" height="2.5rem" />
+          <Skeleton variant="block" height="2.5rem" />
+        </Stack>
       </LoginLayout>
     );
   }
@@ -190,7 +188,7 @@ export function SignIn({ uid }: Props) {
   if (view.step === 'trust') {
     return (
       <LoginLayout title={title} footer={footer} focusOnMount={false}>
-        <Section title="Skip this step on this browser?" description="We will not ask for your passkey or code here for the next 30 days. Use this only on a browser that is yours — you can undo it from Security in your account.">
+        <Section surface="plain" title="Skip this step on this browser?" description="We will not ask for your passkey or code here for the next 30 days. Use this only on a browser that is yours — you can undo it from Security in your account.">
           {problems}
           <Stack as="form" gap="16" method="post" action={action} aria-label="Skip this step on this browser?">
             <input type="hidden" name="csrf" value={view.csrf} />
@@ -217,6 +215,7 @@ export function SignIn({ uid }: Props) {
                 name="trust"
                 value="true"
                 variant="primary"
+                size="lg"
                 autoFocus
                 loading={busy}
                 onClick={(event) => {
@@ -236,41 +235,39 @@ export function SignIn({ uid }: Props) {
   if (view.step === 'factor') {
     return (
       <LoginLayout title={title} description="One more step: confirm it is you." footer={footer} focusOnMount={false}>
-        <Card>
-          <Stack as="form" gap="16" method="post" action={action} aria-label="Confirm it is you" onSubmit={(event) => void onSubmit(event)}>
-            <input type="hidden" name="csrf" value={view.csrf} />
-            {problems}
-            {hasTotp ? (
-              <>
-                <FormField label="Code from your authenticator app" help="Six digits, from the app you set up. It changes every 30 seconds.">
-                  <CodeInput name="code" autoComplete="one-time-code" autoFocus required value={code} onValueChange={setCode} />
-                </FormField>
-                <FormActions
-                  layout="stack"
-                  {...(hasPasskey
-                    ? {
-                        leading: (
-                          <Button variant="ghost" disabled={busy} onClick={() => void usePasskey(view.csrf)}>
-                            Use a passkey
-                          </Button>
-                        ),
-                      }
-                    : {})}
-                >
-                  <Button type="submit" variant="primary" loading={busy} disabled={throttled}>
-                    Verify code
-                  </Button>
-                </FormActions>
-              </>
-            ) : (
-              <FormActions layout="stack">
-                <Button variant="primary" autoFocus loading={busy} onClick={() => void usePasskey(view.csrf)}>
-                  Use a passkey
+        <Stack as="form" gap="16" method="post" action={action} aria-label="Confirm it is you" onSubmit={(event) => void onSubmit(event)}>
+          <input type="hidden" name="csrf" value={view.csrf} />
+          {problems}
+          {hasTotp ? (
+            <>
+              <FormField label="Code from your authenticator app" help="Six digits, from the app you set up. It changes every 30 seconds.">
+                <CodeInput name="code" autoComplete="one-time-code" autoFocus required value={code} onValueChange={setCode} />
+              </FormField>
+              <FormActions
+                layout="stack"
+                {...(hasPasskey
+                  ? {
+                      leading: (
+                        <Button variant="ghost" disabled={busy} onClick={() => void usePasskey(view.csrf)}>
+                          Use a passkey
+                        </Button>
+                      ),
+                    }
+                  : {})}
+              >
+                <Button type="submit" variant="primary" size="lg" loading={busy} disabled={throttled}>
+                  Verify code
                 </Button>
               </FormActions>
-            )}
-          </Stack>
-        </Card>
+            </>
+          ) : (
+            <FormActions layout="stack">
+              <Button variant="primary" size="lg" autoFocus loading={busy} onClick={() => void usePasskey(view.csrf)}>
+                Use a passkey
+              </Button>
+            </FormActions>
+          )}
+        </Stack>
       </LoginLayout>
     );
   }
@@ -290,46 +287,44 @@ export function SignIn({ uid }: Props) {
       footer={footer}
       focusOnMount={false}
     >
-      <Card>
-        <Stack as="form" gap="16" method="post" action={action} aria-label="Sign in" onSubmit={(event) => void onSubmit(event)}>
-          <input type="hidden" name="csrf" value={view.csrf} />
-          {problems}
-          {view.step === 'identify' ? (
-            <FormField label="Email" help="The address you were invited with.">
-              <Input
-                name="email"
-                type="email"
-                autoComplete="username"
-                inputMode="email"
-                autoFocus
-                required
-                value={email}
-                onChange={(event) => {
-                  setEmail(event.target.value);
-                }}
-              />
-            </FormField>
-          ) : (
-            <FormField label="Password">
-              <PasswordInput
-                name="password"
-                ref={passwordRef}
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => {
-                  setPassword(event.target.value);
-                }}
-              />
-            </FormField>
-          )}
-          <FormActions layout="stack">
-            <Button type="submit" variant="primary" loading={busy} disabled={throttled}>
-              {view.step === 'identify' ? 'Continue' : 'Sign in'}
-            </Button>
-          </FormActions>
-        </Stack>
-      </Card>
+      <Stack as="form" gap="16" method="post" action={action} aria-label="Sign in" onSubmit={(event) => void onSubmit(event)}>
+        <input type="hidden" name="csrf" value={view.csrf} />
+        {problems}
+        {view.step === 'identify' ? (
+          <FormField label="Email" help="The address you were invited with.">
+            <Input
+              name="email"
+              type="email"
+              autoComplete="username"
+              inputMode="email"
+              autoFocus
+              required
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+              }}
+            />
+          </FormField>
+        ) : (
+          <FormField label="Password">
+            <PasswordInput
+              name="password"
+              ref={passwordRef}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+              }}
+            />
+          </FormField>
+        )}
+        <FormActions layout="stack">
+          <Button type="submit" variant="primary" size="lg" loading={busy} disabled={throttled}>
+            {view.step === 'identify' ? 'Continue' : 'Sign in'}
+          </Button>
+        </FormActions>
+      </Stack>
     </LoginLayout>
   );
 }

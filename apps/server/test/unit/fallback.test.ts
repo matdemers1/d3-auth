@@ -51,10 +51,13 @@ describe('the form that arrives in the HTML', () => {
 });
 
 describe('the classes it is drawn in', () => {
-  // The no-JavaScript pages carry no styles of their own: they borrow the design system's. A class
-  // renamed in a release would leave them unstyled with nothing failing, so every class they use
-  // has to exist in the stylesheet the console actually ships.
+  // The no-JavaScript pages carry no styles of their own: they borrow the design system's, and the
+  // entry shell's from the console (AUTH-T-8.2). A class renamed in either would leave them unstyled
+  // with nothing failing, so every class they use has to exist in a stylesheet the console ships.
   const css = readFileSync(new URL('../../../console/node_modules/@d3cloud/ui/dist/index.css', import.meta.url), 'utf8');
+  const consoleCss = ['src/entry/entry.css', 'src/brand/mark.css']
+    .map((file) => readFileSync(new URL(`../../../console/${file}`, import.meta.url), 'utf8'))
+    .join('\n');
   const pages = [
     fallbackForm(view(start())),
     fallbackForm(view({ name: 'awaiting_password', identity })),
@@ -67,17 +70,25 @@ describe('the classes it is drawn in', () => {
     inviteForm({ valid: true, email: 'guest@example.com', token: 'tok', operatorDisplayName: 'Matthew' }),
   ];
   const used = new Set(pages.flatMap((html) => [...html.matchAll(/class="([^"]+)"/g)].flatMap((match) => (match[1] ?? '').split(/\s+/))));
+  const pattern = (name: string) => new RegExp(`\\.${name.replace(/[-_]/g, (c) => `\\${c}`)}(?![\\w-])`);
 
-  it('uses only d3- classes', () => {
-    expect([...used].filter((name) => !name.startsWith('d3-'))).toEqual([]);
+  it('uses only the design system\'s d3- classes and the console\'s own auth- classes', () => {
+    expect([...used].filter((name) => !name.startsWith('d3-') && !name.startsWith('auth-'))).toEqual([]);
   });
 
-  // Modifiers the components emit for their default, which the stylesheet has no rule for. Written
-  // anyway so the markup matches what Card and Section render.
-  const unstyledDefaults = new Set(['d3-crd--md', 'd3-sec--card']);
+  it.each([...used].filter((name) => name.startsWith('d3-')))('%s exists in @d3cloud/ui', (name) => {
+    expect(css).toMatch(pattern(name));
+  });
 
-  it.each([...used].filter((name) => !unstyledDefaults.has(name)))('%s exists in @d3cloud/ui', (name) => {
-    expect(css).toMatch(new RegExp(`\\.${name.replace(/[-_]/g, (c) => `\\${c}`)}(?![\\w-])`));
+  it.each([...used].filter((name) => name.startsWith('auth-')))('%s exists in the console\'s entry and mark styles', (name) => {
+    expect(consoleCss).toMatch(pattern(name));
+  });
+
+  it('writes no style attribute and no script: the CSP allows neither', () => {
+    for (const html of pages) {
+      expect(html).not.toMatch(/\sstyle=/);
+      expect(html).not.toMatch(/<script/i);
+    }
   });
 
   it('labels every field it draws', () => {
@@ -86,6 +97,41 @@ describe('the classes it is drawn in', () => {
         expect(html).toContain(`for="${match[1] ?? ''}"`);
       }
     }
+  });
+});
+
+describe('the entry shell it is drawn in (AUTH-T-8.1, AUTH-T-8.2)', () => {
+  const html = fallbackForm(view(start()));
+
+  it('has exactly one h1, the task, and the story under an h2', () => {
+    expect(html.match(/<h1[\s>]/g)).toHaveLength(1);
+    expect(html).toContain('>Sign in to Web App</h1>');
+    expect(html).toMatch(/<aside aria-label="About D3 Auth" class="auth-entry__story">/);
+    expect(html).toMatch(/<h2 class="auth-entry__headline">/);
+    expect(html).toContain('<main class="auth-entry__main">');
+  });
+
+  it('draws the D3 Auth mark, decorative beside the name, its star lit by class', () => {
+    expect(html).toContain('viewBox="0 0 64 64"');
+    expect(html).toContain('d="M28.5 31.5 L25 45 L39 45 L35.5 31.5"');
+    expect(html).toContain('class="auth-mark__star"');
+    expect(html).not.toMatch(/#[0-9a-f]{6}/i);
+    expect(html).toMatch(/aria-hidden="true">.*<\/svg> D3 Auth<\/div>/);
+  });
+
+  it('puts the trouble line under the form, past the hairline', () => {
+    expect(html).toContain('<div class="auth-entry__notes"><p>Trouble signing in? Ask Matthew.</p></div>');
+  });
+
+  it('gives the long forms the wide column', () => {
+    expect(setupForm()).toContain('auth-entry__column--wide');
+    expect(inviteForm({ valid: true, email: 'guest@example.com', token: 'tok', operatorDisplayName: 'Matthew' })).toContain('auth-entry__column--wide');
+    expect(html).not.toContain('auth-entry__column--wide');
+  });
+
+  it('keeps the first submit button on the page the form\'s own (the conformance suite presses it)', () => {
+    const first = /<button[^>]*type="submit"[^>]*>([^<]*)<\/button>/.exec(html);
+    expect(first?.[1]).toBe('Continue');
   });
 });
 

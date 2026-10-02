@@ -1,7 +1,7 @@
-import { actions, authPage, button, card, escape } from './auth-markup.js';
+import { actions, authPage, button, buttonSize, escape } from './auth-markup.js';
 import { intoShell } from './fallback.js';
 
-// Signing out (REQ-010, I-8), drawn like every other single-task page: AuthLayout, one Card, the
+// Signing out (REQ-010, I-8), drawn like every other single-task page: the entry shell, the
 // actions stacked. Server-rendered, so the answer to "am I signed out?" never waits on JavaScript.
 //
 // The provider's question has two answers, and they are not "yes" and "no". Posting with
@@ -12,7 +12,7 @@ import { intoShell } from './fallback.js';
 
 /** A link drawn as a `Button`, for a way out that is not a form post. */
 export const linkButton = (label: string, href: string, variant: 'primary' | 'ghost'): string =>
-  `<a class="d3-btn d3-btn--${variant} d3-btn--md" href="${escape(href)}">${escape(label)}</a>`;
+  `<a class="d3-btn d3-btn--${variant} ${buttonSize(variant)}" href="${escape(href)}">${escape(label)}</a>`;
 
 export interface SignOutQuestion {
   /** The provider's form: `<form id="op.logoutForm">` with its xsrf field. Markup, as the provider gives it. */
@@ -30,16 +30,12 @@ export function renderSignOutQuestion(consoleDist: string, view: SignOutQuestion
   const everywhere = 'form="op.logoutForm" type="submit" name="logout" value="yes" autofocus';
 
   const body = view.appName
-    ? card(
-        `<div class="d3-stack d3-gap-16 d3-align-stretch"><p>${escape(view.appName)} asked to sign you out. You can leave it there, or end your D3 Auth sign-in as well, which signs you out of every app you used it for.</p>` +
-          actions(button('Sign out everywhere', 'primary', everywhere), button(`Only sign out of ${view.appName}`, 'ghost', 'form="op.logoutForm" type="submit"')) +
-          `</div>${view.form}`,
-      )
-    : card(
-        `<div class="d3-stack d3-gap-16 d3-align-stretch"><p>This signs you out of D3 Auth and every app you signed in to with it.</p>` +
-          actions(button('Sign out', 'primary', everywhere), linkButton('Stay signed in', '/signin', 'ghost')) +
-          `</div>${view.form}`,
-      );
+    ? `<div class="d3-stack d3-gap-16 d3-align-stretch"><p>${escape(view.appName)} asked to sign you out. You can leave it there, or end your D3 Auth sign-in as well, which signs you out of every app you used it for.</p>` +
+        actions(button('Sign out everywhere', 'primary', everywhere), button(`Only sign out of ${view.appName}`, 'ghost', 'form="op.logoutForm" type="submit"')) +
+        `</div>${view.form}`
+    : `<div class="d3-stack d3-gap-16 d3-align-stretch"><p>This signs you out of D3 Auth and every app you signed in to with it.</p>` +
+        actions(button('Sign out', 'primary', everywhere), linkButton('Stay signed in', '/signin', 'ghost')) +
+        `</div>${view.form}`;
 
   return intoShell(
     consoleDist,
@@ -61,13 +57,13 @@ export function renderSignedOut(consoleDist: string, view: SignedOut = {}): stri
     ? authPage({
         title: `Signed out of ${view.onlyApp}`,
         description: 'You are still signed in to D3 Auth, so your other apps keep working.',
-        body: card(`<div class="d3-stack d3-gap-16 d3-align-stretch">${actions(linkButton('Go to your account', '/signin', 'primary'))}</div>`),
+        body: `<div class="d3-stack d3-gap-16 d3-align-stretch">${actions(linkButton('Go to your account', '/signin', 'primary'))}</div>`,
       })
     : authPage({
         // The conformance suite's logout plans wait for this exact text.
         title: 'You are signed out',
         description: 'Signed out of D3 Auth and every app you used it for.',
-        body: card(`<div class="d3-stack d3-gap-16 d3-align-stretch">${actions(linkButton('Sign in again', '/signin', 'primary'))}</div>`),
+        body: `<div class="d3-stack d3-gap-16 d3-align-stretch">${actions(linkButton('Sign in again', '/signin', 'primary'))}</div>`,
         footer: 'You can close this tab.',
       });
   return intoShell(consoleDist, page);

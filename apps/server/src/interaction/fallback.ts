@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { actions, authPage, button, card, escape, field, form, hidden, section } from './auth-markup.js';
+import { actions, authPage, button, escape, field, form, hidden, section } from './auth-markup.js';
 import type { LoginFlow } from './flow-store.js';
 
 // A working sign-in form in the HTML itself, inside the console's shell.
@@ -33,20 +33,18 @@ export function fallbackForm(view: FallbackView): string {
       return authPage({
         title,
         footer,
-        body: card(
-          form(
-            `${action}/identify`,
-            csrf +
-              field({
-                id: 'email',
-                label: 'Email',
-                type: 'email',
-                help: 'The address you were invited with.',
-                attributes: 'autocomplete="username" inputmode="email" autofocus',
-              }) +
-              actions(button('Continue', 'primary')),
-            'Sign in',
-          ),
+        body: form(
+          `${action}/identify`,
+          csrf +
+            field({
+              id: 'email',
+              label: 'Email',
+              type: 'email',
+              help: 'The address you were invited with.',
+              attributes: 'autocomplete="username" inputmode="email" autofocus',
+            }) +
+            actions(button('Continue', 'primary')),
+          'Sign in',
         ),
       });
     case 'awaiting_factor':
@@ -54,19 +52,17 @@ export function fallbackForm(view: FallbackView): string {
         title,
         description: 'One more step: confirm it is you.',
         footer,
-        body: card(
-          form(
-            `${action}/totp`,
-            csrf +
-              field({
-                id: 'code',
-                label: 'Code from your authenticator app',
-                help: 'Six digits, from the app you set up.',
-                attributes: 'inputmode="numeric" autocomplete="one-time-code" autofocus',
-              }) +
-              actions(button('Verify code', 'primary')),
-            'Confirm it is you',
-          ),
+        body: form(
+          `${action}/totp`,
+          csrf +
+            field({
+              id: 'code',
+              label: 'Code from your authenticator app',
+              help: 'Six digits, from the app you set up.',
+              attributes: 'inputmode="numeric" autocomplete="one-time-code" autofocus',
+            }) +
+            actions(button('Verify code', 'primary')),
+          'Confirm it is you',
         ),
       });
     case 'awaiting_trusted_device':
@@ -93,14 +89,12 @@ export function fallbackForm(view: FallbackView): string {
         title,
         description: `Signing in as <strong>${escape(email)}</strong>`,
         footer,
-        body: card(
-          form(
-            `${action}/password`,
-            csrf +
-              field({ id: 'password', label: 'Password', type: 'password', attributes: 'autocomplete="current-password" autofocus' }) +
-              actions(button('Sign in', 'primary')),
-            'Sign in',
-          ),
+        body: form(
+          `${action}/password`,
+          csrf +
+            field({ id: 'password', label: 'Password', type: 'password', attributes: 'autocomplete="current-password" autofocus' }) +
+            actions(button('Sign in', 'primary')),
+          'Sign in',
         ),
       });
   }
@@ -127,12 +121,10 @@ export function renderContinueAsPage(
       title: `Continue to ${view.clientName}`,
       description: `You are signed in as <strong>${escape(who)}</strong>.`,
       footer: `Trouble signing in? Ask ${escape(view.operatorDisplayName)}.`,
-      body: card(
-        '<div class="d3-stack d3-gap-16 d3-align-stretch">' +
-          form(`${action}/continue`, csrf + actions(button(`Continue as ${who}`, 'primary')), `Continue as ${who}`) +
-          form(`${action}/switch`, csrf + actions(button('Not you? Sign in as someone else', 'ghost')), 'Sign in as someone else') +
-          '</div>',
-      ),
+      body: '<div class="d3-stack d3-gap-16 d3-align-stretch">' +
+        form(`${action}/continue`, csrf + actions(button(`Continue as ${who}`, 'primary')), `Continue as ${who}`) +
+        form(`${action}/switch`, csrf + actions(button('Not you? Sign in as someone else', 'ghost')), 'Sign in as someone else') +
+        '</div>',
     }),
   );
 }
@@ -155,7 +147,7 @@ export function renderRecoveryPage(
     ? authPage({
         title: 'Recovery is ready',
         description: `Sign in as <strong>${escape(claimed.email ?? '')}</strong> with your password.`,
-        body: card(`<div class="d3-stack d3-gap-16 d3-align-stretch"><p>You will not be asked for a passkey or a code until ${until}.</p><p>${factors}</p></div>`),
+        body: `<div class="d3-stack d3-gap-16 d3-align-stretch"><p>You will not be asked for a passkey or a code until ${until}.</p><p>${factors}</p></div>`,
         footer: 'Go back to the app you were signing in to and sign in as usual.',
       })
     : authPage({

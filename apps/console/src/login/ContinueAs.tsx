@@ -1,4 +1,4 @@
-import { Button, Card, FormActions } from '@d3cloud/ui';
+import { Button, FormActions } from '@d3cloud/ui';
 import { useState } from 'react';
 import { answerContinue, switchAccount, type InteractionView, type StepResult } from './api';
 import { LoginLayout, troubleFooter } from './LoginLayout';
@@ -38,20 +38,18 @@ export function ContinueAs({ uid, view, apply }: Props) {
       }
       footer={troubleFooter(view.operatorDisplayName)}
     >
-      <Card>
-        <FormActions
-          layout="stack"
-          leading={
-            <Button variant="ghost" disabled={busy} onClick={() => void answer(() => switchAccount(uid, view.csrf))}>
-              Not you? Sign in as someone else
-            </Button>
-          }
-        >
-          <Button variant="primary" loading={busy} onClick={() => void answer(() => answerContinue(uid, view.csrf))}>
-            Continue as {who}
+      <FormActions
+        layout="stack"
+        leading={
+          <Button variant="ghost" disabled={busy} onClick={() => void answer(() => switchAccount(uid, view.csrf))}>
+            Not you? Sign in as someone else
           </Button>
-        </FormActions>
-      </Card>
+        }
+      >
+        <Button variant="primary" size="lg" loading={busy} onClick={() => void answer(() => answerContinue(uid, view.csrf))}>
+          Continue as {who}
+        </Button>
+      </FormActions>
     </LoginLayout>
   );
 }
