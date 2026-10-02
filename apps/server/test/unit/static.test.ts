@@ -1,12 +1,16 @@
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
-import { consoleRouter, unavailableGate } from '../../src/static.js';
+import { consoleRouter, faviconCsp, unavailableGate } from '../../src/static.js';
+
+// The real favicon, as the build copies it (AUTH-T-8.1).
+const favicon = readFileSync(new URL('../../../console/public/favicon.svg', import.meta.url), 'utf8');
 
 describe('console statics (REQ-061)', () => {
   let dist: string;
@@ -19,6 +23,7 @@ describe('console statics (REQ-061)', () => {
     writeFileSync(join(dist, 'index.html'), '<!doctype html><div id="root"></div>');
     writeFileSync(join(dist, 'assets', 'index-abc123.js'), 'console.log(1)');
     writeFileSync(join(dist, 'secret.txt'), 'outside assets');
+    writeFileSync(join(dist, 'favicon.svg'), favicon);
     server = createApp({ routers: [consoleRouter(dist)] }).listen(0, '127.0.0.1');
     await once(server, 'listening');
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -43,6 +48,27 @@ describe('console statics (REQ-061)', () => {
     const res = await fetch(`${base}/assets/index-abc123.js`);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toMatch(/immutable/);
+  });
+
+  it('serves the favicon as an SVG, with a policy that allows its one style by hash and nothing else', async () => {
+    const res = await fetch(`${base}/favicon.svg`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/^image\/svg\+xml/);
+    expect(await res.text()).toBe(favicon);
+    const csp = res.headers.get('content-security-policy') ?? '';
+    const style = /<style>([\s\S]*?)<\/style>/.exec(favicon)?.[1] ?? '';
+    expect(csp).toBe(faviconCsp(favicon));
+    expect(csp).toContain(`style-src 'sha256-${createHash('sha256').update(style).digest('base64')}'`);
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).not.toContain('unsafe-inline');
+    expect(csp).not.toContain('script-src');
+  });
+
+  it('draws the same mark in the favicon as in the console: the Keyhole, its lit star in the accent', () => {
+    expect(favicon).toContain('<circle cx="32" cy="32" r="26"');
+    expect(favicon).toContain('d="M28.5 31.5 L25 45 L39 45 L35.5 31.5"');
+    expect(favicon).toMatch(/\.star \{ fill: #8b7cf6; \}/);
+    expect(favicon).toContain('@media (prefers-color-scheme: dark)');
   });
 
   it('does not serve files outside assets or unknown surfaces', async () => {

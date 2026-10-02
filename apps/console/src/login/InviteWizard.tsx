@@ -1,4 +1,4 @@
-import { Alert, Button, Card, FormActions, FormField, Input, PasswordInput, Skeleton, Stack } from '@d3cloud/ui';
+import { Alert, Button, FormActions, FormField, Input, PasswordInput, Skeleton, Stack } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { LoginLayout } from './LoginLayout';
@@ -56,14 +56,12 @@ export function InviteWizard({ token }: Props) {
 
   if (!invite) {
     return (
-      <LoginLayout title="Create your account" focusOnMount={false} busy>
-        <Card>
-          <Stack gap="16" aria-hidden="true">
-            <Skeleton variant="block" height="2.5rem" />
-            <Skeleton variant="block" height="2.5rem" />
-            <Skeleton variant="block" height="2.5rem" />
-          </Stack>
-        </Card>
+      <LoginLayout title="Create your account" focusOnMount={false} busy wide>
+        <Stack gap="16" aria-hidden="true">
+          <Skeleton variant="block" height="2.5rem" />
+          <Skeleton variant="block" height="2.5rem" />
+          <Skeleton variant="block" height="2.5rem" />
+        </Stack>
       </LoginLayout>
     );
   }
@@ -75,6 +73,7 @@ export function InviteWizard({ token }: Props) {
   return (
     <LoginLayout
       title="Create your account"
+      wide
       description={
         <>
           Signing up as <strong>{invite.email}</strong>
@@ -82,40 +81,38 @@ export function InviteWizard({ token }: Props) {
       }
       focusOnMount={false}
     >
-      <Card>
-        <Stack
-          as="form"
-          gap="16"
-          method="post"
-          action={`/api/invite/${encodeURIComponent(token)}/accept`}
-          aria-label="Create your account"
-          onSubmit={(event) => void submit(event)}
-        >
-          {problems.length > 0 ? (
-            <Alert tone="danger" dynamic title="Your account was not created yet">
-              <ul>
-                {problems.map((problem) => (
-                  <li key={problem}>{problem}</li>
-                ))}
-              </ul>
-            </Alert>
-          ) : null}
-          <FormField label="Your name" width="lg">
-            <Input name="displayName" autoComplete="name" required autoFocus value={values.displayName} onChange={set('displayName')} />
-          </FormField>
-          <FormField label="Username" width="md" help="How you appear to apps. Letters, numbers, dot, dash or underscore.">
-            <Input name="username" autoComplete="username" spellCheck={false} required value={values.username} onChange={set('username')} />
-          </FormField>
-          <FormField label="Password" help="At least 12 characters. A few words you can remember beats a short scramble.">
-            <PasswordInput name="password" autoComplete="new-password" required value={values.password} onChange={set('password')} />
-          </FormField>
-          <FormActions layout="stack">
-            <Button type="submit" variant="primary" loading={busy}>
-              Create my account
-            </Button>
-          </FormActions>
-        </Stack>
-      </Card>
+      <Stack
+        as="form"
+        gap="16"
+        method="post"
+        action={`/api/invite/${encodeURIComponent(token)}/accept`}
+        aria-label="Create your account"
+        onSubmit={(event) => void submit(event)}
+      >
+        {problems.length > 0 ? (
+          <Alert tone="danger" dynamic title="Your account was not created yet">
+            <ul>
+              {problems.map((problem) => (
+                <li key={problem}>{problem}</li>
+              ))}
+            </ul>
+          </Alert>
+        ) : null}
+        <FormField label="Your name" width="lg">
+          <Input name="displayName" autoComplete="name" required autoFocus value={values.displayName} onChange={set('displayName')} />
+        </FormField>
+        <FormField label="Username" width="md" help="How you appear to apps. Letters, numbers, dot, dash or underscore.">
+          <Input name="username" autoComplete="username" spellCheck={false} required value={values.username} onChange={set('username')} />
+        </FormField>
+        <FormField label="Password" help="At least 12 characters. A few words you can remember beats a short scramble.">
+          <PasswordInput name="password" autoComplete="new-password" required value={values.password} onChange={set('password')} />
+        </FormField>
+        <FormActions layout="stack">
+          <Button type="submit" variant="primary" size="lg" loading={busy}>
+            Create my account
+          </Button>
+        </FormActions>
+      </Stack>
     </LoginLayout>
   );
 }

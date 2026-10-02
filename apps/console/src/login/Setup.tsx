@@ -1,4 +1,4 @@
-import { Alert, Button, Card, FormActions, FormField, Input, PasswordInput, Stack } from '@d3cloud/ui';
+import { Alert, Button, FormActions, FormField, Input, PasswordInput, Stack } from '@d3cloud/ui';
 import { useEffect, useState } from 'react';
 import { LoginLayout } from './LoginLayout';
 
@@ -70,38 +70,37 @@ export function Setup() {
   return (
     <LoginLayout
       title="Set up D3 Auth"
+      wide
       description="This instance has no accounts yet. Create the owner account to finish setting it up."
       focusOnMount={false}
     >
-      <Card>
-        <Stack as="form" gap="16" method="post" action="/api/setup" aria-label="Set up D3 Auth" onSubmit={(event) => void onSubmit(event)}>
-          {problems.length > 0 ? (
-            <Alert tone="danger" dynamic title="The owner account was not created">
-              <ul>
-                {problems.map((problem) => (
-                  <li key={problem}>{problem}</li>
-                ))}
-              </ul>
-            </Alert>
-          ) : null}
-          <FormField label="Setup code" width="md" help="Printed in the server log when the service started: docker compose logs server.">
-            <Input name="code" autoFocus required autoComplete="off" spellCheck={false} value={values.code} onChange={set('code')} />
+      <Stack as="form" gap="16" method="post" action="/api/setup" aria-label="Set up D3 Auth" onSubmit={(event) => void onSubmit(event)}>
+        {problems.length > 0 ? (
+          <Alert tone="danger" dynamic title="The owner account was not created">
+            <ul>
+              {problems.map((problem) => (
+                <li key={problem}>{problem}</li>
+              ))}
+            </ul>
+          </Alert>
+        ) : null}
+        <FormField label="Setup code" width="md" help="Printed in the server log when the service started: docker compose logs server.">
+          <Input name="code" autoFocus required autoComplete="off" spellCheck={false} value={values.code} onChange={set('code')} />
+        </FormField>
+        {FIELDS.map((field) => (
+          <FormField key={field.id} label={field.label} width={field.width} {...('help' in field ? { help: field.help } : {})}>
+            <Input name={field.id} type={field.type} required autoComplete={field.autoComplete} value={values[field.id] ?? ''} onChange={set(field.id)} />
           </FormField>
-          {FIELDS.map((field) => (
-            <FormField key={field.id} label={field.label} width={field.width} {...('help' in field ? { help: field.help } : {})}>
-              <Input name={field.id} type={field.type} required autoComplete={field.autoComplete} value={values[field.id] ?? ''} onChange={set(field.id)} />
-            </FormField>
-          ))}
-          <FormField label="Password" help="At least 12 characters. A few words you can remember beats a short scramble.">
-            <PasswordInput name="password" required autoComplete="new-password" value={values.password} onChange={set('password')} />
-          </FormField>
-          <FormActions layout="stack">
-            <Button type="submit" variant="primary" loading={busy}>
-              Create the owner account
-            </Button>
-          </FormActions>
-        </Stack>
-      </Card>
+        ))}
+        <FormField label="Password" help="At least 12 characters. A few words you can remember beats a short scramble.">
+          <PasswordInput name="password" required autoComplete="new-password" value={values.password} onChange={set('password')} />
+        </FormField>
+        <FormActions layout="stack">
+          <Button type="submit" variant="primary" size="lg" loading={busy}>
+            Create the owner account
+          </Button>
+        </FormActions>
+      </Stack>
     </LoginLayout>
   );
 }

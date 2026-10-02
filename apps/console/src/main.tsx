@@ -1,6 +1,10 @@
 import '@d3cloud/ui/tokens.css';
 import '@d3cloud/ui/base.css';
 import './styles.css';
+// The mark and the entry shell load with the first stylesheet, not with the login chunk: the server
+// writes both into the HTML of its own pages, and they must arrive styled (AUTH-T-8.1, AUTH-T-8.2).
+import './brand/mark.css';
+import './entry/entry.css';
 import { readStyleNonce, setStyleNonce } from '@d3cloud/ui';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

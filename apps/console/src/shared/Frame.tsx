@@ -27,6 +27,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import type { Me } from '../api';
+import { D3AuthMark } from '../brand/D3AuthMark';
 import { SIGN_OUT_HREF } from '../signout';
 import { icon } from './icons';
 import { KIND_LABEL, MeProvider } from './me';
@@ -132,7 +133,7 @@ export function Frame(props: FrameProps) {
     <MeProvider value={me}>
       <AppShell
         storageKey="d3auth.sidebar"
-        brand={<AppShellBrand href={props.area === 'admin' ? '/admin' : '/account'} name="D3 Auth" mark={icon(ShieldHalf, 20)} />}
+        brand={<AppShellBrand href={props.area === 'admin' ? '/admin' : '/account'} name="D3 Auth" mark={<D3AuthMark size={20} decorative />} />}
         nav={
           props.area === 'admin' ? (
             me ? <AdminNav current={props.current} me={me} /> : null

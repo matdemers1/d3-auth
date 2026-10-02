@@ -1,0 +1,199 @@
+/* AUTH-T-8.2: the entry screens — every /login screen and the server-rendered pages beside them
+ * (sign-out, break-glass). A split shell after Bindery's and Postroom's front doors: the story on the
+ * sunken ground at the left, the form on the page ground at the right, a hairline between. Below
+ * 1024px the story is dropped and the mark and name sit above the form.
+ *
+ * Imported by main.tsx rather than by the login chunk, so it is in the stylesheet index.html links:
+ * the server writes this same shell into the HTML for the no-JavaScript path
+ * (apps/server/src/interaction/auth-markup.ts) and it must arrive styled.
+ *
+ * Tokens only: no raw colour, no shadow, no invented token. The one off-scale size is the display
+ * headline, and it says why where it is set. */
+
+.auth-entry {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+/* --- the story --------------------------------------------------------------------------------- */
+
+.auth-entry__story {
+  display: none;
+}
+
+.auth-entry__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-16);
+  line-height: var(--leading-16);
+  font-weight: var(--weight-semibold);
+}
+
+/* Pinned to the bottom of the panel: there is no illustration above it to push it down. */
+.auth-entry__pitch {
+  margin-top: auto;
+  padding-top: var(--space-48);
+}
+
+/* d3-allow: the app's one display headline, on the screens that introduce it — the type scale tops out at 24px for working screens, and Bindery's and Postroom's front doors set the same exception */
+.auth-entry__headline {
+  max-width: 20ch;
+  margin: 0;
+  /* d3-allow: display size, see above — 40px, as on Bindery's and Postroom's front doors */
+  font-size: 40px;
+  /* d3-allow: display leading for a two-line headline at that size */
+  line-height: 1.08;
+  font-weight: var(--weight-semibold);
+  /* d3-allow: tight tracking on display type, which is set loose at body sizes; no letter-spacing scale by decision */
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.auth-entry__headline-accent {
+  display: block;
+  color: var(--color-accent);
+}
+
+.auth-entry__promise {
+  max-width: 44ch;
+  margin: var(--space-16) 0 0;
+  font-size: var(--text-16);
+  line-height: var(--leading-24);
+  color: var(--color-fg-muted);
+}
+
+.auth-entry__claims {
+  display: grid;
+  gap: var(--space-12);
+  max-width: 46ch;
+  margin: var(--space-32) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-14);
+  line-height: var(--leading-20);
+  color: var(--color-fg-muted);
+}
+
+.auth-entry__claim {
+  display: flex;
+  gap: var(--space-12);
+}
+
+.auth-entry__tick {
+  flex: none;
+  margin-top: var(--space-2);
+  color: var(--color-success);
+}
+
+.auth-entry__claim-title {
+  font-weight: var(--weight-medium);
+  color: var(--color-fg);
+}
+
+.auth-entry__foot {
+  display: flex;
+  gap: var(--space-16);
+  padding-top: var(--space-32);
+  font-size: var(--text-12);
+  line-height: var(--leading-12);
+  color: var(--color-fg-faint);
+}
+
+/* --- the form ---------------------------------------------------------------------------------- */
+
+.auth-entry__main {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  padding: var(--space-32) var(--space-16);
+}
+
+/* Bindery's 24rem and 28rem columns, in pixels: the system's root size is 14px, not 16. */
+.auth-entry__column {
+  width: 100%;
+  max-width: 384px;
+  min-width: 0;
+}
+
+.auth-entry__column--wide {
+  max-width: 448px;
+}
+
+.auth-entry__brand--compact {
+  margin-bottom: var(--space-32);
+}
+
+.auth-entry__heading {
+  margin-bottom: var(--space-24);
+}
+
+.auth-entry__title {
+  margin: 0;
+  font-size: var(--text-24);
+  line-height: var(--leading-24);
+  font-weight: var(--weight-title);
+  /* d3-allow: the same tight tracking the display headline uses, at the form's heading size */
+  letter-spacing: -0.015em;
+}
+
+.auth-entry__title:focus {
+  outline: none;
+}
+
+.auth-entry__lede {
+  margin: var(--space-6) 0 0;
+  font-size: var(--text-14);
+  line-height: var(--leading-20);
+  color: var(--color-fg-muted);
+}
+
+/* The form column's own vertical rhythm: kit components carry no margin. */
+.auth-entry__body {
+  display: grid;
+  gap: var(--space-20);
+}
+
+.auth-entry__notes {
+  display: grid;
+  gap: var(--space-8);
+  margin-top: var(--space-24);
+  padding-top: var(--space-20);
+  border-top: var(--border-width) solid var(--color-border);
+  font-size: var(--text-13);
+  line-height: var(--leading-20);
+  color: var(--color-fg-muted);
+  text-wrap: pretty;
+}
+
+.auth-entry__notes > p {
+  margin: 0;
+}
+
+/* --- from lg up: the split --------------------------------------------------------------------- */
+
+@media (min-width: 64rem) {
+  .auth-entry {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+
+  .auth-entry__story {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-48) var(--space-64);
+    border-right: var(--border-width) solid var(--color-border);
+    background: var(--color-bg-sunken);
+  }
+
+  .auth-entry__main {
+    align-items: center;
+    padding: var(--space-48) var(--space-32);
+  }
+
+  .auth-entry__brand--compact {
+    display: none;
+  }
+}
