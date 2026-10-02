@@ -1,6 +1,8 @@
 import '@d3cloud/ui/tokens.css';
 import '@d3cloud/ui/base.css';
 import './styles.css';
+// The mark's styles load with the first stylesheet: every surface draws it (AUTH-T-8.1).
+import './brand/mark.css';
 import { readStyleNonce, setStyleNonce } from '@d3cloud/ui';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

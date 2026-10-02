@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,10 +44,39 @@ export function unavailableGate(readiness: ReadinessProbe): RequestHandler {
   };
 }
 
+/**
+ * The policy for the favicon (AUTH-T-8.1). It is an SVG whose one `<style>` switches the ink between
+ * light and dark, and a browser may apply the response's own CSP to an SVG it draws — under the
+ * page policy (styles by nonce only) that style would be refused and the mark would draw blank.
+ * So this one response allows exactly that style by its sha256, and nothing else at all: no script,
+ * no fetch, no inline style beyond the hashed one.
+ */
+export function faviconCsp(svg: string): string {
+  const styles = [...svg.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((match) => match[1] ?? '');
+  const hashes = styles.map((css) => `'sha256-${createHash('sha256').update(css).digest('base64')}'`);
+  return ["default-src 'none'", `style-src ${hashes.length > 0 ? hashes.join(' ') : "'none'"}`, "base-uri 'none'", "frame-ancestors 'none'"].join('; ');
+}
+
 export function consoleRouter(dist: string): Router {
   const router = Router();
   const index = join(dist, 'index.html');
   let shell: string | undefined;
+  let favicon: { body: string; csp: string } | undefined;
+
+  // The one file from the build's root that is served: Vite copies public/favicon.svg there. Named,
+  // not a static directory, so nothing else that lands beside index.html is reachable.
+  router.get('/favicon.svg', (_req, res, next) => {
+    const file = join(dist, 'favicon.svg');
+    if (!favicon) {
+      if (!existsSync(file)) {
+        next();
+        return;
+      }
+      const body = readFileSync(file, 'utf8');
+      favicon = { body, csp: faviconCsp(body) };
+    }
+    res.set({ 'Cache-Control': 'public, max-age=86400', 'Content-Security-Policy': favicon.csp }).type('image/svg+xml').send(favicon.body);
+  });
 
   router.use(
     '/assets',

@@ -1,0 +1,12 @@
+/* AUTH-T-8.1: the D3 Auth mark (brand/D3AuthMark.tsx, and the server's copy of it in
+   apps/server/src/interaction/auth-markup.ts). Loaded with the console's first stylesheet, so the
+   server-rendered sign-in page and every surface carry it. */
+
+.auth-mark {
+  flex: none;
+}
+
+/* The one colour in the mark. Not a theme colour — it is the same in light and dark. */
+.auth-mark__star {
+  fill: #8b7cf6; /* d3-allow: D3 Auth's lit star from d3cloud.io's product marks (DI-REQ-040), a brand constant rather than a theme colour */
+}
