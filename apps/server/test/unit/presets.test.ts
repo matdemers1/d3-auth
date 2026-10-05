@@ -294,3 +294,34 @@ describe('the Bindery preset', () => {
     expect(rows.client_secret?.value).toBe('a-secret');
   });
 });
+
+describe('D3 Constellation (AUTH-T-9.2)', () => {
+  it('builds exactly the client the app sends: public, no secret, its own scheme, no roles', () => {
+    const preset = findPreset('constellation');
+    if (!preset) throw new Error('the constellation preset is missing');
+    const result = buildFromPreset(preset, {});
+    if (!result.ok) throw new Error(JSON.stringify(result.problems));
+    expect(result.manifest).toMatchObject({
+      client_id: 'd3-constellation',
+      client_type: 'public_native',
+      redirect_uris: ['d3constellation://oauth/d3auth'],
+      roles: [],
+    });
+    expect(result.manifest.backchannel_logout_uri).toBeUndefined();
+    // Nothing for the owner to answer, and nothing they send changes it.
+    expect(describePreset(preset).inputs).toEqual([]);
+    const pushed = buildFromPreset(preset, { client_id: 'something-else', redirect: 'https://evil.example/cb' });
+    expect(pushed.ok && pushed.manifest.client_id).toBe('d3-constellation');
+    expect(parseManifest(result.manifest).ok).toBe(true);
+  });
+
+  it('its sheet gives the address to add in the app', () => {
+    const preset = findPreset('constellation');
+    if (!preset) throw new Error('the constellation preset is missing');
+    const result = buildFromPreset(preset, {});
+    if (!result.ok) throw new Error('unbuilt');
+    const rows = byId(preset.sheet({ issuer: ISSUER, app: sheetApp(result.manifest), inputs: {} }));
+    expect(rows['address']?.value).toBe(ISSUER);
+    expect(rows['redirect']?.value).toBe('d3constellation://oauth/d3auth');
+  });
+});

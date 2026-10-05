@@ -7,6 +7,7 @@ import { createFindAccount } from './account.js';
 import { effectiveAccess } from '../authz/effective-roles.js';
 import { createAdapterFactory } from './adapter.js';
 import { createClientAdapter, installHashedClientSecrets } from './clients.js';
+import { createResourceRegistry } from './resources.js';
 import type { PrivateJwk } from './keys.js';
 import { ID_TOKEN_SIGNING_ALG, ROLES_CLAIM, ROLES_SCOPE, SIGNING_ALGS, SUPPORTED_SCOPES, TOKEN_ENDPOINT_AUTH_METHOD } from './protocol.js';
 import { DEFAULT_IDLE_DAYS, interactionPolicyWithAbsoluteLifetime, sessionTtl } from './session-lifetime.js';
@@ -86,7 +87,7 @@ const escapeHtml = (value: unknown): string =>
 
 export function createProvider(options: ProviderOptions): Provider {
   const pkceExempt = new Set(options.pkceExemptClientIds ?? []);
-  const resourceServers = new Set(options.resourceServers ?? []);
+  const resources = createResourceRegistry(options.db, options.issuer, options.resourceServers ?? []);
   const consoleDist = options.consoleDist ?? '';
   const configuration: Configuration = {
     // Clients come from the App table through the adapter (T-3.1), so registering an app takes
@@ -127,11 +128,22 @@ export function createProvider(options: ProviderOptions): Provider {
        * Only allowlisted resources are added. An unknown one is left off deliberately, so the
        * token endpoint refuses it in `getResourceServerInfo` rather than being quietly granted here.
        */
-      const addResources = (grant: InstanceType<typeof ctx.oidc.provider.Grant>): void => {
+      const addResources = async (grant: InstanceType<typeof ctx.oidc.provider.Grant>): Promise<void> => {
         const asked = ctx.oidc.params?.['resource'];
         for (const resource of Array.isArray(asked) ? asked : [asked]) {
-          if (typeof resource === 'string' && resourceServers.has(resource)) {
+          if (typeof resource !== 'string') continue;
+          // An app's audience only for an app this person may use (AUTH-ADR-008).
+          if (await resources.allowed(resource, client.clientId, accountId)) {
+            // Rejected earlier, before they were given the app: rejection subtracts from what is
+            // granted, so it has to go before the grant can mean anything.
+            const rejected = (grant as { rejected?: { resources?: Record<string, string> } }).rejected;
+            if (rejected?.resources) Reflect.deleteProperty(rejected.resources, resource);
             grant.addResourceScope(resource, scope);
+          } else if (await resources.allowed(resource, client.clientId, undefined)) {
+            // A real app this person has no grant to. Marked as answered — refused — so the sign-in
+            // goes on for everything else instead of asking for consent nobody can give; the token
+            // endpoint then refuses this one audience, and only this one.
+            grant.rejectResourceScope(resource, scope);
           }
         }
       };
@@ -142,7 +154,7 @@ export function createProvider(options: ProviderOptions): Provider {
         if (existing) {
           // A grant from before this request may predate the resource being asked for — a returning
           // user hitting a new resource server for the first time.
-          addResources(existing);
+          await addResources(existing);
           await existing.save();
           return existing;
         }
@@ -150,7 +162,7 @@ export function createProvider(options: ProviderOptions): Provider {
 
       const grant = new ctx.oidc.provider.Grant({ accountId, clientId: client.clientId });
       grant.addOIDCScope(scope);
-      addResources(grant);
+      await addResources(grant);
       await grant.save();
       return grant;
     },
@@ -224,7 +236,26 @@ export function createProvider(options: ProviderOptions): Provider {
       RefreshToken: (ctx) => ctx.oidc.entities.RotatedRefreshToken?.remainingTTL ?? REFRESH_TOKEN_ABSOLUTE_TTL,
     },
     // Rotate on every use; reuse of a rotated token revokes the grant (REQ-009).
-    rotateRefreshToken: true,
+    /**
+     * Always rotate — but judge the resource first. The provider consumes the presented refresh
+     * token *before* it resolves `resource`, so a refresh refused as invalid_target would burn a
+     * token the client never got a successor for, and its next refresh would read as reuse and
+     * revoke the whole grant: one product's lost access signing the person out of all of them.
+     * This hook runs before the consume, so a resource that will be refused is refused here, with
+     * the token untouched (AUTH-ADR-008).
+     */
+    rotateRefreshToken: async (ctx) => {
+      const asked = ctx.oidc.params?.['resource'];
+      const refreshToken = ctx.oidc.entities.RefreshToken;
+      const client = ctx.oidc.client;
+      if (typeof asked === 'string' && refreshToken && client) {
+        const granted = refreshToken.resource === undefined ? [] : Array.isArray(refreshToken.resource) ? refreshToken.resource : [refreshToken.resource];
+        if (!granted.includes(asked) || !(await resources.allowed(asked, client.clientId, refreshToken.accountId))) {
+          throw new errors.InvalidTarget('that resource is not granted');
+        }
+      }
+      return true;
+    },
     issueRefreshToken: (_ctx, client) => client.grantTypeAllowed('refresh_token'),
 
     cookies: {
@@ -296,13 +327,23 @@ export function createProvider(options: ProviderOptions): Provider {
        * careless audience check away from accepting it.
        */
       resourceIndicators: {
-        enabled: resourceServers.size > 0,
+        // Always on: apps registered later bring their own audiences (AUTH-T-9.3). A request that
+        // names no resource is unchanged; one naming an unknown resource is invalid_target.
+        enabled: true,
         // No default: a request that names no resource keeps getting today's opaque token, so
         // nothing that exists now changes shape underneath it.
         defaultResource: () => undefined,
         useGrantedResource: () => true,
-        getResourceServerInfo: (_ctx, resourceIndicator) => {
-          if (!resourceServers.has(resourceIndicator)) {
+        getResourceServerInfo: async (ctx, resourceIndicator, client) => {
+          // Checked here as well as in loadExistingGrant, because this is what the token endpoint
+          // runs on every refresh: access to an app taken away stops its tokens at the next
+          // refresh, not when the grant expires.
+          //
+          // At the authorization endpoint only the resource and the client are judged: an app this
+          // person has no grant to is left out of the grant by loadExistingGrant rather than failing
+          // the whole sign-in, which would take every other product down with it.
+          const accountId = ctx.oidc.route === 'token' ? ctx.oidc.account?.accountId : undefined;
+          if (!(await resources.allowed(resourceIndicator, client.clientId, accountId))) {
             throw new errors.InvalidTarget('unknown resource server');
           }
           return {

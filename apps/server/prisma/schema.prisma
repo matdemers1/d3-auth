@@ -192,6 +192,9 @@ model App {
   backchannelLogoutUri   String?    @map("backchannel_logout_uri")
   postLogoutRedirectUris String[]   @map("post_logout_redirect_uris")
   rolesClaimName         String     @default("roles") @map("roles_claim_name")
+  /// Where the app lives. Its origin is the RFC 8707 resource D3 Constellation asks tokens for
+  /// (AUTH-T-9.3, AUTH-ADR-008). Null: the app has no audience of its own.
+  homeUrl                String?    @map("home_url")
   /// The preset that built this app (e.g. "immich"), so its paste sheet can be shown again. Null for a manifest.
   preset                 String?
   /// The answers the preset was given, normalised. Never a secret.

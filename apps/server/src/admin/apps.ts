@@ -24,6 +24,8 @@ export interface AppSummary {
   enabled: boolean;
   /** Apps with no back-channel URI are *slow revoke*: nothing can push them a sign-out. */
   backchannelLogoutUri: string | null;
+  /** Its origin is the app's RFC 8707 resource (AUTH-T-9.3). */
+  homeUrl: string | null;
   redirectUris: string[];
   postLogoutRedirectUris: string[];
   roles: { key: string; displayName: string; description: string; sortOrder: number; isDefault: boolean; granted: number }[];
@@ -116,6 +118,7 @@ const summarise = (app: AppRow): AppSummary => ({
   clientType: app.clientType,
   enabled: app.enabled,
   backchannelLogoutUri: app.backchannelLogoutUri,
+  homeUrl: app.homeUrl,
   redirectUris: app.redirectUris.map((row) => row.uri),
   postLogoutRedirectUris: app.postLogoutRedirectUris,
   roles: app.roles.map((role) => ({
@@ -160,6 +163,7 @@ export function createApps(deps: { db: Db; hasher: SecretHasher; audit: AuditWri
           description: manifest.description,
           clientType: manifest.client_type,
           backchannelLogoutUri: manifest.backchannel_logout_uri ?? null,
+          homeUrl: manifest.home_url ?? null,
           postLogoutRedirectUris: manifest.post_logout_redirect_uris,
         },
       });
@@ -210,6 +214,7 @@ export function createApps(deps: { db: Db; hasher: SecretHasher; audit: AuditWri
           clientType: manifest.client_type,
           clientSecretHash: secret ? await hasher.hash(secret) : null,
           backchannelLogoutUri: manifest.backchannel_logout_uri ?? null,
+          homeUrl: manifest.home_url ?? null,
           postLogoutRedirectUris: manifest.post_logout_redirect_uris,
           ...(preset ? { preset: preset.key, presetInputs: { ...preset.inputs } } : {}),
         },

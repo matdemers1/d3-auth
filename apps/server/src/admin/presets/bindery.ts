@@ -33,7 +33,7 @@ export const bindery: Preset = {
       kind: 'address',
       help: 'The address you open Bindery at. Nothing after it.',
       placeholder: 'https://bindery.example.com',
-      feeds: ['redirect_uris', 'post_logout_redirect_uris', 'backchannel_logout_uri'],
+      feeds: ['redirect_uris', 'post_logout_redirect_uris', 'backchannel_logout_uri', 'home_url'],
     },
     {
       key: 'client_id',
@@ -65,6 +65,7 @@ export const bindery: Preset = {
       redirect_uris: [`${at}/api/auth/oidc/callback`],
       post_logout_redirect_uris: [`${at}/`],
       backchannel_logout_uri: `${at}/api/auth/oidc/backchannel-logout`,
+      home_url: `${at}/`,
       roles: [
         {
           key: 'admin',

@@ -63,6 +63,11 @@ export const manifestSchema = z
     post_logout_redirect_uris: z.array(z.string().min(1)).default([]),
     /** Absent means the app cannot be told to sign somebody out — the console calls that *slow revoke*. */
     backchannel_logout_uri: z.string().min(1).optional(),
+    /**
+     * Where the app lives (AUTH-T-9.3). Its origin becomes a resource D3 Constellation may ask for
+     * a token audienced at — so the same rules as a redirect: https, or http on loopback only.
+     */
+    home_url: z.string().min(1).optional(),
     roles: z.array(roleSchema).default([]),
   })
   .superRefine((manifest, at) => {
@@ -70,6 +75,7 @@ export const manifestSchema = z
     for (const uri of manifest.redirect_uris) checkRedirectUri(uri, native, at);
     for (const uri of manifest.post_logout_redirect_uris) checkRedirectUri(uri, native, at);
     if (manifest.backchannel_logout_uri) checkRedirectUri(manifest.backchannel_logout_uri, false, at);
+    if (manifest.home_url) checkRedirectUri(manifest.home_url, false, at);
 
     const keys = manifest.roles.map((role) => role.key);
     const duplicate = keys.find((key, index) => keys.indexOf(key) !== index);
@@ -120,6 +126,7 @@ export interface ExistingApp {
   description: string;
   clientType: string;
   backchannelLogoutUri: string | null;
+  homeUrl: string | null;
   postLogoutRedirectUris: string[];
   redirectUris: { uri: string }[];
   roles: { key: string; displayName: string; description: string; sortOrder: number; isDefault: boolean; _count?: { grantRoles: number } }[];
@@ -156,6 +163,7 @@ export function diffManifest(manifest: Manifest, existing: ExistingApp | null): 
   compare('description', existing.description, manifest.description);
   compare('client_type', existing.clientType, manifest.client_type);
   compare('backchannel_logout_uri', existing.backchannelLogoutUri ?? '', manifest.backchannel_logout_uri ?? '');
+  compare('home_url', existing.homeUrl ?? '', manifest.home_url ?? '');
   compare('post_logout_redirect_uris', existing.postLogoutRedirectUris.join(' '), manifest.post_logout_redirect_uris.join(' '));
 
   const before = new Map(existing.roles.map((role) => [role.key, role]));
