@@ -14,7 +14,7 @@ import { createConsoleAuth } from './console/auth.js';
 import { createBearerVerifier } from './console/bearer.js';
 import type { JWK } from 'jose';
 import { problemsRouter } from './console/problems.js';
-import { d3AppManifestRouter } from './wellknown/d3-app.js';
+import { appleAppSiteAssociationRouter, d3AppManifestRouter } from './wellknown/d3-app.js';
 import type { Config } from './config.js';
 import { createDb, type Db } from './db.js';
 import { appliedSchema, cached, databaseReadiness, type ReadinessProbe } from './health.js';
@@ -77,6 +77,7 @@ type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' |
       | 'BACKUP_S3_BUCKET'
       | 'CONFORMANCE_PKCE_EXEMPT_CLIENTS'
       | 'RESOURCE_SERVERS'
+      | 'APPLE_APP_IDS'
       | 'OPERATOR_DISPLAY_NAME'
       | 'MAIL_DRIVER'
       | 'MAIL_RELAY_URL'
@@ -303,6 +304,9 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
     routers: [
       problemsRouter(),
       d3AppManifestRouter({ issuer: config.ISSUER, version: process.env['D3AUTH_VERSION'], revision: process.env['D3AUTH_REVISION'] }),
+      // Partial for callers that build the service without the whole config (tests): the same
+      // default the config parser applies.
+      appleAppSiteAssociationRouter(config.APPLE_APP_IDS ?? ['GC63HV279B.io.d3cloud.constellation']),
       interactionRouter({
         provider,
         adapterFactory,

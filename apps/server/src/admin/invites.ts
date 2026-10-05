@@ -21,10 +21,20 @@ export const REENROL_TTL_HOURS = 2;
 
 const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex');
 
+/**
+ * What a new person arrives with (AUTH-T-9.8): the groups they join and the apps they are given,
+ * applied in the transaction that creates their account — never before it exists, and never to an
+ * account an invite merely resets.
+ */
+export interface InitialAccess {
+  groupIds: string[];
+  grants: { clientId: string; roles: string[] }[];
+}
+
 export interface CreateInviteInput {
   email: string;
-  /** Roles and groups to apply once Phase 3 has grants; kept verbatim until then. */
-  initialGrants?: unknown[];
+  /** Validated by the caller against the groups and apps that exist (the admin route does). */
+  initialAccess?: InitialAccess;
   invitedByUserId: string;
   ip?: string | undefined;
   userAgent?: string | undefined;
@@ -66,7 +76,7 @@ export function createInvites({ db, mail, hasher, audit, template }: InvitesDeps
     invitedById: string | null;
     hours: number;
     kind: 'invite' | 'reenrol';
-    initialGrants?: unknown[];
+    initialAccess?: InitialAccess;
   }): Promise<{ id: string; token: string; expiresAt: Date }> {
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + input.hours * 60 * 60 * 1000);
@@ -75,7 +85,7 @@ export function createInvites({ db, mail, hasher, audit, template }: InvitesDeps
         email: input.email,
         invitedById: input.invitedById,
         tokenHash: hashToken(token),
-        initialGrants: (input.initialGrants ?? []) as Prisma.InputJsonValue,
+        initialGrants: (input.initialAccess ?? []) as unknown as Prisma.InputJsonValue,
         expiresAt,
       },
     });
@@ -96,7 +106,7 @@ export function createInvites({ db, mail, hasher, audit, template }: InvitesDeps
         invitedById: input.invitedByUserId,
         hours: INVITE_TTL_HOURS,
         kind: 'invite',
-        ...(input.initialGrants ? { initialGrants: input.initialGrants } : {}),
+        ...(input.initialAccess ? { initialAccess: input.initialAccess } : {}),
       });
       const url = inviteUrl(token);
       const rendered = inviteMail(template, { url, expiresInHours: INVITE_TTL_HOURS });
@@ -108,7 +118,12 @@ export function createInvites({ db, mail, hasher, audit, template }: InvitesDeps
         targetType: 'user',
         ip: input.ip,
         userAgent: input.userAgent,
-        detail: { email, delivered: sent.delivered, driver: sent.driver },
+        detail: {
+          email,
+          delivered: sent.delivered,
+          driver: sent.driver,
+          ...(input.initialAccess ? { groupIds: input.initialAccess.groupIds, grants: input.initialAccess.grants } : {}),
+        },
       });
 
       return { id, email, url, expiresAt, mail: { delivered: sent.delivered, ...(sent.error ? { error: sent.error } : {}) } };
@@ -168,6 +183,37 @@ export function createInvites({ db, mail, hasher, audit, template }: InvitesDeps
             data: { email: invite.email, username, displayName, kind: 'guest', status: 'active', emailVerified: true },
           });
           await tx.passwordCredential.create({ data: { userId: created.id, argon2idHash } });
+
+          // The access the admin chose, in this same transaction (AUTH-T-9.8): the person exists with
+          // it or not at all. A group or app removed since the invite was sent is simply skipped —
+          // it no longer exists to be given — and a role removed since, likewise.
+          const access = readInitialAccess(invite.initialGrants);
+          const audited = (event: string, targetType: string, targetId: string, detail: Record<string, unknown>) =>
+            tx.auditEvent.create({
+              data: {
+                event,
+                actorUserId: invite.invitedById,
+                targetType,
+                targetId,
+                ip: input.ip ?? null,
+                userAgent: input.userAgent ?? null,
+                detail: { ...detail, via: 'invite', userId: created.id },
+              },
+            });
+          for (const groupId of access.groupIds) {
+            const group = await tx.group.findUnique({ where: { id: groupId }, select: { id: true } });
+            if (!group) continue;
+            await tx.groupMember.create({ data: { groupId, userId: created.id } });
+            await audited(AUDIT_EVENTS.groupMembersChanged, 'group', groupId, { added: [created.id] });
+          }
+          for (const wanted of access.grants) {
+            const app = await tx.app.findUnique({ where: { clientId: wanted.clientId }, include: { roles: true } });
+            if (!app) continue;
+            const grant = await tx.grant.create({ data: { userId: created.id, appId: app.id, grantedById: invite.invitedById } });
+            const roles = app.roles.filter((role) => wanted.roles.includes(role.key));
+            if (roles.length > 0) await tx.grantRole.createMany({ data: roles.map((role) => ({ grantId: grant.id, roleId: role.id })) });
+            await audited(AUDIT_EVENTS.grantCreated, 'app', app.id, { clientId: app.clientId, roles: roles.map((role) => role.key) });
+          }
           return created;
         });
 
@@ -190,4 +236,20 @@ export function createInvites({ db, mail, hasher, audit, template }: InvitesDeps
       }
     },
   };
+}
+
+/** The invite's stored access, tolerating the empty list invites carried before AUTH-T-9.8. */
+function readInitialAccess(raw: unknown): InitialAccess {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { groupIds: [], grants: [] };
+  const value = raw as { groupIds?: unknown; grants?: unknown };
+  const groupIds = Array.isArray(value.groupIds) ? value.groupIds.filter((id): id is string => typeof id === 'string') : [];
+  const grants = Array.isArray(value.grants)
+    ? value.grants.flatMap((g: unknown) => {
+        const grant = g as { clientId?: unknown; roles?: unknown };
+        return typeof grant.clientId === 'string'
+          ? [{ clientId: grant.clientId, roles: Array.isArray(grant.roles) ? grant.roles.filter((r): r is string => typeof r === 'string') : [] }]
+          : [];
+      })
+    : [];
+  return { groupIds, grants };
 }

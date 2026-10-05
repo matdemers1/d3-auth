@@ -80,6 +80,14 @@ const schema = z
       .string()
       .optional()
       .transform((v) => (v ?? '').split(',').map((r) => r.trim()).filter(Boolean)),
+    /**
+     * Apple apps allowed to use this D3 Auth's passkeys (AUTH-T-9.7), `<TeamID>.<bundle id>`,
+     * comma-separated. Defaults to D3 Constellation; a fork of the app adds its own.
+     */
+    APPLE_APP_IDS: z
+      .string()
+      .optional()
+      .transform((v) => (v ?? 'GC63HV279B.io.d3cloud.constellation').split(',').map((id) => id.trim()).filter(Boolean)),
     MAIL_DRIVER: z.enum(['worker', 'smtp', 'log']).default('log'),
     MAIL_FROM: z.string().optional(),
     MAIL_RELAY_SECRET: z.string().optional(),
