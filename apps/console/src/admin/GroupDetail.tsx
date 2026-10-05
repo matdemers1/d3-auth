@@ -8,6 +8,7 @@ import { messageOf, useLoad } from '../shared/load';
 import { useMe } from '../shared/me';
 import { Denied, LoadFailed, RowsSkeleton } from '../shared/states';
 import { AccessList } from './access';
+import { OpenInConstellation } from '../shared/OpenInConstellation';
 
 // One group: who is in it, and what that gets them (Detail page pattern).
 
@@ -93,7 +94,12 @@ export function GroupDetail({ id }: { id: string }) {
 
   return (
     <Page width="narrow">
-      <PageHeader back={<Back />} title={view.name} description={view.description || 'A group of people who need the same access.'} />
+      <PageHeader
+        back={<Back />}
+        title={view.name}
+        description={view.description || 'A group of people who need the same access.'}
+        actions={<OpenInConstellation path={`group/${id}`} />}
+      />
 
       <Section title="Who is in it" description={`${view.members.length} ${view.members.length === 1 ? 'person' : 'people'}. Only active accounts can be added.`}>
         {alertFor('members')}

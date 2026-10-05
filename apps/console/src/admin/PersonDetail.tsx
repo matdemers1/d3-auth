@@ -22,6 +22,7 @@ import { KIND_LABEL, useMe } from '../shared/me';
 import { Denied, FactsSkeleton, LoadFailed, RowsSkeleton } from '../shared/states';
 import { AccessList } from './access';
 import { changeKind, ConfirmReset, firstName, reactivate, suspend, type ResetResult, ResetOutcome } from './person-actions';
+import { OpenInConstellation } from '../shared/OpenInConstellation';
 
 // C-2: one person — who they are, what they can reach, where they are signed in, and the two
 // things that stop them (Detail page pattern).
@@ -106,7 +107,12 @@ export function PersonDetail({ id }: { id: string }) {
 
   return (
     <Page width="narrow">
-      <PageHeader back={<Back />} title={who.displayName} description={`${KIND_LABEL[who.kind]} · ${who.email}`} />
+      <PageHeader
+        back={<Back />}
+        title={who.displayName}
+        description={`${KIND_LABEL[who.kind]} · ${who.email}`}
+        actions={<OpenInConstellation path={`person/${id}`} />}
+      />
 
       <Section
         title="Profile"

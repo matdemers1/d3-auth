@@ -60,6 +60,9 @@ model User {
   status        UserStatus @default(invited)
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
   lastLoginAt   DateTime?  @map("last_login_at") @db.Timestamptz
+  /// The person asked to delete their account (AUTH-T-10.3): suspended until then, and an admin
+  /// reactivating it cancels; afterwards the daily purge deletes the row and everything under it.
+  deleteAfter   DateTime?  @map("delete_after") @db.Timestamptz
 
   passwordCredentials PasswordCredential[]
   totpCredentials     TotpCredential[]
