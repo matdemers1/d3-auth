@@ -70,6 +70,7 @@ model User {
   sessions            Session[]
   nativeStepUps       NativeStepUp[]
   relayRegistrations  RelayRegistration[]
+  signinApprovals     SigninApproval[]
   trustedDevices      TrustedDevice[]
   grants              Grant[]              @relation("GrantUser")
   grantsGiven         Grant[]              @relation("GrantGrantedBy")
@@ -78,6 +79,32 @@ model User {
   visits              AppVisit[]
 
   @@map("user")
+}
+
+/// A browser sign-in waiting to be approved from the person's phone (AUTH-T-10.5, the D3 App
+/// contract's sign-in approval): the browser shows `number`, the app shows `choices`, and one answer
+/// decides it. Two minutes, then expired. `consumedAt` is the browser spending an approval, once.
+model SigninApproval {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  interactionUid String    @map("interaction_uid")
+  number         Int
+  choices        Int[]
+  browser        String
+  ip             String?
+  requestedAt    DateTime  @default(now()) @map("requested_at") @db.Timestamptz
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz
+  answeredAt     DateTime? @map("answered_at") @db.Timestamptz
+  /// approved | denied | wrong_number
+  result         String?
+  /// The D3 Constellation grant that answered — the device, in the audit trail.
+  answeredGrantId String?  @map("answered_grant_id")
+  consumedAt     DateTime? @map("consumed_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, requestedAt])
+  @@map("signin_approval")
 }
 
 model PasswordCredential {

@@ -101,4 +101,10 @@ D3 Constellation signs in **through the browser** with the `constellation` prese
 - **problem+json** (`src/console/problems.ts`) for Bearer requests or `Accept: application/problem+json`; the console keeps `{error, message}`.
 - **Deleting your account from the app** (AUTH-T-10.3, AUTH-ADR-009): `POST /api/account/delete {confirmation: <issuer host>, totp}` with the Constellation grant's own-audience Bearer only. The code is checked first, then the last active owner gets `409 last_owner`. Otherwise the person is suspended with `delete_after` a week out, and every provider session (back-channel logout), token, trusted device, push registration and native step-up ends. Reactivate cancels it. The daily `purge-deleted-accounts` job (04:00 UTC) deletes the row, and everything under it goes by cascade. `inviteAccept` stays null (AUTH-T-10.2 is undecided under AUTH-ADR-008).
 - **"Open in D3 Constellation"** (AUTH-T-10.1): `apps/console/src/shared/OpenInConstellation.tsx` on the person and group pages, Apple devices only, linking to `d3constellation://<host>/d3auth/{person|group}/<id>`.
+- **Sign-in approval and login alerts** (AUTH-T-10.5, `src/account/approvals.ts`):
+  - An account with a code or passkey and a device registered for `d3auth.signin-approval` gets `push` among its factors. It is never offered alone.
+  - The browser posts `/api/interaction/:uid/approval` to show a number, and D3 Constellation is pushed `d3auth/approval/<id>`. The app reads `GET /api/account/approvals/:id` (three choices) and answers `POST {number}|{deny:true}` once.
+  - The browser polls `/approval/:id`. An approved approval is consumed once and advances the machine with `factor_verified: push`, which records `amr` `pop`.
+  - Limits: two minutes, five approvals per sign-in, and a wrong number or a denial counts as a failed factor.
+  - Every sign-in that didn't come through the phone pushes `d3auth.login`, linking to `d3auth/sessions`.
 - `/.well-known/d3-app.json` (`src/wellknown/d3-app.ts`); the `app-contract` CI job runs the d3-app-contract suite and needs a `D3_CONTRACT_TOKEN` secret while the contract repo is private.

@@ -73,6 +73,14 @@ describe('login state machine (REQ-029)', () => {
     expect(done).toEqual({ name: 'complete', accountId: id.accountId, amr: ['pwd', 'otp'], trustDevice: true });
   });
 
+  it('records pop for a sign-in approved on the phone (AUTH-T-10.5)', () => {
+    const id = identity({ factors: ['totp', 'push'] });
+    const afterPassword = advance(advance(start(), { type: 'identified', identity: id }), { type: 'password_verified' });
+    expect(afterPassword.name).toBe('awaiting_factor');
+    const afterFactor = advance(afterPassword, { type: 'factor_verified', method: 'push' });
+    expect(afterFactor).toMatchObject({ name: 'awaiting_trusted_device', amr: ['pwd', 'pop'] });
+  });
+
   it('records hwk for a passkey second factor', () => {
     const id = identity({ factors: ['passkey'] });
     const afterPassword = advance(advance(start(), { type: 'identified', identity: id }), { type: 'password_verified' });
