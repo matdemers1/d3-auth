@@ -42,6 +42,8 @@ export const AUDIT_EVENTS = {
   pushRegistered: 'push.registered',
   personDeletionRequested: 'person.deletion_requested',
   personPurged: 'person.purged',
+  signinApprovalRequested: 'signin_approval.requested',
+  signinApprovalAnswered: 'signin_approval.answered',
   inviteCreated: 'invite.created',
   inviteAccepted: 'invite.accepted',
   inviteRevoked: 'invite.revoked',

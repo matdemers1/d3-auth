@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ContinueAs } from './ContinueAs';
 import { answerTrust, loadInteraction, signInWithPasskey, submitCode, submitEmail, submitPassword, type InteractionView, type StepResult } from './api';
 import { LoginLayout, troubleFooter } from './LoginLayout';
+import { PhoneApproval } from './PhoneApproval';
 
 // I-1, I-2, I-3: sign in, phone first. Email, then password, then — for anyone with a factor — the
 // passkey or the code, then the trusted-browser offer (REQ-076).
@@ -142,6 +143,7 @@ export function SignIn({ uid }: Props) {
   const factors = view.factors ?? ['totp'];
   const hasPasskey = factors.includes('passkey');
   const hasTotp = factors.includes('totp');
+  const hasPhone = factors.includes('push');
 
   async function answerDevice(csrf: string, trust: boolean) {
     setBusy(true);
@@ -238,6 +240,7 @@ export function SignIn({ uid }: Props) {
         <Stack as="form" gap="16" method="post" action={action} aria-label="Confirm it is you" onSubmit={(event) => void onSubmit(event)}>
           <input type="hidden" name="csrf" value={view.csrf} />
           {problems}
+          {hasPhone ? <PhoneApproval uid={uid} csrf={view.csrf} onApproved={apply} /> : null}
           {hasTotp ? (
             <>
               <FormField label="Code from your authenticator app" help="Six digits, from the app you set up. It changes every 30 seconds.">

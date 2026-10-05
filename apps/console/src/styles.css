@@ -39,3 +39,15 @@
   color: var(--color-fg-muted);
   font-size: var(--text-13);
 }
+/* Sign-in approval (AUTH-T-10.5): the number the phone is asked to pick, big enough to read across a desk. */
+.approval-ask {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-14);
+}
+.approval-number {
+  font-size: var(--text-24);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}

@@ -6,10 +6,15 @@
 // physically cannot finish an interaction from a half-authenticated state. There is no
 // "MFA pending" boolean anywhere — the state *is* the progress.
 
-export type FactorKind = 'totp' | 'passkey';
+/**
+ * `push` is sign-in approval on the person's phone (AUTH-T-10.5): offered only beside a code or a
+ * passkey, never alone, so the phone being away never locks anybody out.
+ */
+export type FactorKind = 'totp' | 'passkey' | 'push';
 
-/** What the user actually did, in `amr` order (RFC 8176). */
-export type AuthMethod = 'pwd' | 'otp' | 'hwk' | 'recovery';
+/** What the user actually did, in `amr` order (RFC 8176). `pop`: a phone holding this person's
+ * D3 Constellation grant answered the approval (AUTH-T-10.5). */
+export type AuthMethod = 'pwd' | 'otp' | 'hwk' | 'pop' | 'recovery';
 
 export interface Identity {
   accountId: string;
@@ -50,7 +55,7 @@ export class InvalidTransitionError extends Error {
   }
 }
 
-const AMR_FOR_FACTOR: Record<FactorKind, AuthMethod> = { totp: 'otp', passkey: 'hwk' };
+const AMR_FOR_FACTOR: Record<FactorKind, AuthMethod> = { totp: 'otp', passkey: 'hwk', push: 'pop' };
 
 /** Where to go once a credential has been accepted: another factor, a device offer, or done. */
 function afterCredential(identity: Identity, credentials: readonly AuthMethod[], factorUsed: boolean): LoginState {

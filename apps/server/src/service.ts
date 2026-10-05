@@ -31,6 +31,7 @@ import { DEFAULT_IDLE_DAYS } from './oidc/session-lifetime.js';
 import { createSecretHasher } from './security/hash.js';
 import { createKekCrypto } from './security/kek.js';
 import { createRelay } from './push/relay.js';
+import { createApprovals } from './account/approvals.js';
 import { pushRouter } from './push/routes.js';
 import type { MailAdapter } from './mail/adapter.js';
 import { mailFromSettings } from './mail/from-settings.js';
@@ -302,6 +303,9 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   await setup.prepare();
 
   const readiness = cached(databaseReadiness(db));
+  // One relay for push registration, sign-in approvals and login alerts (AUTH-T-10.4, AUTH-T-10.5).
+  const relay = createRelay({ db, kek, adapterFactory, logger });
+  const approvals = createApprovals({ db, relay, issuer: config.ISSUER });
   const app = createApp({
     provider,
     routers: [
@@ -311,7 +315,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       // default the config parser applies.
       pushRouter({
         auth: consoleAuth,
-        relay: createRelay({ db, kek, adapterFactory, logger }),
+        relay,
         audit,
         allowLoopbackHttp: config.RELAY_ALLOW_LOOPBACK_HTTP === '1',
       }),
@@ -334,6 +338,8 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         issuer: config.ISSUER,
         operatorDisplayName,
         consoleDist,
+        approvals,
+        relay,
       }),
       keysRouter({
         db,
@@ -343,7 +349,7 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
         loadedKids: keys.map((key) => key.kid),
       }),
       inviteRouter({ invites, consoleDist, operatorDisplayName }),
-      accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit, publicBase: config.ISSUER }),
+      accountRouter({ db, grants, sessions: sessionControl, auth: consoleAuth, hasher, passwords, throttle, totp, webauthn, trustedDevices, deviceCookieName, audit, publicBase: config.ISSUER, approvals }),
       adminRouter({ db, issuer: config.ISSUER, apps, grants, groups, settings, mail, operatorDisplayName, auth: consoleAuth, invites, sessions: sessionControl, trustedDevices, audit, readiness, backupsConfigured: Boolean(config.BACKUP_S3_BUCKET) }),
       setupRouter({ setup, consoleDist, operatorDisplayName }),
       signinRouter({ issuer: config.ISSUER, auth: consoleAuth, secureCookies, consoleDist }),

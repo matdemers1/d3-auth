@@ -19,6 +19,8 @@ import type { Recovery } from '../setup/recovery.js';
 import { renderContinueAsPage, renderLoginPage, renderRecoveryPage } from './fallback.js';
 import { createFlowStore, type FlowStore, type LoginFlow } from './flow-store.js';
 import { advance, isComplete, start, type Identity, type LoginState } from './machine.js';
+import { describeBrowser, LOGIN_CATEGORY, type Approvals } from '../account/approvals.js';
+import type { Relay } from '../push/relay.js';
 
 // The interaction API the sign-in screens call (T-1.5, T-1.6). The console renders the screens;
 // every decision is made here. The state machine is the only thing that can reach `complete`,
@@ -56,7 +58,14 @@ export interface InteractionDeps {
   issuer: string;
   /** Where the console build lives; the sign-in form is rendered into its shell. */
   consoleDist: string;
+  /** Sign-in approval from the phone (AUTH-T-10.5). */
+  approvals: Approvals;
+  /** Login alerts to registered devices (AUTH-T-10.5). */
+  relay: Relay;
 }
+
+/** Approvals one sign-in may ask for: enough to retry, not enough to make a phone buzz all night. */
+const MAX_APPROVALS_PER_SIGN_IN = 5;
 
 type Step = 'identify' | 'password' | 'factor' | 'trust' | 'done';
 
@@ -251,6 +260,18 @@ export function interactionRouter(deps: InteractionDeps): Router {
       userAgent: req.get('user-agent'),
       detail: { amr },
     });
+    // A login alert to the person's registered devices (AUTH-T-10.5) — not when the phone itself
+    // just approved this sign-in, which would be telling them what they did a second ago.
+    if (!amr.includes('pop')) {
+      void deps.relay.pushToUser(accountId, {
+        v: 1,
+        category: LOGIN_CATEGORY,
+        title: 'New sign-in to D3 Auth',
+        body: `${describeBrowser(req.get('user-agent'))} just signed in. Was this you?`,
+        link: `d3constellation://${new URL(deps.issuer).host}/d3auth/sessions`,
+        sentAt: now.toISOString(),
+      });
+    }
     reply(req, res, uid, 200, { step: 'done', redirectTo });
   }
 
@@ -431,17 +452,17 @@ export function interactionRouter(deps: InteractionDeps): Router {
           : false;
       const recovering = user && user.status === 'active' ? await deps.recovery.armed(user.id) : false;
 
+      const factors = user && user.status === 'active'
+        ? [
+            ...(user.totpCredentials.length > 0 ? (['totp'] as const) : []),
+            ...(user.webauthnCredentials.length > 0 ? (['passkey'] as const) : []),
+          ]
+        : [];
+      // The phone is offered beside a code or a passkey, never instead of one (AUTH-T-10.5).
+      const push = user && factors.length > 0 && (await deps.approvals.available(user.id)) ? (['push'] as const) : [];
       const identity: Identity | undefined =
         user && user.status === 'active'
-          ? {
-              accountId: user.id,
-              factors: [
-                ...(user.totpCredentials.length > 0 ? (['totp'] as const) : []),
-                ...(user.webauthnCredentials.length > 0 ? (['passkey'] as const) : []),
-              ],
-              deviceTrusted,
-              recovering,
-            }
+          ? { accountId: user.id, factors: [...factors, ...push], deviceTrusted, recovering }
           : undefined;
 
       // An unknown or suspended account still advances to the password screen: the difference is
@@ -578,6 +599,103 @@ export function interactionRouter(deps: InteractionDeps): Router {
       }
       await flows.save(ctx.uid, { ...ctx.flow, state }, FLOW_TTL_SECONDS);
       reply(req, res, ctx.uid, 200, { step: stepFor(state), csrf: ctx.flow.csrf });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Sign-in approval (AUTH-T-10.5): ask the phone. The browser shows the number; the phone picks it.
+  router.post(`${INTERACTION_API}/:uid/approval`, body, async (req, res, next) => {
+    try {
+      respondNoStore(res);
+      const ctx = await context(req, res);
+      if (!ctx) return;
+      const input = req.body as { csrf?: unknown };
+      if (!csrfMatches(ctx.flow.csrf, input.csrf)) {
+        reply(req, res, ctx.uid, 403, { error: 'csrf' });
+        return;
+      }
+      if (ctx.flow.state.name !== 'awaiting_factor' || !ctx.flow.state.identity.factors.includes('push')) {
+        reply(req, res, ctx.uid, 409, { error: 'wrong_step', step: stepFor(ctx.flow.state) });
+        return;
+      }
+      const ip = clientIp(req);
+      const keys = { account: ctx.flow.attemptedEmail ?? '', ip };
+      const decision = await throttle.check(keys);
+      const asked = await db.signinApproval.count({ where: { interactionUid: ctx.uid } });
+      if (!decision.allowed || asked >= MAX_APPROVALS_PER_SIGN_IN) {
+        const retryAfterSeconds = decision.allowed ? 60 : decision.retryAfterSeconds;
+        res.set('Retry-After', String(retryAfterSeconds));
+        reply(req, res, ctx.uid, 429, { error: 'throttled', retryAfterSeconds });
+        return;
+      }
+      const accountId = ctx.flow.state.identity.accountId;
+      const approval = await deps.approvals.start({ userId: accountId, interactionUid: ctx.uid, userAgent: req.get('user-agent'), ip });
+      await audit.write({
+        event: AUDIT_EVENTS.signinApprovalRequested,
+        actorUserId: accountId,
+        targetType: 'user',
+        targetId: accountId,
+        ip,
+        userAgent: req.get('user-agent'),
+        detail: { approvalId: approval.id },
+      });
+      res.json({ approvalId: approval.id, number: approval.number, expiresAt: approval.expiresAt.toISOString() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // The browser asking how its approval stands; an approved one finishes the factor, once.
+  router.post<{ uid: string; id: string }>(`${INTERACTION_API}/:uid/approval/:id`, body, async (req, res, next) => {
+    try {
+      respondNoStore(res);
+      const ctx = await context(req, res);
+      if (!ctx) return;
+      const input = req.body as { csrf?: unknown };
+      if (!csrfMatches(ctx.flow.csrf, input.csrf)) {
+        reply(req, res, ctx.uid, 403, { error: 'csrf' });
+        return;
+      }
+      if (ctx.flow.state.name !== 'awaiting_factor') {
+        reply(req, res, ctx.uid, 409, { error: 'wrong_step', step: stepFor(ctx.flow.state) });
+        return;
+      }
+      const state = await deps.approvals.state(req.params.id, ctx.uid);
+      if (state === null) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      if (state === 'pending' || state === 'expired') {
+        res.json({ status: state });
+        return;
+      }
+      const accountId = ctx.flow.state.identity.accountId;
+      const ip = clientIp(req);
+      const keys = { account: ctx.flow.attemptedEmail ?? '', ip };
+      if (state !== 'approved' || !(await deps.approvals.consume(req.params.id, ctx.uid))) {
+        // A denial and a wrong number refuse the sign-in alike, and count as a failed factor.
+        await throttle.recordFailure(keys);
+        await audit.write({
+          event: AUDIT_EVENTS.loginFailure,
+          actorUserId: accountId,
+          targetType: 'user',
+          targetId: accountId,
+          ip,
+          userAgent: req.get('user-agent'),
+          detail: { reason: state === 'approved' ? 'approval_spent' : `approval_${state}` },
+        });
+        res.status(401).json({ status: state === 'approved' ? 'denied' : state, error: 'approval_refused', message: 'That sign-in was not approved. Use your code instead.' });
+        return;
+      }
+      await throttle.clear(keys);
+      const after = advance(ctx.flow.state, { type: 'factor_verified', method: 'push' });
+      if (isComplete(after)) {
+        await finish(req, res, ctx.uid, after.accountId, after.amr, ctx.clientId);
+        return;
+      }
+      await flows.save(ctx.uid, { ...ctx.flow, state: after }, FLOW_TTL_SECONDS);
+      reply(req, res, ctx.uid, 200, { status: 'approved', step: stepFor(after), csrf: ctx.flow.csrf });
     } catch (err) {
       next(err);
     }

@@ -9,7 +9,7 @@ export interface InteractionView {
   clientName: string;
   operatorDisplayName: string;
   /** Which second factors this person has, so the screen can lead with the passkey. */
-  factors?: ('totp' | 'passkey')[];
+  factors?: ('totp' | 'passkey' | 'push')[];
   email?: string;
   /** Who the continue-as interstitial is about (REQ-059). */
   username?: string;
@@ -18,7 +18,7 @@ export interface InteractionView {
 export interface StepResult {
   step?: Step;
   csrf?: string;
-  factors?: ('totp' | 'passkey')[];
+  factors?: ('totp' | 'passkey' | 'push')[];
   email?: string;
   redirectTo?: string;
   error?: string;
@@ -66,3 +66,20 @@ export async function signInWithPasskey(uid: string, csrf: string): Promise<Step
   const response = await startAuthentication({ optionsJSON: options });
   return post(uid, '/passkey/finish', { csrf, response });
 }
+
+/** Sign-in approval on the phone (AUTH-T-10.5): the number this browser shows. */
+export interface ApprovalStarted {
+  approvalId?: string;
+  number?: number;
+  expiresAt?: string;
+  error?: string;
+  retryAfterSeconds?: number;
+}
+
+export async function startApproval(uid: string, csrf: string): Promise<ApprovalStarted> {
+  return (await post(uid, '/approval', { csrf }));
+}
+
+/** Where the approval stands; an approved one comes back as the next step, or the redirect. */
+export const pollApproval = (uid: string, csrf: string, id: string): Promise<StepResult & { status?: 'pending' | 'approved' | 'denied' | 'wrong_number' | 'expired' }> =>
+  post(uid, `/approval/${encodeURIComponent(id)}`, { csrf });

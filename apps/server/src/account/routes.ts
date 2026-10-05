@@ -17,6 +17,7 @@ import type { Throttle } from '../security/throttle.js';
 import type { Totp } from '../security/totp.js';
 import type { WebAuthn } from '../security/webauthn.js';
 import { requestDeletion } from './deletion.js';
+import type { Approvals } from './approvals.js';
 
 // The account area's API: profile (A-2), password (A-3), factors (A-4), sessions and devices
 // (A-5).
@@ -49,6 +50,8 @@ export interface AccountDeps {
   audit: AuditWriter;
   /** The issuer's origin: the host name a deletion is confirmed by (AUTH-T-10.3). */
   publicBase: string;
+  /** Sign-in approvals the app reads and answers (AUTH-T-10.5). */
+  approvals: Approvals;
 }
 
 export function accountRouter({
@@ -65,6 +68,7 @@ export function accountRouter({
   deviceCookieName,
   audit,
   publicBase,
+  approvals,
 }: AccountDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '16kb' });
@@ -389,6 +393,75 @@ export function accountRouter({
     }
     return false;
   };
+
+  /**
+   * Sign-in approval from the app (AUTH-T-10.5, spec/sign-in-approval.md): read the approval the
+   * push linked to, then answer it once — the browser's number, or a denial. Only the app's token;
+   * an approval that is not this person's is a 404, one answered or expired a 410.
+   */
+  router.get<{ id: string }>(`${ACCOUNT_API}/approvals/:id`, auth.requireUser, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user, via, grantId } = consoleUserOf(res);
+        if (via !== 'bearer' || !grantId) {
+          res.status(401).json({ error: 'sign_in_required', message: 'Approve sign-ins from the app.' });
+          return;
+        }
+        const view = await approvals.view(req.params.id, user.id);
+        if (view === null) {
+          res.status(404).json({ error: 'not_found', message: 'There is no such sign-in to approve.' });
+          return;
+        }
+        if (view === 'gone') {
+          res.status(410).json({ error: 'approval_gone', message: 'This sign-in was already answered, or it expired.' });
+          return;
+        }
+        res.set('Cache-Control', 'no-store').json(view);
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
+
+  router.post<{ id: string }>(`${ACCOUNT_API}/approvals/:id`, auth.requireUser, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user, via, grantId } = consoleUserOf(res);
+        if (via !== 'bearer' || !grantId) {
+          res.status(401).json({ error: 'sign_in_required', message: 'Approve sign-ins from the app.' });
+          return;
+        }
+        const input = req.body as { number?: unknown; deny?: unknown };
+        const deny = input.deny === true;
+        const number = typeof input.number === 'number' && Number.isInteger(input.number) ? input.number : undefined;
+        if (!deny && number === undefined) {
+          res.status(400).json({ error: 'invalid', message: 'Send the number, or deny.' });
+          return;
+        }
+        const result = await approvals.answer(req.params.id, user.id, deny ? { deny: true } : { ...(number === undefined ? {} : { number }) }, grantId);
+        if (result === null) {
+          res.status(404).json({ error: 'not_found', message: 'There is no such sign-in to approve.' });
+          return;
+        }
+        if (result === 'gone') {
+          res.status(410).json({ error: 'approval_gone', message: 'This sign-in was already answered.' });
+          return;
+        }
+        await audit.write({
+          event: AUDIT_EVENTS.signinApprovalAnswered,
+          actorUserId: user.id,
+          targetType: 'user',
+          targetId: user.id,
+          ip: clientIp(req),
+          userAgent: req.get('user-agent'),
+          detail: { approvalId: req.params.id, result, grantId },
+        });
+        res.json({ result });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
 
   /**
    * Delete your own account from D3 Constellation (AUTH-T-10.3, AUTH-ADR-009): the host name typed
