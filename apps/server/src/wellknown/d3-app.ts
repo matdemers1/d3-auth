@@ -38,3 +38,18 @@ export function d3AppManifestRouter(input: { issuer: string; version?: string | 
   });
   return router;
 }
+
+/**
+ * `/.well-known/apple-app-site-association` (AUTH-T-9.7): which Apple apps may use this relying
+ * party's passkeys. Without it iOS refuses D3 Constellation a passkey for this domain outright, so
+ * native step-up could only ever use a code. JSON, at the exact path, never redirected — Apple's
+ * fetcher does not follow redirects.
+ */
+export function appleAppSiteAssociationRouter(appIds: readonly string[]): Router {
+  const router = Router();
+  const body = JSON.stringify({ webcredentials: { apps: [...appIds] } });
+  router.get('/.well-known/apple-app-site-association', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=3600').type('application/json').send(body);
+  });
+  return router;
+}

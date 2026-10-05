@@ -355,9 +355,45 @@ export function adminRouter({
           return;
         }
 
+        // What they arrive with (AUTH-T-9.8), checked like the group and grant endpoints check it:
+        // a group, app or role that does not exist is refused, and nothing is sent.
+        const raw = req.body as { groupIds?: unknown; grants?: unknown };
+        const groupIds = Array.isArray(raw.groupIds) ? raw.groupIds : [];
+        const grants = Array.isArray(raw.grants) ? raw.grants : [];
+        if (!groupIds.every((id): id is string => typeof id === 'string') || groupIds.length > 50 || grants.length > 50) {
+          res.status(400).json({ error: 'invalid', message: 'groupIds is a list of group ids, and grants a list of {clientId, roles}.' });
+          return;
+        }
+        const groups = await db.group.findMany({ where: { id: { in: groupIds } }, select: { id: true } });
+        if (groups.length !== new Set(groupIds).size) {
+          res.status(400).json({ error: 'unknown_group', message: 'One of those groups does not exist.' });
+          return;
+        }
+        const checked: { clientId: string; roles: string[] }[] = [];
+        for (const entry of grants as { clientId?: unknown; roles?: unknown }[]) {
+          const roles = Array.isArray(entry.roles) ? entry.roles : [];
+          if (typeof entry.clientId !== 'string' || !roles.every((r): r is string => typeof r === 'string')) {
+            res.status(400).json({ error: 'invalid', message: 'Each grant is {clientId, roles}.' });
+            return;
+          }
+          const app = await db.app.findUnique({ where: { clientId: entry.clientId }, include: { roles: { select: { key: true } } } });
+          if (!app) {
+            res.status(400).json({ error: 'no_such_app', message: `No app is registered with the client id "${entry.clientId}".` });
+            return;
+          }
+          const known = new Set(app.roles.map((role) => role.key));
+          const unknown = roles.filter((role) => !known.has(role));
+          if (unknown.length > 0) {
+            res.status(400).json({ error: 'unknown_roles', message: `${app.name} has no role ${unknown.join(', ')}.` });
+            return;
+          }
+          checked.push({ clientId: entry.clientId, roles });
+        }
+
         const created = await invites.create({
           email,
           invitedByUserId: user.id,
+          ...(groupIds.length > 0 || checked.length > 0 ? { initialAccess: { groupIds: [...new Set(groupIds)], grants: checked } } : {}),
           ip: clientIp(req),
           userAgent: req.get('user-agent'),
         });

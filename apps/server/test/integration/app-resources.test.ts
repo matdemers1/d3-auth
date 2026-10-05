@@ -25,6 +25,8 @@ const decode = (jwt: string): Record<string, unknown> =>
 
 async function registerApp(clientId: string, homeUrl: string | null, extra: { preset?: string; clientType?: 'public_native' | 'confidential_web'; redirect?: string } = {}): Promise<void> {
   const db = h.service.db;
+  // Another file in this run may have registered the same app: these files share one database.
+  await db.app.deleteMany({ where: { clientId } });
   await db.app.create({
     data: {
       clientId,
@@ -76,6 +78,7 @@ beforeAll(async () => {
   const preset = findPreset('constellation');
   const built = preset ? buildFromPreset(preset, {}) : null;
   if (!built?.ok) throw new Error('the constellation preset did not build');
+  await h.service.db.app.deleteMany({ where: { clientId: CONSTELLATION.clientId } });
   await h.service.apps.register({ manifest: built.manifest, actorUserId: userId, preset: { key: 'constellation', inputs: {} } });
   await registerApp('bindery', `${BINDERY}/`);
   await registerApp('postroom', `${POSTROOM}/`);

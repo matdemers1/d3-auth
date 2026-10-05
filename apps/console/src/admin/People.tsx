@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   DataList,
   DataListRow,
   EmptyState,
@@ -24,7 +25,7 @@ import {
 } from '@d3cloud/ui';
 import { Ellipsis, Mail, Search, UserPlus } from 'lucide-react';
 import { useId, useState } from 'react';
-import { api, type InviteCreated, type PendingInvite, type Person } from '../api';
+import { api, type App, type InviteCreated, type PendingInvite, type Person } from '../api';
 import { icon } from '../shared/icons';
 import { messageOf, useLoad } from '../shared/load';
 import { useMe } from '../shared/me';
@@ -72,14 +73,32 @@ function InviteModal({ open, onOpenChange, onInvited }: { open: boolean; onOpenC
   const [email, setEmail] = useState('');
   const [problem, setProblem] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  // What they arrive with (AUTH-T-9.8): groups to join, and apps with each app's default role.
+  const choices = useLoad(
+    () =>
+      Promise.all([
+        api.get<{ groups: { id: string; name: string }[] }>('/api/admin/groups').then((answer) => answer.groups),
+        api.get<{ apps: App[] }>('/api/admin/apps').then((answer) => answer.apps.filter((app) => app.enabled)),
+      ]),
+    open ? 'open' : 'closed',
+  );
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [clientIds, setClientIds] = useState<string[]>([]);
+  const toggle = (list: string[], id: string, on: boolean): string[] => (on ? [...list, id] : list.filter((x) => x !== id));
 
   async function invite(event: React.SyntheticEvent) {
     event.preventDefault();
     setBusy(true);
     setProblem(undefined);
     try {
-      const created = await api.post<InviteCreated>('/api/admin/invites', { email });
+      const apps = choices.state.status === 'ready' ? choices.state.data[1] : [];
+      const grants = apps
+        .filter((app) => clientIds.includes(app.clientId))
+        .map((app) => ({ clientId: app.clientId, roles: app.roles.filter((role) => role.isDefault).map((role) => role.key) }));
+      const created = await api.post<InviteCreated>('/api/admin/invites', { email, groupIds, grants });
       setEmail('');
+      setGroupIds([]);
+      setClientIds([]);
       onOpenChange(false);
       onInvited(created);
     } catch (err) {
@@ -133,6 +152,38 @@ function InviteModal({ open, onOpenChange, onInvited }: { open: boolean; onOpenC
             }}
           />
         </FormField>
+        {choices.state.status === 'ready' && choices.state.data[0].length > 0 ? (
+          <FormField label="Groups they join">
+            <Stack gap="8">
+              {choices.state.data[0].map((group) => (
+                <Checkbox
+                  key={group.id}
+                  label={group.name}
+                  checked={groupIds.includes(group.id)}
+                  onCheckedChange={(checked) => {
+                    setGroupIds((list) => toggle(list, group.id, checked === true));
+                  }}
+                />
+              ))}
+            </Stack>
+          </FormField>
+        ) : null}
+        {choices.state.status === 'ready' && choices.state.data[1].length > 0 ? (
+          <FormField label="Apps they can use" help="With each app's default role. You can change roles once they have joined.">
+            <Stack gap="8">
+              {choices.state.data[1].map((app) => (
+                <Checkbox
+                  key={app.clientId}
+                  label={app.name}
+                  checked={clientIds.includes(app.clientId)}
+                  onCheckedChange={(checked) => {
+                    setClientIds((list) => toggle(list, app.clientId, checked === true));
+                  }}
+                />
+              ))}
+            </Stack>
+          </FormField>
+        ) : null}
       </Stack>
     </Modal>
   );

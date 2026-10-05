@@ -108,6 +108,37 @@ describe('the manifest (AUTH-T-9.1)', () => {
   });
 });
 
+describe('passkeys for the app (AUTH-T-9.7)', () => {
+  it('serves apple-app-site-association naming D3 Constellation, as JSON, with no redirect', async () => {
+    const res = await call('/.well-known/apple-app-site-association');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/^application\/json/);
+    expect(await res.json()).toEqual({ webcredentials: { apps: ['GC63HV279B.io.d3cloud.constellation'] } });
+  });
+});
+
+describe('inviting with groups and grants (AUTH-T-9.8)', () => {
+  it('refuses an unknown group, app or role, and sends nothing', async () => {
+    for (const [body, code] of [
+      [{ email: 'x1@example.com', groupIds: ['00000000-0000-7000-8000-000000000000'] }, 'unknown_group'],
+      [{ email: 'x2@example.com', grants: [{ clientId: 'no-such-app', roles: [] }] }, 'no_such_app'],
+      [{ email: 'x3@example.com', grants: [{ clientId: 'bindery', roles: ['emperor'] }] }, 'unknown_roles'],
+    ] as const) {
+      const res = await call('/api/admin/invites', { token: selfToken, body });
+      expect(res.status).toBe(400);
+      expect((await problemOf(res))['code']).toBe(code);
+    }
+    expect(await h.service.db.invite.count({ where: { email: { in: ['x1@example.com', 'x2@example.com', 'x3@example.com'] } } })).toBe(0);
+  });
+
+  it('stores what it was given for the accept to apply', async () => {
+    const res = await call('/api/admin/invites', { token: selfToken, body: { email: 'kim@example.com', grants: [{ clientId: 'bindery', roles: [] }] } });
+    expect(res.status).toBe(201);
+    const row = await h.service.db.invite.findFirstOrThrow({ where: { email: 'kim@example.com' } });
+    expect(row.initialGrants).toEqual({ groupIds: [], grants: [{ clientId: 'bindery', roles: [] }] });
+  });
+});
+
 describe('the app token on D3 Auth’s APIs (AUTH-T-9.4, AUTH-T-9.5)', () => {
   it('answers me with the contract’s names and the console’s', async () => {
     const res = await call('/api/me', { token: selfToken });
