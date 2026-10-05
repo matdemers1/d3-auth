@@ -156,6 +156,39 @@ describe('from somewhere else', () => {
   });
 });
 
+describe('with a Bearer token that is not D3 Constellation’s own (AUTH-T-9.5)', () => {
+  it('every guarded route refuses an unsigned, a self-signed or another client’s token', async () => {
+    const { SignJWT, generateKeyPair, UnsecuredJWT } = await import('jose');
+    const now = Math.floor(Date.now() / 1000);
+    const claims = { sub: ownerId, client_id: 'd3-constellation', gid: 'forged', scope: 'openid' };
+    const unsigned = new UnsecuredJWT(claims).setIssuer(ISSUER).setAudience(ISSUER).setExpirationTime(now + 600).encode();
+    const { privateKey } = await generateKeyPair('ES256');
+    const selfSigned = await new SignJWT(claims).setProtectedHeader({ alg: 'ES256', typ: 'at+jwt' }).setIssuer(ISSUER).setAudience(ISSUER).setExpirationTime(now + 600).sign(privateKey);
+    const flow = await authorize(h, config);
+    const webToken = (await client.authorizationCodeGrant(config, flow.callback, { pkceCodeVerifier: flow.verifier, expectedState: flow.state, expectedNonce: flow.nonce })).access_token;
+
+    const open: string[] = [];
+    for (const token of [unsigned, selfSigned, webToken]) {
+      for (const route of [...routesOf(h.service.app), { method: 'GET' as const, path: '/api/me' }]) {
+        const answer = await h.opFetch(`${ISSUER}${concrete(route.path)}`, {
+          method: route.method,
+          headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          ...(route.method === 'POST' ? { body: '{}' } : {}),
+        });
+        if (answer.status !== 401) open.push(`${route.method} ${route.path} → ${String(answer.status)}`);
+      }
+    }
+    expect(open).toEqual([]);
+  });
+
+  it('a Bearer request from a page on another origin is refused before the token is read', async () => {
+    const answer = await h.opFetch(`${ISSUER}/api/admin/people`, {
+      headers: { accept: 'application/json', authorization: 'Bearer anything', origin: 'https://evil.test' },
+    });
+    expect(answer.status).toBe(403);
+  });
+});
+
 describe('the first-run claim', () => {
   it('cannot be used to take an instance that already has an owner', async () => {
     const answer = await h.opFetch(`${ISSUER}/api/setup`, {

@@ -98,6 +98,10 @@ export function adminRouter({
         const { user } = found;
         res.set('Cache-Control', 'no-store').json({
           id: user.id,
+          // The D3 App contract's names for the same things (AUTH-T-9.5), so the console and
+          // D3 Constellation read one answer.
+          accountId: user.id,
+          roles: [user.kind],
           email: user.email,
           username: user.username,
           displayName: user.displayName,

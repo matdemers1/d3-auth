@@ -11,6 +11,10 @@ import { AUDIT_EVENTS } from './audit/events.js';
 import { createAuditWriter } from './audit/writer.js';
 import { accountRouter } from './account/routes.js';
 import { createConsoleAuth } from './console/auth.js';
+import { createBearerVerifier } from './console/bearer.js';
+import type { JWK } from 'jose';
+import { problemsRouter } from './console/problems.js';
+import { d3AppManifestRouter } from './wellknown/d3-app.js';
 import type { Config } from './config.js';
 import { createDb, type Db } from './db.js';
 import { appliedSchema, cached, databaseReadiness, type ReadinessProbe } from './health.js';
@@ -210,7 +214,11 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const mail = mailFromSettings(settings, logger, (failure) =>
     audit.write({ event: AUDIT_EVENTS.mailFailed, detail: failure }).catch(() => undefined),
   );
-  const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'), new URL(config.ISSUER).origin);
+  // Only the public half of each signing key: what verifies the app tokens it minted (AUTH-T-9.5).
+  const PUBLIC_MEMBERS = ['kty', 'crv', 'x', 'y', 'n', 'e', 'kid', 'alg'] as const;
+  const publicKeys = keys.map((key) => Object.fromEntries(PUBLIC_MEMBERS.flatMap((m) => (key[m] === undefined ? [] : [[m, key[m]]]))) as JWK);
+  const bearer = createBearerVerifier({ db, adapterFactory, issuer: config.ISSUER, publicKeys });
+  const consoleAuth = createConsoleAuth(db, adapterFactory, config.ISSUER.startsWith('https://'), new URL(config.ISSUER).origin, bearer);
   const issuerUrl = new URL(config.ISSUER);
   // A password built on this instance's own names is as guessable as one built on the product's
   // (ASVS 6.2.11). Short host labels like "auth" are left out: they would refuse "author".
@@ -293,6 +301,8 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
   const app = createApp({
     provider,
     routers: [
+      problemsRouter(),
+      d3AppManifestRouter({ issuer: config.ISSUER, version: process.env['D3AUTH_VERSION'], revision: process.env['D3AUTH_REVISION'] }),
       interactionRouter({
         provider,
         adapterFactory,

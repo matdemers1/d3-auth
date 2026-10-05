@@ -88,6 +88,7 @@ const escapeHtml = (value: unknown): string =>
 export function createProvider(options: ProviderOptions): Provider {
   const pkceExempt = new Set(options.pkceExemptClientIds ?? []);
   const resources = createResourceRegistry(options.db, options.issuer, options.resourceServers ?? []);
+  const selfResource = options.issuer.replace(/\/+$/, '');
   const consoleDist = options.consoleDist ?? '';
   const configuration: Configuration = {
     // Clients come from the App table through the adapter (T-3.1), so registering an app takes
@@ -244,6 +245,16 @@ export function createProvider(options: ProviderOptions): Provider {
      * This hook runs before the consume, so a resource that will be refused is refused here, with
      * the token untouched (AUTH-ADR-008).
      */
+    /**
+     * The grant id, in a token for D3 Auth's own audience only (AUTH-T-9.5): it is what native
+     * step-up is recorded against and what the account API checks still exists, so signing out
+     * ends the token at once. Opaque, and never in a product's token.
+     */
+    extraTokenClaims: (_ctx, token) => {
+      const audience = (token as { resourceServer?: { audience?: string } }).resourceServer?.audience;
+      const grantId = (token as { grantId?: string }).grantId;
+      return audience === selfResource && grantId ? { gid: grantId } : undefined;
+    },
     rotateRefreshToken: async (ctx) => {
       const asked = ctx.oidc.params?.['resource'];
       const refreshToken = ctx.oidc.entities.RefreshToken;

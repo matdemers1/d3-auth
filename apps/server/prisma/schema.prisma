@@ -65,6 +65,7 @@ model User {
   totpCredentials     TotpCredential[]
   webauthnCredentials WebauthnCredential[]
   sessions            Session[]
+  nativeStepUps       NativeStepUp[]
   trustedDevices      TrustedDevice[]
   grants              Grant[]              @relation("GrantUser")
   grantsGiven         Grant[]              @relation("GrantGrantedBy")
@@ -122,6 +123,19 @@ model WebauthnCredential {
 
   @@index([userId])
   @@map("webauthn_credential")
+}
+
+/// When a native app's grant last re-proved who it is (AUTH-T-9.5): the Bearer-token twin of
+/// Session.steppedUpAt. Keyed by the provider's grant id, so each device steps up for itself.
+model NativeStepUp {
+  grantId     String   @id @map("grant_id")
+  userId      String   @map("user_id") @db.Uuid
+  steppedUpAt DateTime @map("stepped_up_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("native_step_up")
 }
 
 model Session {

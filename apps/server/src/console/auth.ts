@@ -6,6 +6,7 @@ import { mustHoldFactor } from '../security/factors.js';
 import type { UserModel as User } from '../generated/prisma/models.js';
 import { COOKIE_NAMES, cookieNamesFor } from '../oidc/provider.js';
 import { pastAbsoluteLifetime } from '../oidc/session-lifetime.js';
+import { bearerOf, type BearerVerifier } from './bearer.js';
 
 // Who is asking, for the console and account APIs.
 //
@@ -19,6 +20,10 @@ import { pastAbsoluteLifetime } from '../oidc/session-lifetime.js';
 
 export interface ConsoleUser {
   user: User;
+  /** How they reached us: the console's session cookie, or a native app's Bearer token (AUTH-T-9.5). */
+  via: 'cookie' | 'bearer';
+  /** A Bearer token's grant: what native step-up is recorded against. */
+  grantId?: string | undefined;
   sessionId: string;
   /** The provider's session uid, which is what our own session rows are keyed by. */
   sessionUid: string | undefined;
@@ -50,11 +55,26 @@ export interface ConsoleAuth {
 /** Five minutes: long enough to finish what you started, short enough to matter. */
 export const STEP_UP_WINDOW_MS = 5 * 60 * 1000;
 
-export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secureCookies: boolean, issuerOrigin?: string): ConsoleAuth {
+export function createConsoleAuth(
+  db: Db,
+  adapterFactory: AdapterFactory,
+  secureCookies: boolean,
+  issuerOrigin?: string,
+  bearer?: BearerVerifier,
+): ConsoleAuth {
   const sessions = adapterFactory('Session');
   const names = cookieNamesFor(secureCookies);
 
   const current = async (req: Request): Promise<ConsoleUser | undefined> => {
+    // A Bearer token speaks for itself and is never mixed with the cookie: a request that carries
+    // one is judged by it alone.
+    const token = bearerOf(req);
+    if (token !== null) {
+      const found = bearer ? await bearer.verify(token) : undefined;
+      if (!found) return undefined;
+      // The step-up challenge key is derived from this; a grant id is not a credential.
+      return { user: found.user, via: 'bearer', grantId: found.grantId, sessionId: `grant:${found.grantId}`, sessionUid: undefined };
+    }
     const sessionId = readCookie(req, names.session) ?? readCookie(req, COOKIE_NAMES.session);
     if (!sessionId) return undefined;
     const payload = (await sessions.find(sessionId)) as { accountId?: string; uid?: string; loginTs?: number } | undefined;
@@ -67,6 +87,7 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
     if (!user || user.status !== 'active') return undefined;
     return {
       user,
+      via: 'cookie',
       sessionId,
       sessionUid: payload.uid,
       // When they last proved who they were, which is what owner-only actions check (REQ-037).
@@ -82,6 +103,13 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
    * cross-site POST; this is the layer that does not depend on the browser getting that right.
    */
   const sameOrigin = (req: Request): boolean => {
+    // A Bearer token is not ambient: another site cannot make a browser attach it, and a request
+    // carrying one is never authenticated by the cookie (AUTH-T-9.5). A native app sends no
+    // Origin; a page on another origin holding somebody's token is refused, as /oidc/me does.
+    if (bearerOf(req) !== null) {
+      const origin = req.get('origin');
+      return origin === undefined || origin === issuerOrigin;
+    }
     const site = req.get('sec-fetch-site');
     if (site !== undefined) return site === 'same-origin' || site === 'none';
     const origin = req.get('origin');
@@ -139,13 +167,16 @@ export function createConsoleAuth(db: Db, adapterFactory: AdapterFactory, secure
 
         const row = found.sessionUid
           ? await db.session.findUnique({ where: { oidcSessionUid: found.sessionUid }, select: { steppedUpAt: true } })
-          : null;
+          : found.grantId
+            ? await db.nativeStepUp.findUnique({ where: { grantId: found.grantId }, select: { steppedUpAt: true } })
+            : null;
         const proved = [row?.steppedUpAt, found.authTime].filter((at): at is Date => at instanceof Date);
         const freshest = proved.sort((a, b) => b.getTime() - a.getTime())[0];
         if (!freshest || Date.now() - freshest.getTime() > STEP_UP_WINDOW_MS) {
           res.status(401).json({
             error: 'step_up_required',
             message: 'Confirm it is you before changing something this important.',
+            maxAgeSeconds: STEP_UP_WINDOW_MS / 1000,
           });
           return;
         }
