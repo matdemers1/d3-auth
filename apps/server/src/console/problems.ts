@@ -2,7 +2,8 @@ import { Router, type RequestHandler } from 'express';
 import { bearerOf } from './bearer.js';
 
 // problem+json for a native app (AUTH-T-9.6, the D3 App contract). The console reads
-// `{ error, message }` and keeps doing so; a request carrying a Bearer token gets the same refusal
+// `{ error, message }` and keeps doing so; a request carrying a Bearer token, or asking for
+// application/problem+json, gets the same refusal
 // as RFC 9457, typed from the contract's registry, so D3 Constellation reads every product's
 // refusals one way. Converted here, once, rather than in every route — a route added later is
 // covered without anybody remembering to.
@@ -36,7 +37,10 @@ const TITLES: Readonly<Record<string, string>> = {
 
 export function problemsForBearer(): RequestHandler {
   return (req, res, next) => {
-    if (!req.path.startsWith('/api/') || bearerOf(req) === null) {
+    // A Bearer token, or a client that asks for problems by name (content negotiation): the
+    // console sends neither.
+    const wantsProblems = bearerOf(req) !== null || (req.get('accept') ?? '').includes('application/problem+json');
+    if (!req.path.startsWith('/api/') || !wantsProblems) {
       next();
       return;
     }

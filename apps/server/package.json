@@ -31,6 +31,7 @@
     "@simplewebauthn/server": "^14.0.2",
     "argon2": "^0.45.1",
     "express": "^5.2.1",
+    "jose": "^6.2.12",
     "nodemailer": "^10.0.10",
     "oidc-provider": "^9.12.2",
     "otpauth": "^9.5.2",
@@ -43,7 +44,6 @@
     "@types/express": "^5.0.6",
     "@types/nodemailer": "^8.0.2",
     "@types/oidc-provider": "^9.12.1",
-    "jose": "^6.2.12",
     "openid-client": "^6.8.8",
     "tsx": "^4.23.13"
   }

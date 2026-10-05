@@ -136,6 +136,59 @@ jobs:
           path: conformance/logs/
           if-no-files-found: warn
 
+  # The D3 App contract (AUTH-T-9.6): the suite D3 Constellation's contract publishes, against this
+  # commit's stack. D3 Auth signs native clients in through the browser (AUTH-ADR-008), so the
+  # manifest checks and me.unauthenticated run and the native session checks skip by design.
+  #
+  # The suite's image is private while matdemers1/d3-app-contract is (the owner's choice), and this
+  # repository's token cannot read another repository's package. D3_CONTRACT_TOKEN — a token with
+  # read:packages — opens it; without that secret the job says so and does nothing, loudly, rather
+  # than pretending to have run.
+  app-contract:
+    name: app-contract (d3-app-contract)
+    needs: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      D3_CONTRACT_TOKEN: ${{ secrets.D3_CONTRACT_TOKEN }}
+    steps:
+      - name: Without access to the suite, say so
+        if: env.D3_CONTRACT_TOKEN == ''
+        run: echo "::warning::D3_CONTRACT_TOKEN is not set, so the d3-app-contract suite cannot be pulled and did not run."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.D3_CONTRACT_TOKEN != ''
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        if: env.D3_CONTRACT_TOKEN != ''
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: env.D3_CONTRACT_TOKEN != ''
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: env.D3_CONTRACT_TOKEN != ''
+        run: pnpm install --frozen-lockfile
+      - name: Start the stack
+        if: env.D3_CONTRACT_TOKEN != ''
+        run: pnpm dev:up
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        if: env.D3_CONTRACT_TOKEN != ''
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ env.D3_CONTRACT_TOKEN }}
+      - name: The d3-app-contract suite
+        if: env.D3_CONTRACT_TOKEN != ''
+        run: |
+          docker run --rm --network host -v "$PWD:/out" ghcr.io/matdemers1/d3-app-conformance:contract-1 \
+            --base http://localhost:3000 --allow-http --product d3auth --destructive --junit /out/conformance.xml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always() && env.D3_CONTRACT_TOKEN != ''
+        with:
+          name: app-contract
+          path: conformance.xml
+          if-no-files-found: ignore
+      - if: always() && env.D3_CONTRACT_TOKEN != ''
+        run: pnpm dev:down
+
   e2e:
     needs: conformance
     runs-on: ubuntu-latest
