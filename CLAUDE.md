@@ -91,3 +91,12 @@ hand is drift, and Shipyard refuses the next one until someone resolves it.
 - **When it finishes, report** the deploy ID, the final state, the commit SHA **per image**, and the
   schema revision `/health` reports — `shipyard_deploy_status` returns all of them. On a
   `rolled_back` or `failed`, report the refusal's message and fix verbatim.
+
+## The native app contract (AUTH-P-9, AUTH-ADR-008)
+D3 Constellation signs in **through the browser** with the `constellation` preset (`d3-constellation`, public, PKCE, `d3constellation://oauth/d3auth`); D3 Auth has no native password sign-in. One grant mints a token per audience:
+- **Resources** (`src/oidc/resources.ts`): `RESOURCE_SERVERS` (any client), D3 Auth's own issuer, and every enabled app's `home_url` origin — the last two only for the Constellation client, and an app's only while the person holds a grant to it. Ungranted apps are *rejected in the grant* (so sign-in goes on) and refused at the token endpoint on every refresh.
+- **Judge before rotating.** `rotateRefreshToken` refuses an unallowed `resource` *before* the provider consumes the refresh token; otherwise a refusal burns the token and the next refresh reads as reuse, revoking the whole grant.
+- **`prompt=none`** is honoured for the Constellation client only (`session-lifetime.ts`); every other native client keeps the provider's rule.
+- **Bearer on the APIs** (`src/console/bearer.ts`): a token audienced at the issuer, `at+jwt`, from the Constellation client, carrying `gid` (the grant, added by `extraTokenClaims` for this audience only) — then the grant, the person and their Constellation access are re-checked on every request. Native step-up is a passkey or code, never a password, recorded in `native_step_up` per grant.
+- **problem+json** (`src/console/problems.ts`) for Bearer requests or `Accept: application/problem+json`; the console keeps `{error, message}`.
+- `/.well-known/d3-app.json` (`src/wellknown/d3-app.ts`); the `app-contract` CI job runs the d3-app-contract suite and needs a `D3_CONTRACT_TOKEN` secret while the contract repo is private.

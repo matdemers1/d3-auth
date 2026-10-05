@@ -76,6 +76,7 @@ describe('diffing a manifest against what is registered', () => {
     description: '',
     clientType: 'confidential_web',
     backchannelLogoutUri: 'https://bindery.d3cloud.io/api/auth/oidc/backchannel-logout',
+    homeUrl: null,
     postLogoutRedirectUris: ['https://bindery.d3cloud.io/'],
     redirectUris: [{ uri: 'https://bindery.d3cloud.io/api/auth/oidc/callback' }],
     roles: [

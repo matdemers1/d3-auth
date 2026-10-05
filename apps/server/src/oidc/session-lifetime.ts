@@ -1,3 +1,4 @@
+import { CONSTELLATION_CLIENT_ID } from '../admin/presets/constellation.js';
 import { interactionPolicy, type KoaContextWithOIDC } from 'oidc-provider';
 
 // How long a sign-in lasts (REQ-029; ASVS 5.0 7.1.1, 7.3.1, 7.3.2).
@@ -58,5 +59,25 @@ export function interactionPolicyWithAbsoluteLifetime(): ReturnType<typeof inter
       (ctx) => (pastAbsoluteLifetime(ctx.oidc.session?.loginTs) ? interactionPolicy.Check.REQUEST_PROMPT : interactionPolicy.Check.NO_NEED_TO_PROMPT),
     ),
   );
+  /**
+   * `prompt=none` for D3 Constellation (AUTH-T-9.2, AUTH-ADR-008). The provider asks every native
+   * client for an interaction, because a custom-scheme redirect can be claimed by another app — but
+   * a returning person's interaction here completes without a page, so for this client the rule
+   * refused only the silent re-authorization that adds a newly linked product, and guarded
+   * nothing: the gate that matters on Apple platforms is the system's own "wants to use … to sign
+   * in" alert, which a silent request shows too. Every other native client keeps the rule.
+   */
+  const consent = policy.get('consent');
+  const nativeRule = consent?.checks.get('native_client_prompt');
+  if (consent && nativeRule) {
+    const at = consent.checks.indexOf(nativeRule);
+    consent.checks.remove('native_client_prompt');
+    consent.checks.add(
+      new interactionPolicy.Check('native_client_prompt', 'native clients require End-User interaction', 'interaction_required', (ctx) =>
+        ctx.oidc.client?.clientId === CONSTELLATION_CLIENT_ID ? interactionPolicy.Check.NO_NEED_TO_PROMPT : nativeRule.check(ctx),
+      ),
+      at,
+    );
+  }
   return policy;
 }

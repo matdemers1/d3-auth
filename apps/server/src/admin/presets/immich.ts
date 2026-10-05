@@ -28,7 +28,7 @@ export const immich: Preset = {
       kind: 'address',
       help: 'The address you open Immich at. Nothing after it.',
       placeholder: 'https://photos.example.com',
-      feeds: ['redirect_uris', 'post_logout_redirect_uris', 'backchannel_logout_uri'],
+      feeds: ['redirect_uris', 'post_logout_redirect_uris', 'backchannel_logout_uri', 'home_url'],
     },
     {
       key: 'client_id',
@@ -59,6 +59,7 @@ export const immich: Preset = {
       redirect_uris: [`${at}/auth/login`, `${at}/user-settings`, `${at}/api/oauth/mobile-redirect`],
       post_logout_redirect_uris: [`${at}/auth/login`],
       backchannel_logout_uri: `${at}/api/oauth/backchannel-logout`,
+      home_url: `${at}/`,
       roles: [
         { key: 'admin', display: 'Administrator', description: 'An Immich admin, set on every sign-in' },
         { key: 'user', display: 'User', description: 'Their own library', default: true },

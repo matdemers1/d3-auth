@@ -37,6 +37,7 @@ const appSchema = z.object({
   redirect_uris: z.array(z.string()).default([]),
   post_logout_redirect_uris: z.array(z.string()).default([]),
   backchannel_logout_uri: z.string().optional(),
+  home_url: z.string().optional(),
   roles_claim_name: z.string().default('roles'),
   enabled: z.boolean().default(true),
   roles: z.array(roleSchema).default([]),
@@ -170,6 +171,7 @@ export async function exportState(db: Db): Promise<AdminState> {
       redirect_uris: app.redirectUris.map((row) => row.uri),
       post_logout_redirect_uris: app.postLogoutRedirectUris,
       ...(app.backchannelLogoutUri ? { backchannel_logout_uri: app.backchannelLogoutUri } : {}),
+      ...(app.homeUrl ? { home_url: app.homeUrl } : {}),
       roles_claim_name: app.rolesClaimName,
       enabled: app.enabled,
       ...(app.preset ? { preset: app.preset, preset_inputs: stringRecord(app.presetInputs) } : {}),
@@ -307,6 +309,8 @@ export async function importState(
       clientType: app.client_type,
       postLogoutRedirectUris: app.post_logout_redirect_uris,
       backchannelLogoutUri: app.backchannel_logout_uri ?? null,
+      // Absent from an older file: left alone, like the preset.
+      ...(app.home_url === undefined ? {} : { homeUrl: app.home_url }),
       rolesClaimName: app.roles_claim_name,
       enabled: app.enabled,
       // Absent from the file means "not said", so an older file leaves what is here alone.

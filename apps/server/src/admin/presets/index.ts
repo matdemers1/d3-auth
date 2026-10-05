@@ -1,6 +1,7 @@
 import { CLIENT_ID, parseManifest, type Manifest, type ManifestProblem } from '../manifest.js';
 import { genericSheet, type SheetApp, type SheetRow } from '../connection.js';
 import { bindery } from './bindery.js';
+import { constellation } from './constellation.js';
 import { immich } from './immich.js';
 import type { Preset, PresetInput, PresetInputs } from './types.js';
 
@@ -9,7 +10,7 @@ export type { Preset, PresetInput, PresetInputs } from './types.js';
 // The preset registry (REQ-143). One list, served to the console, so the picker and the logic
 // that registers from it cannot disagree about which apps are known.
 
-export const PRESETS: readonly Preset[] = [bindery, immich];
+export const PRESETS: readonly Preset[] = [bindery, immich, constellation];
 
 const BY_KEY = new Map(PRESETS.map((preset) => [preset.key, preset]));
 

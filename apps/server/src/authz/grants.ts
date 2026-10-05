@@ -24,6 +24,11 @@ export interface AppAccess {
   name: string;
   roles: string[];
   grantedAt: Date;
+  /** Where the app lives, and the RFC 8707 resource its tokens are minted for: its origin (AUTH-T-9.4). */
+  homeUrl: string | null;
+  resource: string | null;
+  /** The D3 product it is, when a product preset built it — what D3 Constellation opens it as. */
+  product?: string;
 }
 
 export class GrantError extends Error {
@@ -57,6 +62,18 @@ export interface GrantsDeps {
    */
   onChanged?: (change: { userId: string; clientId: string; reason: 'granted' | 'changed' | 'revoked' }) => Promise<void>;
 }
+
+/** Presets that are D3 products, by the product id the D3 App contract uses. */
+const PRODUCT_PRESETS = new Set(['bindery', 'postroom', 'shipyard', 'foreman']);
+
+const originOf = (url: string | null): string | null => {
+  if (url === null) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+};
 
 export function createGrants({ db, audit, onChanged }: GrantsDeps): Grants {
   const appOf = async (clientId: string) => {
@@ -107,7 +124,10 @@ export function createGrants({ db, audit, onChanged }: GrantsDeps): Grants {
     async forUser(userId) {
       const grants = await db.grant.findMany({
         where: { userId, app: { enabled: true } },
-        include: { app: { select: { clientId: true, name: true } }, roles: { select: { role: { select: { key: true, sortOrder: true } } } } },
+        include: {
+          app: { select: { clientId: true, name: true, homeUrl: true, preset: true } },
+          roles: { select: { role: { select: { key: true, sortOrder: true } } } },
+        },
         orderBy: { app: { name: 'asc' } },
       });
       return grants.map((grant) => ({
@@ -118,6 +138,9 @@ export function createGrants({ db, audit, onChanged }: GrantsDeps): Grants {
           .sort((a, b) => b.sortOrder - a.sortOrder)
           .map((role) => role.key),
         grantedAt: grant.createdAt,
+        homeUrl: grant.app.homeUrl,
+        resource: originOf(grant.app.homeUrl),
+        ...(grant.app.preset !== null && PRODUCT_PRESETS.has(grant.app.preset) ? { product: grant.app.preset } : {}),
       }));
     },
 

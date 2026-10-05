@@ -466,7 +466,7 @@ export function accountRouter({
   router.post(`${ACCOUNT_API}/step-up`, auth.requireUser, body, (req, res, next) => {
     void (async () => {
       try {
-        const { user, sessionId, sessionUid } = consoleUserOf(res);
+        const { user, sessionId, sessionUid, via, grantId } = consoleUserOf(res);
         const input = req.body as { password?: unknown; code?: unknown; passkey?: unknown };
         const ip = clientIp(req);
         const keys = { account: user.email, ip };
@@ -477,6 +477,35 @@ export function accountRouter({
             error: 'throttled',
             retryAfterSeconds: decision.retryAfterSeconds,
           });
+          return;
+        }
+
+        // Native step-up (AUTH-T-9.5): the app's token already says who this is, and the app never
+        // holds a password — so the proof is a user-verified passkey or an authenticator code, and
+        // nothing less. Someone with neither cannot step up in the app.
+        if (via === 'bearer' && grantId) {
+          if ((await verifiedFactorCount(db, user.id)) === 0) {
+            res.status(403).json({ error: 'factor_required', message: 'Add a passkey or an authenticator app on the web first.' });
+            return;
+          }
+          if (!(await steppedUp({ userId: user.id, sessionId, ...input }))) {
+            await throttle.recordFailure(keys);
+            res.status(401).json({ error: 'wrong_code', message: 'That didn’t confirm it’s you. Try again.' });
+            return;
+          }
+          await throttle.clear(keys);
+          const now = new Date();
+          await db.nativeStepUp.upsert({ where: { grantId }, create: { grantId, userId: user.id, steppedUpAt: now }, update: { steppedUpAt: now } });
+          await audit.write({
+            event: AUDIT_EVENTS.stepUp,
+            actorUserId: user.id,
+            targetType: 'user',
+            targetId: user.id,
+            ip,
+            userAgent: req.get('user-agent'),
+            detail: { via: 'native' },
+          });
+          res.json({ ok: true, until: new Date(now.getTime() + STEP_UP_WINDOW_MS).toISOString() });
           return;
         }
 
