@@ -1,4 +1,9 @@
+import { createECDH } from 'node:crypto';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import * as client from 'openid-client';
+import { openEnvelope } from '../../src/push/envelope.js';
+import { signRelayRequest } from '../../src/push/relay.js';
 import { Secret, TOTP } from 'otpauth';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildFromPreset, findPreset } from '../../src/admin/presets/index.js';
@@ -105,6 +110,81 @@ describe('the manifest (AUTH-T-9.1)', () => {
       me: `${ISSUER}/api/me`,
       accountApps: `${ISSUER}/api/account/apps`,
     });
+  });
+});
+
+describe('push through the relay (AUTH-T-10.4)', () => {
+  const pushes: { path: string; timestamp: string; signature: string; raw: string }[] = [];
+  let relay: Server;
+  let relayUrl = '';
+  let answer = 202;
+  beforeAll(async () => {
+    relay = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (chunk: Buffer) => (raw += chunk.toString()));
+      req.on('end', () => {
+        pushes.push({ path: req.url ?? '', timestamp: String(req.headers['x-d3-relay-timestamp']), signature: String(req.headers['x-d3-relay-signature']), raw });
+        res.writeHead(answer);
+        res.end('{}');
+      });
+    });
+    await new Promise<void>((resolve) => relay.listen(0, '127.0.0.1', () => { resolve(); }));
+    relayUrl = `http://127.0.0.1:${String((relay.address() as AddressInfo).port)}`;
+  });
+  afterAll(() => {
+    relay.close();
+  });
+  const device = () => {
+    const pair = createECDH('prime256v1');
+    pair.generateKeys();
+    return pair;
+  };
+  const register = (token: string, key: ReturnType<typeof device>, registration: string, url = relayUrl) =>
+    call('/api/push/native/register', { token, body: { devicePublicKey: key.getPublicKey().toString('base64'), relay: { url, registration, sendKey: `send-key-${registration}-0123456789` }, categories: ['d3auth.login'] } });
+  const waitFor = async (registration: string) => {
+    for (let i = 0; i < 80; i++) {
+      const found = pushes.find((p) => p.path === `/v1/push/${registration}`);
+      if (found !== undefined) return found;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error('no push');
+  };
+
+  it('the manifest names the endpoint', async () => {
+    const manifest = (await (await call('/.well-known/d3-app.json')).json()) as { endpoints: Record<string, string> };
+    expect(manifest.endpoints['relayRegister']).toBe(`${ISSUER}/api/push/native/register`);
+  });
+
+  it('the app’s token registers, and one d3auth.registered notification arrives only the device can open', async () => {
+    const key = device();
+    expect((await register(selfToken, key, 'reg-auth')).status).toBe(204);
+    const pushed = await waitFor('reg-auth');
+    expect(pushed.signature).toBe(signRelayRequest('send-key-reg-auth-0123456789', pushed.timestamp, pushed.raw));
+    const payload = JSON.parse(openEnvelope(key, (JSON.parse(pushed.raw) as { ciphertext: string }).ciphertext).toString()) as Record<string, unknown>;
+    expect(payload).toMatchObject({ v: 1, category: 'd3auth.registered' });
+    const row = await h.service.db.relayRegistration.findFirstOrThrow({ where: { registration: 'reg-auth' } });
+    expect(Buffer.from(row.sendKeySealed).toString('utf8')).not.toContain('send-key');
+  });
+
+  it('refuses a bad registration, plain http off loopback, a product’s token and no token', async () => {
+    const key = device();
+    expect((await call('/api/push/native/register', { token: selfToken, body: { devicePublicKey: key.getPublicKey().toString('base64') } })).status).toBe(400);
+    expect((await register(selfToken, key, 'plain', 'http://relay.example.com')).status).toBe(400);
+    expect((await register(binderyToken, key, 'bindery-token')).status).toBe(401);
+    expect((await call('/api/push/native/register', { body: {} })).status).toBe(401);
+  });
+
+  it('a 410 from the relay forgets the registration', async () => {
+    const key = device();
+    answer = 410;
+    try {
+      expect((await register(selfToken, key, 'reg-gone')).status).toBe(204);
+      await waitFor('reg-gone');
+      for (let i = 0; i < 40 && (await h.service.db.relayRegistration.count({ where: { registration: 'reg-gone' } })) > 0; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(await h.service.db.relayRegistration.count({ where: { registration: 'reg-gone' } })).toBe(0);
+    } finally {
+      answer = 202;
+    }
   });
 });
 

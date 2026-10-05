@@ -27,7 +27,7 @@ export function d3AppManifestRouter(input: { issuer: string; version?: string | 
       link: null,
       inviteAccept: null,
       deleteAccount: null,
-      relayRegister: null,
+      relayRegister: `${base}/api/push/native/register`,
       accountApps: `${base}/api/account/apps`,
       stepUp: `${base}/api/account/step-up`,
     },

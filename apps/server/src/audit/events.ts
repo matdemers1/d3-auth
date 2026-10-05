@@ -39,6 +39,7 @@ export const AUDIT_EVENTS = {
   personReactivated: 'person.reactivated',
   personReset: 'person.reset',
   personKindChanged: 'person.kind_changed',
+  pushRegistered: 'push.registered',
   inviteCreated: 'invite.created',
   inviteAccepted: 'invite.accepted',
   inviteRevoked: 'invite.revoked',

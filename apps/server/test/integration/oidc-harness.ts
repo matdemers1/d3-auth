@@ -85,6 +85,8 @@ export async function startHarness(
     CONFORMANCE_PKCE_EXEMPT_CLIENTS: options.pkceExemptClientIds ?? [],
     RESOURCE_SERVERS: options.resourceServers ?? [],
     OPERATOR_DISPLAY_NAME: 'Matthew',
+    // Push tests run a mock relay on loopback (AUTH-T-10.4); production never accepts one.
+    RELAY_ALLOW_LOOPBACK_HTTP: '1',
   }, logger, {
     passwords: (real) => ({
       verify: (hash, password) => {
