@@ -66,6 +66,7 @@ model User {
   webauthnCredentials WebauthnCredential[]
   sessions            Session[]
   nativeStepUps       NativeStepUp[]
+  relayRegistrations  RelayRegistration[]
   trustedDevices      TrustedDevice[]
   grants              Grant[]              @relation("GrantUser")
   grantsGiven         Grant[]              @relation("GrantGrantedBy")
@@ -136,6 +137,31 @@ model NativeStepUp {
 
   @@index([userId])
   @@map("native_step_up")
+}
+
+/// A device's push registration (AUTH-T-10.4, the D3 App contract's push): the relay to post to and
+/// the device key every notification is sealed to. D3 Auth never holds an APNs token. It belongs to
+/// the D3 Constellation grant whose token registered it — signing out or revoking ends the grant, and
+/// the next send forgets the registration — and a 410 from the relay forgets it too.
+model RelayRegistration {
+  id              String   @id @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  /// The provider's grant id (the token's `gid`).
+  grantId         String   @unique @map("grant_id")
+  /// P-256, X9.63 uncompressed, 65 bytes.
+  devicePublicKey Bytes    @map("device_public_key")
+  relayUrl        String   @map("relay_url")
+  registration    String
+  /// The relay's send key, sealed under the KEK: whoever holds it can push to the device.
+  sendKeySealed   Bytes    @map("send_key_sealed")
+  categories      String[]
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([relayUrl, registration])
+  @@index([userId])
+  @@map("relay_registration")
 }
 
 model Session {

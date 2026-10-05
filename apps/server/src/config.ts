@@ -88,6 +88,8 @@ const schema = z
       .string()
       .optional()
       .transform((v) => (v ?? 'GC63HV279B.io.d3cloud.constellation').split(',').map((id) => id.trim()).filter(Boolean)),
+    /** Accept a loopback http push relay — CI's mock relay only; production relays are https (AUTH-T-10.4). */
+    RELAY_ALLOW_LOOPBACK_HTTP: z.enum(['0', '1']).optional(),
     MAIL_DRIVER: z.enum(['worker', 'smtp', 'log']).default('log'),
     MAIL_FROM: z.string().optional(),
     MAIL_RELAY_SECRET: z.string().optional(),

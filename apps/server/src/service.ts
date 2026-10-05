@@ -30,6 +30,8 @@ import { createProvider, deviceCookieNameFor } from './oidc/provider.js';
 import { DEFAULT_IDLE_DAYS } from './oidc/session-lifetime.js';
 import { createSecretHasher } from './security/hash.js';
 import { createKekCrypto } from './security/kek.js';
+import { createRelay } from './push/relay.js';
+import { pushRouter } from './push/routes.js';
 import type { MailAdapter } from './mail/adapter.js';
 import { mailFromSettings } from './mail/from-settings.js';
 import { createSettings, type Settings } from './admin/settings.js';
@@ -78,6 +80,7 @@ type ServiceConfig = Pick<Config, 'ISSUER' | 'DATABASE_URL' | 'KEK' | 'PEPPER' |
       | 'CONFORMANCE_PKCE_EXEMPT_CLIENTS'
       | 'RESOURCE_SERVERS'
       | 'APPLE_APP_IDS'
+      | 'RELAY_ALLOW_LOOPBACK_HTTP'
       | 'OPERATOR_DISPLAY_NAME'
       | 'MAIL_DRIVER'
       | 'MAIL_RELAY_URL'
@@ -306,6 +309,12 @@ export async function createService(config: ServiceConfig, logger: Logger, overr
       d3AppManifestRouter({ issuer: config.ISSUER, version: process.env['D3AUTH_VERSION'], revision: process.env['D3AUTH_REVISION'] }),
       // Partial for callers that build the service without the whole config (tests): the same
       // default the config parser applies.
+      pushRouter({
+        auth: consoleAuth,
+        relay: createRelay({ db, kek, adapterFactory, logger }),
+        audit,
+        allowLoopbackHttp: config.RELAY_ALLOW_LOOPBACK_HTTP === '1',
+      }),
       appleAppSiteAssociationRouter(config.APPLE_APP_IDS ?? ['GC63HV279B.io.d3cloud.constellation']),
       interactionRouter({
         provider,
