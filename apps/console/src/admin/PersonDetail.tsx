@@ -114,6 +114,14 @@ export function PersonDetail({ id }: { id: string }) {
         actions={<OpenInConstellation path={`person/${id}`} />}
       />
 
+      {who.deleteAfter ? (
+        // They asked to delete their account from the app (AUTH-ADR-009): say so, and say how to undo it.
+        <Alert tone="warning" title={`${who.displayName} asked to delete their account`}>
+          It is deleted for good on {new Date(who.deleteAfter).toLocaleDateString(undefined, { dateStyle: 'long' })}. Until then,
+          Let them back in cancels it.
+        </Alert>
+      ) : null}
+
       <Section
         title="Profile"
         {...(me?.kind === 'owner' && !locked

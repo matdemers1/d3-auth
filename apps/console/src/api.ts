@@ -118,6 +118,8 @@ export interface PersonAccess {
 }
 
 export interface PersonDetail extends Person {
+  /** When the person asked to delete their account, the moment it goes for good (AUTH-T-10.3). */
+  deleteAfter?: string | null;
   emailVerified: boolean;
   factors: { passkeys: number; authenticatorApps: number; trustedDevices: number };
   sessions: { id: string; ip: string | null; userAgent: string | null; lastSeenAt: string }[];

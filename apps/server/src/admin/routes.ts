@@ -155,6 +155,9 @@ export function adminRouter({
             emailVerified: true,
             lastLoginAt: true,
             createdAt: true,
+            // Set when the person asked to delete their account (AUTH-T-10.3): the console shows it,
+            // and Reactivate cancels it.
+            deleteAfter: true,
             webauthnCredentials: { select: { label: true, createdAt: true, lastUsedAt: true } },
             totpCredentials: { where: { confirmedAt: { not: null } }, select: { label: true, confirmedAt: true } },
           },
