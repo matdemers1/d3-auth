@@ -293,7 +293,9 @@ export function adminRouter({
         const person = await target(req.params.id, res);
         if (!person) return;
 
-        await db.user.update({ where: { id: person.id }, data: { status: 'active' } });
+        // Reactivating also cancels a deletion the person asked for (AUTH-ADR-009): the grace
+        // period exists for exactly this.
+        await db.user.update({ where: { id: person.id }, data: { status: 'active', deleteAfter: null } });
         await audit.write({
           event: AUDIT_EVENTS.personReactivated,
           actorUserId: actor.id,

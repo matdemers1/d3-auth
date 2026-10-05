@@ -26,6 +26,7 @@ const REGISTERED: Readonly<Record<string, { type: string; status?: number }>> = 
   taken: { type: 'taken' },
   already_a_user: { type: 'already_a_user' },
   already_exists: { type: 'already_exists' },
+  last_owner: { type: 'last_owner', status: 409 },
 };
 
 const TITLES: Readonly<Record<string, string>> = {

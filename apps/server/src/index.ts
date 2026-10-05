@@ -6,6 +6,7 @@ import { offsiteStore } from './backup/from-config.js';
 import { runBackup, runDrill } from './backup/operations.js';
 import { alertRules, startAlerts } from './audit/alerts.js';
 import { scheduleDaily } from './jobs/daily.js';
+import { purgeDeletedAccounts } from './account/deletion.js';
 import { createAuditWriter } from './audit/writer.js';
 import { createService } from './service.js';
 
@@ -55,6 +56,10 @@ const server = service.app.listen(config.PORT, (err?: Error) => {
 // runs anyway and says so; the alert rules then flag the missing backups.
 const store = offsiteStore(config);
 const jobs: { stop(): void }[] = [];
+// Accounts whose deletion grace period has passed are deleted, daily (AUTH-T-10.3).
+jobs.push(
+  scheduleDaily('purge-deleted-accounts', '04:00', () => purgeDeletedAccounts({ db: service.db, audit: createAuditWriter(service.db, logger) }), logger),
+);
 if (store) {
   const audit = createAuditWriter(service.db, logger);
   jobs.push(

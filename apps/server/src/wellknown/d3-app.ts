@@ -26,7 +26,9 @@ export function d3AppManifestRouter(input: { issuer: string; version?: string | 
       me: `${base}/api/me`,
       link: null,
       inviteAccept: null,
-      deleteAccount: null,
+      // Deleting your account from D3 Constellation (AUTH-T-10.3); inviteAccept stays null while
+      // sign-in is the browser's alone (AUTH-ADR-008).
+      deleteAccount: `${base}/api/account/delete`,
       relayRegister: `${base}/api/push/native/register`,
       accountApps: `${base}/api/account/apps`,
       stepUp: `${base}/api/account/step-up`,

@@ -16,6 +16,7 @@ import { checkPassword, USERNAME_PATTERN, USERNAME_RULE } from '../security/poli
 import type { Throttle } from '../security/throttle.js';
 import type { Totp } from '../security/totp.js';
 import type { WebAuthn } from '../security/webauthn.js';
+import { requestDeletion } from './deletion.js';
 
 // The account area's API: profile (A-2), password (A-3), factors (A-4), sessions and devices
 // (A-5).
@@ -46,6 +47,8 @@ export interface AccountDeps {
   trustedDevices: TrustedDevices;
   deviceCookieName: string;
   audit: AuditWriter;
+  /** The issuer's origin: the host name a deletion is confirmed by (AUTH-T-10.3). */
+  publicBase: string;
 }
 
 export function accountRouter({
@@ -61,6 +64,7 @@ export function accountRouter({
   trustedDevices,
   deviceCookieName,
   audit,
+  publicBase,
 }: AccountDeps): Router {
   const router = Router();
   const asJson = express.json({ limit: '16kb' });
@@ -385,6 +389,71 @@ export function accountRouter({
     }
     return false;
   };
+
+  /**
+   * Delete your own account from D3 Constellation (AUTH-T-10.3, AUTH-ADR-009): the host name typed
+   * out and a current authenticator code, with the token the app's grant mints for D3 Auth — never
+   * the console's cookie. The code is checked before anything else is decided, as a sign-in's is.
+   */
+  router.post(`${ACCOUNT_API}/delete`, auth.requireUser, body, (req, res, next) => {
+    void (async () => {
+      try {
+        const { user, via, grantId } = consoleUserOf(res);
+        if (via !== 'bearer' || !grantId) {
+          res.status(401).json({ error: 'sign_in_required', message: 'Delete your account from the app.' });
+          return;
+        }
+        const input = req.body as { confirmation?: unknown; totp?: unknown };
+        if (typeof input.confirmation !== 'string' || typeof input.totp !== 'string' || input.totp.length > 16) {
+          res.status(400).json({ error: 'invalid', message: 'That is not a deletion.' });
+          return;
+        }
+        const host = new URL(publicBase).hostname;
+        if (input.confirmation.trim().toLowerCase() !== host.toLowerCase()) {
+          res.status(422).json({ error: 'confirmation_mismatch', message: `Type ${host} exactly to confirm.` });
+          return;
+        }
+        const ip = clientIp(req);
+        const keys = { account: user.email, ip };
+        const decision = await throttle.check(keys);
+        if (!decision.allowed) {
+          res.set('Retry-After', String(decision.retryAfterSeconds)).status(429).json({ error: 'throttled', retryAfterSeconds: decision.retryAfterSeconds });
+          return;
+        }
+        if ((await totp.list(user.id)).every((row) => row.confirmedAt === null)) {
+          res.status(403).json({ error: 'factor_required', message: 'Add an authenticator app on the web first: deleting your account needs a current code.' });
+          return;
+        }
+        if (!(await totp.verify({ userId: user.id, code: input.totp }))) {
+          await throttle.recordFailure(keys);
+          res.status(401).json({ error: 'wrong_code', message: 'That code didn’t work.' });
+          return;
+        }
+        await throttle.clear(keys);
+        const outcome = await requestDeletion({ db, sessions, trustedDevices }, user.id);
+        if (outcome.kind === 'last_owner') {
+          res.status(409).json({ error: 'last_owner', message: 'You’re the last owner. Make someone else an owner first, then delete this account.' });
+          return;
+        }
+        if (outcome.kind === 'gone') {
+          res.status(401).json({ error: 'sign_in_required', message: 'This account is already being deleted.' });
+          return;
+        }
+        await audit.write({
+          event: AUDIT_EVENTS.personDeletionRequested,
+          actorUserId: user.id,
+          targetType: 'user',
+          targetId: user.id,
+          ip,
+          userAgent: req.get('user-agent'),
+          detail: { deleteAfter: outcome.graceUntil.toISOString(), sessionsEnded: outcome.sessionsEnded, via: 'native' },
+        });
+        res.status(202).json({ graceUntil: outcome.graceUntil.toISOString() });
+      } catch (err) {
+        next(err);
+      }
+    })();
+  });
 
   // A-3: change your password (REQ-081).
   router.post(`${ACCOUNT_API}/password`, auth.requireUser, body, (req, res, next) => {
