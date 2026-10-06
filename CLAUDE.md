@@ -107,4 +107,4 @@ D3 Constellation signs in **through the browser** with the `constellation` prese
   - The browser polls `/approval/:id`. An approved approval is consumed once and advances the machine with `factor_verified: push`, which records `amr` `pop`.
   - Limits: two minutes, five approvals per sign-in, and a wrong number or a denial counts as a failed factor.
   - Every sign-in that didn't come through the phone pushes `d3auth.login`, linking to `d3auth/sessions`.
-- `/.well-known/d3-app.json` (`src/wellknown/d3-app.ts`); the `app-contract` CI job runs the d3-app-contract suite and needs a `D3_CONTRACT_TOKEN` secret while the contract repo is private.
+- `/.well-known/d3-app.json` (`src/wellknown/d3-app.ts`); the `app-contract` CI job runs the d3-app-contract suite with no token (the contract repo and image are public); when the image cannot be pulled, `contract-suite` writes the reason to its summary and `app-contract` is skipped, never green (CON-T-002).
