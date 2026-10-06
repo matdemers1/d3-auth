@@ -18,7 +18,8 @@ Running in production since September 2026 behind a Cloudflare Tunnel on a home 
   Config, RP-Initiated Logout, Back-Channel Logout. (Run, not certified — no certification is claimed.)
 - **Invite-only accounts.** Password (Argon2id, peppered, checked against a breached-password
   corpus), TOTP, passkeys, trusted devices, admin reset, and a host-only break-glass CLI for the day
-  the only admin loses their phone.
+  the only admin loses their phone. An invite can carry access: pick groups and apps (with roles)
+  when you invite someone, and they arrive already in those groups and holding those grants.
 - **Apps from a manifest** that declares their roles. Give a person access to an app, pick their
   roles, and that app's tokens carry a `roles` claim containing **only its own roles**. No app ever
   learns what else somebody can open.
@@ -35,8 +36,12 @@ Running in production since September 2026 behind a Cloudflare Tunnel on a home 
   restores last night's bundle into a throwaway database, decrypts the keys with the host's KEK, and
   boots a second copy of the service against it. Alert rules read the audit trail and email you;
   a Cloudflare Worker watches `/readyz` from outside, so the alert still arrives when the host is off.
-- **Two SDKs and runnable examples**: `@d3cloudio/auth-client` (TypeScript, with a React button) and
-  `d3auth-client` (Python/FastAPI), plus Express, FastAPI and iOS examples.
+- **Two SDKs and runnable examples**, plus Express, FastAPI and iOS examples:
+  - **TypeScript**, with a React button — on npm as
+    [`@d3cloudio/auth-client`](https://www.npmjs.com/package/@d3cloudio/auth-client):
+    `npm install @d3cloudio/auth-client`.
+  - **Python/FastAPI** — `d3auth-client`, **not on PyPI yet**; install it from a checkout with
+    `pip install -e './packages/auth-client-python[fastapi]'`.
 
 ## What it refuses to do
 
@@ -90,7 +95,7 @@ copy buttons, so none of it has to be remembered — including the settings whos
 ## Security
 
 The repo did not go public until a security gate passed: the four conformance plans, an adversarial
-test suite (74 attacks in five classes, plus SDK and login-CSRF cases), an
+test suite (74 attacks in five classes at the time, 76 on `main` today, plus SDK and login-CSRF cases), an
 [ASVS 5.0](https://owasp.org/www-project-application-security-verification-standard/) Level 2
 self-assessment of V6, V7, V9 and V10 with no open failure, Semgrep at zero findings with custom
 rules, and a nightly authenticated ZAP scan with no High. The gate found and fixed nineteen defects,
