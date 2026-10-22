@@ -180,6 +180,24 @@ export function alertRules(options: { backupsConfigured: boolean }): AlertRule[]
         };
       },
     },
+    {
+      name: 'password_set_from_host',
+      subject: "The owner's password was set from the host",
+      quietFor: HOUR,
+      async check(db, since) {
+        const rows = await eventsSince(db, [AUDIT_EVENTS.passwordSetFromHost], since);
+        if (rows.length === 0) return undefined;
+        return {
+          lines: [
+            "Somebody with a shell on the host ran set-password and replaced the owner's password.",
+            'If that was you, nothing more to do: sign in with the new password and your usual second step.',
+            'If it was not, somebody has a shell on the host. Take it back first, then set the password again and check the audit trail for recovery.* rows.',
+            '',
+            ...rows.map((row) => `${when(row.at)}  ${(row.detail as { email?: string }).email ?? row.targetId ?? '?'}`),
+          ],
+        };
+      },
+    },
   ];
 
   if (options.backupsConfigured) {

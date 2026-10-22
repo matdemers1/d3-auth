@@ -3,7 +3,8 @@
 **When to use this:** the only admin cannot complete the second step — the phone holding the
 passkey is lost, wiped, or in the sea — and there is no second admin to reset the account.
 
-**What it needs:** a shell on the host *and* the account's password. The link alone is not a way
+**What it needs:** a shell on the host *and* the account's password (lost that too? see
+*Lost the password, not the factor* below). The link alone is not a way
 in ([ADR-003](../../../D3%20Cloud%20Vault/D3%20Auth/ADR-003%20—%20Break-glass%20is%20a%20window,%20not%20a%20key.md)).
 
 > [!warning] This leaves the account with no second factor
@@ -22,6 +23,31 @@ in ([ADR-003](../../../D3%20Cloud%20Vault/D3%20Auth/ADR-003%20—%20Break-glass%
    still will. Try the laptop before you try the host.
 
 Break-glass is for when neither of those exists.
+
+---
+
+## Lost the password, not the factor
+
+The owner's passkey or authenticator app still works, but the password is gone — overwritten in the
+password manager, say. Nobody can reset the owner from the console, so this is done from the host
+too (AUTH-REQ-145, AUTH-ADR-010). Anyone else: another admin resets them from People → **Reset**.
+
+```bash
+docker compose exec server node dist/cli/set-password.js --user you@example.com
+```
+
+- It asks for the new password twice, with nothing shown. Never pass it as an argument; the command
+  refuses one. Leave out `-T`: it needs a terminal to type into.
+- The new password meets the same rules as changing it in the console.
+- Your **passkeys and authenticator apps stay**. Sign in with the new password and your usual
+  second step. Every session ends, and any sign-in throttle on the account is cleared.
+- It writes a `password.set_from_host` audit row, and every alert recipient gets *"The owner's
+  password was set from the host"* within five minutes. Anywhere but here, that email is an
+  incident.
+
+**Lost the password and the factor?** Run `set-password` first, then the rest of this runbook from
+§1. You will be signed in with the new password and no second step, and left password-only until
+you enrol one.
 
 ---
 
@@ -83,7 +109,7 @@ Then, so this does not happen again:
 
 ```bash
 docker compose exec postgres psql -U d3auth -d d3auth \
-  -c "select event, target_id, at from audit_event where event like 'recovery%' order by id desc limit 10;"
+  -c "select event, target_id, at from audit_event where event like 'recovery%' or event = 'password.set_from_host' order by id desc limit 10;"
 ```
 
 Three rows tell the whole story: `recovery.minted` (someone on the host asked), `recovery.claimed`

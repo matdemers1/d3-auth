@@ -7,4 +7,4 @@
 | [backup-restore.md](backup-restore.md) | Setting up offsite backups; a failed backup or drill; restoring after a disaster |
 | [key-rotation.md](key-rotation.md) | Rotating signing keys |
 | [sealed-admin.md](sealed-admin.md) | Sealing, using and rotating the second admin in the envelope |
-| [break-glass.md](break-glass.md) | Nobody can sign in, and you have a shell on the host |
+| [break-glass.md](break-glass.md) | Nobody can sign in, and you have a shell on the host — lost factors (`recover`) or a lost owner password (`set-password`) |
