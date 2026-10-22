@@ -182,3 +182,15 @@ describe('the sealed admin', () => {
     expect(sent.find((message) => message.subject.includes('sealed admin'))?.text).toContain('203.0.113.9');
   });
 });
+
+describe('a password set from the host', () => {
+  it("emails every recipient that the owner's password was replaced, naming the account", async () => {
+    expect(rulesFired(await evaluateAlerts(deps(), later(1)), 'password_set_from_host')).toBe(false);
+
+    await h.service.db.auditEvent.create({
+      data: { event: 'password.set_from_host', at: later(2), targetType: 'user', targetId: 'owner-id', detail: { email: 'owner@example.com', by: 'host' } },
+    });
+    expect(rulesFired(await evaluateAlerts(deps(), later(3)), 'password_set_from_host')).toBe(true);
+    expect(sent.find((message) => message.subject.includes('set from the host'))?.text).toContain('owner@example.com');
+  });
+});

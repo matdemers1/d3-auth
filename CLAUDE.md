@@ -17,7 +17,7 @@ Node 22 (ESM, TypeScript strict) · Express · `oidc-provider` 9.x · Prisma + P
 
 ## Layout
 ```
-apps/server            provider + interaction UI routes + console/account API + CLI (recover, backup, export, import, seed, rotate-keys)
+apps/server            provider + interaction UI routes + console/account API + CLI (recover, set-password, seal-admin, backup, export, import, seed, rotate-keys)
 apps/console           React app: /login/* (phone-first), /account/*, /admin/*
 packages/auth-client   @d3cloudio/auth-client (TS SDK + React button)
 packages/auth-client-python   d3auth-client (Authlib Starlette wrapper for FastAPI)
